@@ -15,6 +15,11 @@ documento di analisi originale.
 - Dockerfile, docker-compose, script di bootstrap/run, `.env.example`, CI.
 
 ## 🔜 Fase 2 — chiudere il cerchio
+
+> 📊 Analisi dettagliata di priorità (valore/sforzo/costo/rischio) in
+> [`FASE2_ANALISI.md`](FASE2_ANALISI.md). Ordine consigliato: RPE → efficienza
+> FC/passo → scheduling automatico → notifiche Telegram.
+
 - **Push allenamento sull'orologio**: creare workout strutturati e schedularli
   sul calendario Garmin (`upload_running_workout`, `schedule_workout`).
 - **RPE input**: campo nel form della dashboard e flag CLI per lo sforzo percepito.
