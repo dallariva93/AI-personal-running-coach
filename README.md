@@ -22,8 +22,12 @@ proposta del prossimo allenamento con **Claude** — il tutto su infrastruttura
 | **Coach offline** | Fallback deterministico a regole, senza costi né API key |
 | **REST API** | FastAPI con endpoint JSON documentati (`/docs`) |
 | **Dashboard** | UI minimale HTMX + Jinja + Bootstrap (no React) |
-| **CLI** | `ingest`, `analyze`, `weekly`, `metrics`, `serve` |
-| **Deploy** | Dockerfile, docker-compose, script di bootstrap, CI GitHub Actions |
+| **CLI** | `ingest`, `analyze`, `weekly`, `metrics`, `migrate`, `serve` |
+| **Resilienza** | Retry/backoff su Garmin e Claude, fallback automatico al coach offline |
+| **Osservabilità** | Log JSON strutturati, request-id, probe `/api/health` e `/api/ready` |
+| **Sicurezza** | Auth a token opzionale, security headers + HSTS, container non-root |
+| **Persistenza** | Migrazioni Alembic, SQLite WAL, backup Litestream → R2 opzionale |
+| **Deploy** | Dockerfile, compose, Fly.io, Render, Procfile, CI con test/lint/audit |
 
 ---
 
@@ -129,6 +133,36 @@ La pipeline [CI](.github/workflows/ci.yml) esegue lint, test (Python 3.11/3.12)
 e build+smoke-test dell'immagine Docker a ogni push.
 
 ---
+
+## 🚢 Produzione e deploy gratuito
+
+L'app è **production-ready** e pensata per girare **stabile su servizi
+gratuiti**. Opzioni consigliate:
+
+- **Fly.io + volume** (cloud free, dati durevoli) — vedi [`fly.toml`](fly.toml)
+- **Raspberry Pi / self-host** con `docker compose` (davvero gratis)
+- **Render/Railway + Litestream → Cloudflare R2** per host senza disco persistente
+
+In produzione imposta almeno:
+```bash
+APP_ENV=production
+LOG_JSON=true
+API_TOKEN=$(python -c "import secrets; print(secrets.token_urlsafe(24))")
+```
+
+Le migrazioni del database vengono applicate **automaticamente all'avvio**.
+Guida completa: [`docs/DEPLOYMENT.md`](docs/DEPLOYMENT.md) · runbook operativo:
+[`docs/OPERATIONS.md`](docs/OPERATIONS.md) · checklist e dettagli:
+[`docs/PRODUCTION_READINESS.md`](docs/PRODUCTION_READINESS.md).
+
+## 📚 Documentazione
+
+- [Guida utente](docs/USER_GUIDE.md) — installazione e uso quotidiano
+- [Deployment](docs/DEPLOYMENT.md) — hosting gratuito e backup
+- [Runbook operativo](docs/OPERATIONS.md) — log, migrazioni, troubleshooting
+- [Production readiness](docs/PRODUCTION_READINESS.md) — cosa rende l'app pronta
+- [Architettura](docs/ARCHITECTURE.md) · [Roadmap](docs/ROADMAP.md) · [Sicurezza](docs/SECURITY.md)
+- [Analisi feature Fase 2](docs/FASE2_ANALISI.md) · [Changelog](CHANGELOG.md)
 
 ## 🏗️ Architettura
 

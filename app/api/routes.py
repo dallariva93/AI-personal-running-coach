@@ -6,10 +6,12 @@ Mounted under ``/api``. The dashboard (HTML/HTMX) lives separately in main.py.
 from __future__ import annotations
 
 from fastapi import APIRouter, Depends, HTTPException
+from fastapi.responses import JSONResponse
 from sqlalchemy.orm import Session
 
+from app import __version__
 from app.config import get_settings
-from app.db.database import get_session
+from app.db.database import db_healthy, get_session
 from app.db.models import Activity
 from app.processing import compute_metrics, weekly_buckets
 from app.schemas import (
@@ -39,13 +41,35 @@ def _commit(session: Session) -> None:
 
 @router.get("/health")
 def health() -> dict:
+    """Liveness + capability snapshot. Always 200 if the process is up."""
     s = get_settings()
     return {
         "status": "ok",
+        "version": __version__,
+        "env": s.app_env,
         "garmin_enabled": s.garmin_enabled,
         "ai_enabled": s.ai_enabled,
+        "ai_fallback_offline": s.ai_fallback_offline,
+        "backup_enabled": s.backup_enabled,
+        "auth_enabled": s.auth_enabled,
         "mode": "garmin" if s.garmin_enabled else "demo",
+        "coach": "claude" if s.ai_enabled else "offline",
     }
+
+
+@router.get("/ready")
+def ready() -> JSONResponse:
+    """Readiness probe: verifies the database is reachable."""
+    ok = db_healthy()
+    return JSONResponse(
+        {"status": "ready" if ok else "unavailable", "database": ok},
+        status_code=200 if ok else 503,
+    )
+
+
+@router.get("/version")
+def version() -> dict:
+    return {"version": __version__}
 
 
 @router.get("/activities", response_model=list[ActivityOut])

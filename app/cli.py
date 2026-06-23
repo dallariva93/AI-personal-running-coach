@@ -18,6 +18,7 @@ from pathlib import Path
 
 from app.config import get_settings
 from app.db.database import init_db, session_scope
+from app.logging_config import configure_logging
 from app.processing import compute_metrics
 from app.schemas import CoachingResult
 from app.services import ingest_runs, run_single_analysis, run_weekly_plan
@@ -80,6 +81,14 @@ def cmd_metrics(_: argparse.Namespace) -> int:
     return 0
 
 
+def cmd_migrate(_: argparse.Namespace) -> int:
+    from app.db.database import run_migrations
+
+    run_migrations()
+    print("Migrazioni applicate (head).")
+    return 0
+
+
 def cmd_serve(args: argparse.Namespace) -> int:
     import uvicorn
 
@@ -107,6 +116,9 @@ def build_parser() -> argparse.ArgumentParser:
     p_metrics = sub.add_parser("metrics", help="Stampa le metriche di carico/forma")
     p_metrics.set_defaults(func=cmd_metrics)
 
+    p_migrate = sub.add_parser("migrate", help="Applica le migrazioni del database (Alembic)")
+    p_migrate.set_defaults(func=cmd_migrate)
+
     p_serve = sub.add_parser("serve", help="Avvia la dashboard web")
     p_serve.add_argument("--host", default="127.0.0.1")
     p_serve.add_argument("--port", type=int, default=8000)
@@ -116,11 +128,17 @@ def build_parser() -> argparse.ArgumentParser:
     return parser
 
 
+# Commands that manage the schema themselves and must not auto-create tables.
+_SCHEMA_MANAGED = {"migrate", "serve"}
+
+
 def main(argv: list[str] | None = None) -> int:
-    get_settings()
-    init_db()
+    settings = get_settings()
+    configure_logging(settings.log_level, settings.log_json)
     parser = build_parser()
     args = parser.parse_args(argv)
+    if args.command not in _SCHEMA_MANAGED:
+        init_db()
     return args.func(args)
 
 

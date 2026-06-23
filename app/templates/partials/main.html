@@ -1,6 +1,11 @@
 {% set form_colors = {"fresh": "success", "balanced": "primary", "fatigued": "danger",
                       "detraining": "warning", "unknown": "secondary"} %}
 <div id="main">
+  {% if flash %}
+  <div class="alert {{ 'alert-warning' if '⚠️' in flash else 'alert-success' }} py-2" role="alert">
+    {{ flash }}
+  </div>
+  {% endif %}
   <div class="row g-4">
     <!-- Form state -->
     <div class="col-md-4">

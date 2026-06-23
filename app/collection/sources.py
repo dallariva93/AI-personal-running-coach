@@ -17,7 +17,12 @@ from typing import Any, Protocol
 
 from app.collection.synthesize import synthesize
 from app.config import Settings, get_settings
+from app.exceptions import CollectionError
+from app.logging_config import get_logger
 from app.schemas import RunSummary
+from app.utils import retry_call
+
+logger = get_logger("app.collection")
 
 _DEMO_DATA = Path(__file__).resolve().parent.parent.parent / "data" / "demo_activities.json"
 
@@ -71,19 +76,33 @@ class GarminSource:
         try:
             client = Garmin()
             client.login(token_store)
+            logger.info("Garmin login via cached tokens")
         except Exception:
+            logger.info("Cached Garmin tokens unavailable, logging in with credentials")
             client = Garmin(self.settings.garmin_email, self.settings.garmin_password)
-            client.login()
+            retry_call(
+                client.login,
+                retries=self.settings.garmin_max_retries,
+                description="garmin.login",
+            )
             try:
                 client.garth.dump(token_store)
             except Exception:
-                pass  # token caching is best-effort
+                logger.warning("Could not persist Garmin tokens to %s", token_store)
         self._client = client
         return client
 
     def get_recent_runs(self, limit: int = 10) -> list[RunSummary]:
-        client = self._login()
-        activities = client.get_activities(0, max(limit * 3, limit))
+        try:
+            client = self._login()
+            activities = retry_call(
+                lambda: client.get_activities(0, max(limit * 3, limit)),
+                retries=self.settings.garmin_max_retries,
+                description="garmin.get_activities",
+            )
+        except Exception as exc:  # network, auth, library breakage
+            logger.error("Garmin fetch failed: %s", exc)
+            raise CollectionError(f"Impossibile scaricare i dati da Garmin: {exc}") from exc
         runs = [synthesize(a) for a in activities if _is_running(a)]
         runs.sort(key=lambda r: r.date, reverse=True)
         return runs[:limit]

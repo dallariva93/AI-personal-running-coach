@@ -7,7 +7,12 @@ from typing import Protocol
 
 from app.coaching import prompts
 from app.config import Settings, get_settings
+from app.exceptions import CoachingError
+from app.logging_config import get_logger
 from app.schemas import CoachingResult, RunSummary, TrainingMetrics
+from app.utils import retry_call
+
+logger = get_logger("app.coaching")
 
 
 class Coach(Protocol):
@@ -37,29 +42,47 @@ class AICoach:
     def __init__(self, settings: Settings | None = None) -> None:
         self.settings = settings or get_settings()
         self._client = None
+        self._fallback = OfflineCoach()
 
     def _get_client(self):
         if self._client is None:
             from anthropic import Anthropic  # lazy import
 
-            self._client = Anthropic(api_key=self.settings.anthropic_api_key)
+            self._client = Anthropic(
+                api_key=self.settings.anthropic_api_key,
+                timeout=self.settings.ai_timeout_seconds,
+                max_retries=0,  # we handle retries/backoff ourselves
+            )
         return self._client
 
     def _call(self, system: str, user: str, model: str, max_tokens: int = 1500) -> str:
-        resp = self._get_client().messages.create(
-            model=model,
-            max_tokens=max_tokens,
-            system=system,
-            messages=[{"role": "user", "content": user}],
+        def _do() -> str:
+            resp = self._get_client().messages.create(
+                model=model,
+                max_tokens=max_tokens,
+                system=system,
+                messages=[{"role": "user", "content": user}],
+            )
+            return "".join(
+                block.text for block in resp.content if getattr(block, "type", "") == "text"
+            )
+
+        return retry_call(
+            _do,
+            retries=max(1, self.settings.ai_max_retries),
+            base_delay=2.0,
+            description=f"claude.messages.create({model})",
         )
-        return "".join(block.text for block in resp.content if getattr(block, "type", "") == "text")
 
     def analyze_run(
         self, run: RunSummary, history: list[RunSummary], metrics: TrainingMetrics
     ) -> CoachingResult:
         system = prompts.SINGLE_SYSTEM_PROMPT.format(athlete_profile=self.settings.athlete_profile)
         user = prompts.build_single_user_message(run, history, metrics)
-        text = self._call(system, user, self.settings.coach_model)
+        try:
+            text = self._call(system, user, self.settings.coach_model)
+        except Exception as exc:
+            return self._handle_failure(exc, self._fallback.analyze_run, run, history, metrics)
         analysis, next_workout = _split_sections(text)
         return CoachingResult(
             scope="single", model=self.settings.coach_model,
@@ -71,13 +94,25 @@ class AICoach:
     ) -> CoachingResult:
         system = prompts.WEEKLY_SYSTEM_PROMPT.format(athlete_profile=self.settings.athlete_profile)
         user = prompts.build_weekly_user_message(runs, metrics, weekly)
-        text = self._call(system, user, self.settings.planner_model or self.settings.coach_model,
-                          max_tokens=2000)
+        model = self.settings.planner_model or self.settings.coach_model
+        try:
+            text = self._call(system, user, model, max_tokens=2000)
+        except Exception as exc:
+            return self._handle_failure(exc, self._fallback.plan_week, runs, metrics, weekly)
         analysis, next_workout = _split_sections(text)
         return CoachingResult(
-            scope="weekly", model=self.settings.planner_model or self.settings.coach_model,
-            analysis=analysis, next_workout=next_workout,
+            scope="weekly", model=model, analysis=analysis, next_workout=next_workout,
         )
+
+    def _handle_failure(self, exc: Exception, fallback_fn, *args) -> CoachingResult:
+        """On AI failure, either degrade to the offline coach or re-raise."""
+        if self.settings.ai_fallback_offline:
+            logger.error("Claude call failed, falling back to offline coach: %s", exc)
+            result = fallback_fn(*args)
+            result.model = f"{self._fallback.MODEL} (fallback)"
+            return result
+        logger.error("Claude call failed and fallback disabled: %s", exc)
+        raise CoachingError(f"Coaching AI non disponibile: {exc}") from exc
 
 
 class OfflineCoach:

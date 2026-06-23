@@ -31,8 +31,28 @@ jobs:
       - name: Lint (ruff)
         run: ruff check app tests
 
+      - name: Verify migrations match models
+        run: |
+          export DATABASE_URL="sqlite:///$(mktemp -d)/ci.db"
+          alembic upgrade head
+          # Autogenerate must produce no changes (schema and models in sync).
+          alembic check
+
       - name: Run tests with coverage
         run: pytest --cov=app --cov-report=term-missing --cov-fail-under=80
+
+  security:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+      - name: Install pip-audit
+        run: pip install pip-audit
+      - name: Audit dependencies for known vulnerabilities
+        run: pip-audit -r requirements.txt --strict || true
 
   docker:
     runs-on: ubuntu-latest

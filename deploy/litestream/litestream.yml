@@ -1,0 +1,18 @@
+# Litestream configuration — continuous SQLite replication to S3-compatible
+# object storage (Cloudflare R2 has a generous free tier: 10 GB).
+#
+# Environment variables expected (set them as platform secrets):
+#   DB_PATH                  e.g. /app/data/running_coach.db
+#   LITESTREAM_REPLICA_URL   e.g. s3://<bucket>/running-coach
+#   LITESTREAM_ACCESS_KEY_ID / LITESTREAM_SECRET_ACCESS_KEY
+#   LITESTREAM_ENDPOINT      e.g. https://<account>.r2.cloudflarestorage.com
+dbs:
+  - path: ${DB_PATH}
+    replicas:
+      - url: ${LITESTREAM_REPLICA_URL}
+        endpoint: ${LITESTREAM_ENDPOINT}
+        access-key-id: ${LITESTREAM_ACCESS_KEY_ID}
+        secret-access-key: ${LITESTREAM_SECRET_ACCESS_KEY}
+        # Snapshot/retention tuned for a low-write personal app.
+        sync-interval: 10s
+        retention: 72h

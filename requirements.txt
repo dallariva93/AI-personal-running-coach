@@ -6,6 +6,7 @@ python-multipart==0.0.18
 
 # Persistence
 SQLAlchemy==2.0.36
+alembic==1.14.0
 
 # Data / config
 pydantic==2.10.4
