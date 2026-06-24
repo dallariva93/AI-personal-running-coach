@@ -1,0 +1,13 @@
+<resources>
+    <string name="app_name">Running Coach</string>
+    <string name="nav_home">Oggi</string>
+    <string name="nav_activities">Allenamenti</string>
+    <string name="nav_plan">Piano</string>
+    <string name="nav_settings">Impostazioni</string>
+    <string name="action_sync">Sincronizza</string>
+    <string name="action_analyze">Analizza ultima corsa</string>
+    <string name="action_plan">Genera piano settimanale</string>
+    <string name="settings_base_url">URL del backend</string>
+    <string name="settings_token">Token di accesso (opzionale)</string>
+    <string name="settings_save">Salva</string>
+</resources>

@@ -1,0 +1,15 @@
+{% extends "base.html" %}
+{% block content %}
+<div class="d-flex flex-wrap gap-2 mb-4">
+  <button class="btn btn-primary" hx-post="/ui/ingest" hx-target="#main" hx-swap="outerHTML"
+          hx-indicator="#spin">⬇️ Sincronizza corse</button>
+  <button class="btn btn-success" hx-post="/ui/analyze" hx-target="#main" hx-swap="outerHTML"
+          hx-indicator="#spin">🤖 Analizza ultima corsa</button>
+  <button class="btn btn-info" hx-post="/ui/plan" hx-target="#main" hx-swap="outerHTML"
+          hx-indicator="#spin">📅 Piano settimanale</button>
+  <span id="spin" class="htmx-indicator align-self-center">
+    <span class="spinner-border spinner-border-sm"></span> elaboro…
+  </span>
+</div>
+{% include "partials/main.html" %}
+{% endblock %}

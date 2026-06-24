@@ -1,0 +1,25 @@
+services:
+  coach:
+    build: .
+    image: ai-running-coach:latest
+    container_name: ai-running-coach
+    ports:
+      - "8000:8000"
+    # Loads GARMIN_* / ANTHROPIC_API_KEY / API_TOKEN from .env if present.
+    env_file:
+      - path: .env
+        required: false
+    environment:
+      APP_ENV: production
+      DATABASE_URL: sqlite:///data/running_coach.db
+      DB_PATH: /app/data/running_coach.db
+    volumes:
+      - ./data:/app/data
+      - ./.garmin_tokens:/app/.garmin_tokens
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "curl", "-fsS", "http://localhost:8000/api/health"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 15s

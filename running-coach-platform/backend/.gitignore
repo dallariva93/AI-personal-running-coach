@@ -1,0 +1,32 @@
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+.eggs/
+.pytest_cache/
+.ruff_cache/
+.coverage
+htmlcov/
+.venv/
+venv/
+env/
+
+# Secrets & local config
+.env
+*.env
+!.env.example
+
+# Data / runtime artifacts
+data/*.db
+data/*.sqlite3
+data/reports/
+*.log
+
+# Garmin token store
+.garminconnect/
+.garmin_tokens/
+
+# OS / editor
+.DS_Store
+.idea/
+.vscode/
