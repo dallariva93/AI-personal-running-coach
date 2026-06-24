@@ -34,6 +34,78 @@ class RunSummary(BaseModel):
     splits_km: list[str] | None = None
 
 
+class HRZones(BaseModel):
+    """Personalised heart-rate zones (bpm), used to read real intensity.
+
+    Closes GAP 6: the coach can only prescribe "run in Z2" if it knows the
+    athlete's Z2. Each zone is an inclusive ``[low, high]`` bpm range.
+    """
+
+    z1_hr: tuple[int, int] | None = None
+    z2_hr: tuple[int, int] | None = None
+    z3_hr: tuple[int, int] | None = None
+    z4_hr: tuple[int, int] | None = None
+    z5_hr: tuple[int, int] | None = None
+
+    def zone_of(self, hr: int | None) -> int | None:
+        """Return the zone number (1-5) a heart rate falls into, if known."""
+        if hr is None:
+            return None
+        for idx, bounds in enumerate(
+            (self.z1_hr, self.z2_hr, self.z3_hr, self.z4_hr, self.z5_hr), start=1
+        ):
+            if bounds and bounds[0] <= hr <= bounds[1]:
+                return idx
+        return None
+
+
+class AthletePhysiology(BaseModel):
+    """Physiological thresholds that anchor intensity (GAP 7).
+
+    Paces are ``M:SS`` strings; thresholds update over time as fitness changes.
+    """
+
+    lt1_pace: str | None = None  # aerobic threshold pace
+    lt2_pace: str | None = None  # anaerobic / lactate threshold pace
+    critical_speed: str | None = None
+    resting_hr: int | None = None
+    lactate_threshold_hr: int | None = None
+
+
+class Goal(BaseModel):
+    """A target race the training plan works towards (GAP 1, 16).
+
+    ``priority`` follows the A/B/C convention: A is the season's main race,
+    B/C are supporting tune-up races.
+    """
+
+    goal_type: str = "general"  # e.g. marathon, half, 10k, general
+    target_date: str | None = None  # ISO YYYY-MM-DD
+    target_time: str | None = None  # HH:MM:SS
+    priority: str = "A"  # A | B | C
+
+
+class AthleteProfile(BaseModel):
+    """Structured athlete model (GAP 15, 23): replaces the free-text profile.
+
+    Optional everywhere so the app keeps running with zero configuration.
+    """
+
+    age: int | None = None
+    sex: str | None = None  # M | F | other
+    height_cm: float | None = None
+    weight_kg: float | None = None
+    experience_years: float | None = None
+    max_hr: int | None = None
+    resting_hr: int | None = None
+    weekly_runs: int | None = None
+    available_days: list[str] = Field(default_factory=list)
+    zones: HRZones | None = None
+    physiology: AthletePhysiology | None = None
+    goal: Goal | None = None
+    notes: str | None = None
+
+
 class TrainingMetrics(BaseModel):
     """Derived training-load and form metrics for a window of activities."""
 
@@ -43,9 +115,17 @@ class TrainingMetrics(BaseModel):
     weekly_distance_km: float = 0.0
     acute_load_km: float = 0.0  # last 7 days
     chronic_load_km: float = 0.0  # last 28 days (weekly average)
-    acwr: float | None = None  # acute:chronic workload ratio
+    # Internal (physiological) load over the acute window, in load units
+    # (Session Load = RPE × minutes, with TRIMP/estimated fallbacks). GAP 4/10.
+    acute_load_internal: float = 0.0
+    chronic_load_internal: float = 0.0  # daily average over 42 days
+    # Fitness/Fatigue model (GAP 8) — the new headline signals.
+    ctl: float | None = None  # chronic training load (fitness), 42-day EWMA
+    atl: float | None = None  # acute training load (fatigue), 7-day EWMA
+    tsb: float | None = None  # training stress balance (form) = CTL - ATL
+    acwr: float | None = None  # acute:chronic ratio — kept as a SECONDARY check
     monotony: float | None = None  # weekly load monotony (mean/std of daily load)
-    easy_ratio: float | None = None  # fraction of easy/recovery volume (target ~0.8)
+    easy_ratio: float | None = None  # fraction of easy volume (target ~0.8)
     form_state: str = "unknown"  # fresh | balanced | fatigued | detraining | unknown
     form_explanation: str = ""
     load_trend: str = "stable"  # rising | stable | falling

@@ -5,6 +5,20 @@ ACWR, weekly load, monotony, the 80/20 ratio, a form-state classification and
 the load trend. This is the quantitative input the coaching layer reasons over.
 """
 
-from app.processing.metrics import compute_metrics, weekly_buckets
+from app.processing.load import (
+    equivalent_flat_km,
+    estimate_rpe,
+    internal_load,
+    is_truly_easy,
+)
+from app.processing.metrics import compute_metrics, fitness_fatigue, weekly_buckets
 
-__all__ = ["compute_metrics", "weekly_buckets"]
+__all__ = [
+    "compute_metrics",
+    "weekly_buckets",
+    "fitness_fatigue",
+    "internal_load",
+    "estimate_rpe",
+    "equivalent_flat_km",
+    "is_truly_easy",
+]

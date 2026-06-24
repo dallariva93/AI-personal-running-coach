@@ -197,9 +197,16 @@ class OfflineCoach:
         pts = [
             f"Volume ultimi 7 giorni: {m.acute_load_km} km; media settimanale (28 gg): "
             f"{m.chronic_load_km} km.",
-            f"ACWR: {m.acwr if m.acwr is not None else 'n/d'} → {m.form_explanation}",
-            f"Trend del carico: {m.load_trend}.",
+            f"Carico interno 7gg: {m.acute_load_internal} unità (RPE×durata).",
         ]
+        if m.tsb is not None:
+            pts.append(
+                f"Forma (TSB): {m.tsb:+.0f} (CTL {m.ctl} / ATL {m.atl}) → {m.form_explanation}"
+            )
+        else:
+            pts.append(m.form_explanation)
+        pts.append(f"ACWR (secondario): {m.acwr if m.acwr is not None else 'n/d'}.")
+        pts.append(f"Trend del carico: {m.load_trend}.")
         if m.easy_ratio is not None:
             pts.append(f"Quota volume facile: {m.easy_ratio*100:.0f}% (target ~80%).")
         if m.monotony is not None and m.monotony > 2.0:

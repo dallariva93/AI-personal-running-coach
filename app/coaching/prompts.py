@@ -18,8 +18,9 @@ Il tuo compito ha due parti:
 
 1) ANALIZZA l'allenamento appena svolto:
    - È coerente col tipo previsto (es. un "easy" deve restare in Z1-Z2)?
-   - Segnali di affaticamento o sovraccarico (FC alta a parità di passo,
-     deriva cardiaca, RPE alto su sforzo basso, ACWR elevato)?
+   - Segnali di affaticamento o sovraccarico. Guarda PRIMA il TSB (forma =
+     fitness − fatica): TSB molto negativo = affaticato. L'ACWR è un controllo
+     secondario. Considera anche FC alta a parità di passo e RPE alto su sforzo basso.
    - Cosa è andato bene, cosa migliorare. Massimo 4-5 punti, concreti.
 
 2) PROPONI il prossimo allenamento, motivandolo brevemente:
@@ -46,8 +47,9 @@ Ti vengono forniti i dati di carico delle ultime settimane e le metriche di form
 Il tuo compito:
 
 1) ANALIZZA la settimana e l'andamento del carico:
-   - Volume totale e distribuzione 80/20.
-   - Stato di forma e ACWR: l'atleta è fresco, in equilibrio o affaticato?
+   - Volume totale e distribuzione 80/20 (basata sull'intensità reale).
+   - Forma via modello Fitness/Fatigue: CTL (fitness), ATL (fatica),
+     TSB (forma = CTL − ATL). L'ACWR è un controllo secondario.
    - Trend del carico (in salita, stabile, in discesa) e rischi associati.
    - Monotonia: la settimana è troppo uniforme (rischio) o ben variata?
 
@@ -64,6 +66,31 @@ Rispondi ESATTAMENTE in due sezioni markdown con questi titoli:
 """
 
 
+def semantic_summary(m: TrainingMetrics) -> str:
+    """A short natural-language read of the metrics (GAP 21).
+
+    The LLM reasons better over a semantic layer than over raw JSON alone, so we
+    prepend a few plain-language sentences highlighting what matters.
+    """
+    lines: list[str] = []
+    if m.tsb is not None:
+        lines.append(
+            f"Forma (TSB): {m.tsb:+.0f} → {m.form_state}. "
+            f"Fitness CTL {m.ctl}, fatica ATL {m.atl}."
+        )
+    lines.append(f"Carico interno 7gg: {m.acute_load_internal} unità (Session Load).")
+    lines.append(f"Volume 7gg: {m.acute_load_km} km, trend {m.load_trend}.")
+    if m.acwr is not None:
+        lines.append(f"ACWR (secondario): {m.acwr}.")
+    if m.easy_ratio is not None:
+        lines.append(
+            f"Quota facile reale: {m.easy_ratio*100:.0f}% (target ~80%)."
+        )
+    if m.monotony is not None and m.monotony > 2.0:
+        lines.append(f"Monotonia alta ({m.monotony}): settimana poco variata.")
+    return "Sintesi:\n- " + "\n- ".join(lines)
+
+
 def build_single_user_message(
     run: RunSummary, history: list[RunSummary], metrics: TrainingMetrics
 ) -> str:
@@ -74,6 +101,7 @@ def build_single_user_message(
         for h in history[:10]
     ]
     return (
+        f"{semantic_summary(metrics)}\n\n"
         "Metriche di carico e forma:\n"
         f"{json.dumps(metrics.model_dump(), ensure_ascii=False, indent=2)}\n\n"
         "Storico recente (una riga per corsa):\n"
@@ -88,6 +116,7 @@ def build_weekly_user_message(
 ) -> str:
     """Assemble the user-turn payload for weekly planning."""
     return (
+        f"{semantic_summary(metrics)}\n\n"
         "Metriche di carico e forma:\n"
         f"{json.dumps(metrics.model_dump(), ensure_ascii=False, indent=2)}\n\n"
         "Carico per settimana (le ultime):\n"

@@ -1,13 +1,20 @@
 """Training-load and form metrics.
 
-The headline metric is the **ACWR** (acute:chronic workload ratio): the last 7
-days of load divided by the average weekly load over the last 28 days. Sports
-science associates a ratio in roughly the 0.8-1.3 band with lower injury risk;
-above ~1.5 the athlete is ramping too fast.
+The headline signal is the **Fitness/Fatigue model** (Banister impulse-response):
 
-We also compute training **monotony** (how evenly load is spread), the **80/20**
-easy-vs-hard volume split, and a qualitative **form state** and **load trend**.
-All functions are pure and deterministic given a reference date.
+- **CTL** (chronic training load) — fitness, a 42-day exponentially weighted
+  average of daily internal load.
+- **ATL** (acute training load) — fatigue, a 7-day exponentially weighted
+  average of the same load.
+- **TSB** (training stress balance) — form = CTL − ATL. Positive = fresh,
+  strongly negative = fatigued.
+
+The old **ACWR** is still computed but demoted to a *secondary* check (the
+modern literature flags its limits — GAP 3). Load itself is now measured both
+externally (km, elevation-adjusted) and internally (Session Load = RPE × min,
+GAP 4/10). We also compute training **monotony**, the **80/20** easy split from
+*real* intensity, plus a qualitative **form state** and **load trend**. All
+functions are pure and deterministic given a reference date.
 """
 
 from __future__ import annotations
@@ -15,9 +22,14 @@ from __future__ import annotations
 import statistics
 from datetime import date, datetime, timedelta
 
-from app.schemas import RunSummary, TrainingMetrics, WeeklyBucket
+from app.processing.load import internal_load, is_truly_easy
+from app.schemas import AthleteProfile, RunSummary, TrainingMetrics, WeeklyBucket
 
 EASY_TYPES = {"easy", "recupero"}
+
+# Time constants (days) for the impulse-response model.
+CTL_TAU = 42
+ATL_TAU = 7
 
 
 def _parse_date(value: str) -> date | None:
@@ -57,41 +69,115 @@ def weekly_buckets(runs: list[RunSummary], weeks: int = 8) -> list[WeeklyBucket]
     return ordered[-weeks:]
 
 
-def _classify_form(acwr: float | None, acute: float, chronic: float) -> tuple[str, str]:
-    """Map ACWR to a human form state plus a short explanation (Italian)."""
-    if chronic <= 0 and acute <= 0:
+def _daily_internal_loads(
+    runs: list[RunSummary], profile: AthleteProfile | None
+) -> dict[date, float]:
+    """Sum internal Session Load per calendar day."""
+    daily: dict[date, float] = {}
+    for r in runs:
+        d = _parse_date(r.date)
+        if d:
+            daily[d] = daily.get(d, 0.0) + internal_load(r, profile)
+    return daily
+
+
+def fitness_fatigue(
+    runs: list[RunSummary],
+    ref: date | None = None,
+    profile: AthleteProfile | None = None,
+) -> tuple[float | None, float | None, float | None]:
+    """Return ``(CTL, ATL, TSB)`` from the Banister impulse-response model.
+
+    Daily internal load is smoothed with two exponentially weighted averages
+    (42-day fitness, 7-day fatigue). Form (TSB) is yesterday's CTL minus ATL —
+    the standard convention so a hard day doesn't instantly read as "fresh".
+    """
+    ref = ref or date.today()
+    daily = _daily_internal_loads(runs, profile)
+    if not daily:
+        return None, None, None
+
+    start = min(daily)
+    if start >= ref:
+        start = ref
+    ctl = atl = 0.0
+    ctl_k = 1.0 / CTL_TAU
+    atl_k = 1.0 / ATL_TAU
+    prev_ctl, prev_atl = 0.0, 0.0
+    day = start
+    while day <= ref:
+        load = daily.get(day, 0.0)
+        prev_ctl, prev_atl = ctl, atl
+        ctl = ctl + ctl_k * (load - ctl)
+        atl = atl + atl_k * (load - atl)
+        day += timedelta(days=1)
+    # TSB uses the *previous* day's balance (yesterday's fitness/fatigue).
+    tsb = prev_ctl - prev_atl
+    return round(ctl, 1), round(atl, 1), round(tsb, 1)
+
+
+def _classify_form(
+    tsb: float | None,
+    ctl: float | None,
+    acwr: float | None,
+    acute: float,
+    chronic: float,
+) -> tuple[str, str]:
+    """Map TSB (primary) to a form state, with ACWR as a secondary guardrail."""
+    if (ctl is None or ctl <= 0) and acute <= 0:
         return "unknown", "Dati insufficienti per stimare lo stato di forma."
-    if acwr is None:
+    if tsb is None:
         if acute > 0:
             return "fresh", "Carico recente presente ma storico ancora troppo corto."
         return "unknown", "Storico insufficiente."
-    if acwr < 0.8:
+
+    acwr_note = ""
+    if acwr is not None and acwr > 1.5:
+        acwr_note = f" Nota: ACWR {acwr:.2f} elevato, occhio ai salti di carico."
+
+    # TSB thresholds (impulse-response convention).
+    if tsb > 15:
+        # Sustained very-low acute load while fresh = losing condition.
+        if acwr is not None and acwr < 0.8:
+            return (
+                "detraining",
+                f"Forma fresca ma carico in calo (TSB {tsb:+.0f}, ACWR {acwr:.2f}): "
+                "rischio di perdere condizione, puoi spingere un po'.",
+            )
         return (
-            "detraining",
-            f"Carico in calo (ACWR {acwr:.2f}): rischio di perdere condizione, "
-            "puoi spingere un po'.",
+            "fresh",
+            f"Forma fresca (TSB {tsb:+.0f}): fatica bassa rispetto alla fitness, "
+            "buon momento per una seduta di qualità o una gara." + acwr_note,
         )
-    if acwr <= 1.3:
+    if tsb >= -10:
         return (
             "balanced",
-            f"Carico ben bilanciato (ACWR {acwr:.2f}): fascia ottimale, "
-            "prosegui con progressione graduale.",
+            f"Equilibrio carico/recupero (TSB {tsb:+.0f}): prosegui con "
+            "progressione graduale." + acwr_note,
         )
-    if acwr <= 1.5:
+    if tsb >= -25:
         return (
             "fatigued",
-            f"Carico in rapida crescita (ACWR {acwr:.2f}): attenzione, "
-            "privilegia il recupero.",
+            f"Fatica in accumulo (TSB {tsb:+.0f}): assorbi il lavoro, "
+            "privilegia sedute facili." + acwr_note,
         )
     return (
         "fatigued",
-        f"Carico molto alto (ACWR {acwr:.2f}): rischio infortunio elevato, "
-        "riduci volume/intensità.",
+        f"Fatica elevata (TSB {tsb:+.0f}): rischio sovraccarico, "
+        "inserisci recupero o scarico." + acwr_note,
     )
 
 
-def compute_metrics(runs: list[RunSummary], ref: date | None = None) -> TrainingMetrics:
-    """Compute the full :class:`TrainingMetrics` snapshot for the given runs."""
+def compute_metrics(
+    runs: list[RunSummary],
+    ref: date | None = None,
+    profile: AthleteProfile | None = None,
+) -> TrainingMetrics:
+    """Compute the full :class:`TrainingMetrics` snapshot for the given runs.
+
+    ``profile`` (optional) personalises internal load and the easy/hard split
+    via the athlete's HR zones and thresholds.
+    """
     ref = ref or date.today()
     if not runs:
         return TrainingMetrics()
@@ -101,6 +187,17 @@ def compute_metrics(runs: list[RunSummary], ref: date | None = None) -> Training
     chronic_total = _distance_between(runs, ref - timedelta(days=27), ref)
     chronic = round(chronic_total / 4.0, 2)
     acwr = round(acute / chronic, 2) if chronic > 0 else None
+
+    # Internal load (Session Load) over the same windows, plus Fitness/Fatigue.
+    window7 = [
+        r for r in runs if (d := _parse_date(r.date)) and ref - timedelta(days=6) <= d <= ref
+    ]
+    window42 = [
+        r for r in runs if (d := _parse_date(r.date)) and ref - timedelta(days=41) <= d <= ref
+    ]
+    acute_internal = round(sum(internal_load(r, profile) for r in window7), 1)
+    chronic_internal = round(sum(internal_load(r, profile) for r in window42) / 6.0, 1)
+    ctl, atl, tsb = fitness_fatigue(runs, ref=ref, profile=profile)
 
     # Previous 7-day window for trend.
     prev_week = _distance_between(runs, ref - timedelta(days=13), ref - timedelta(days=7))
@@ -126,15 +223,13 @@ def compute_metrics(runs: list[RunSummary], ref: date | None = None) -> Training
         std = statistics.pstdev(loads)
         monotony = round(mean / std, 2) if std > 0 else None
 
-    # 80/20 easy ratio over the acute window.
-    window_runs = [
-        r for r in runs if (d := _parse_date(r.date)) and ref - timedelta(days=6) <= d <= ref
-    ]
-    easy_km = sum(r.distance_km for r in window_runs if r.activity_type in EASY_TYPES)
-    total_km = sum(r.distance_km for r in window_runs)
+    # 80/20 easy ratio over the acute window, from *real* intensity (GAP 5):
+    # fall back to the activity label only when HR/zones/RPE are missing.
+    easy_km = sum(r.distance_km for r in window7 if is_truly_easy(r, profile))
+    total_km = sum(r.distance_km for r in window7)
     easy_ratio = round(easy_km / total_km, 2) if total_km > 0 else None
 
-    form_state, form_explanation = _classify_form(acwr, acute, chronic)
+    form_state, form_explanation = _classify_form(tsb, ctl, acwr, acute, chronic)
 
     return TrainingMetrics(
         runs_count=len(runs),
@@ -143,6 +238,11 @@ def compute_metrics(runs: list[RunSummary], ref: date | None = None) -> Training
         weekly_distance_km=acute,
         acute_load_km=acute,
         chronic_load_km=chronic,
+        acute_load_internal=acute_internal,
+        chronic_load_internal=chronic_internal,
+        ctl=ctl,
+        atl=atl,
+        tsb=tsb,
         acwr=acwr,
         monotony=monotony,
         easy_ratio=easy_ratio,
