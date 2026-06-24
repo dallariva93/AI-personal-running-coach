@@ -118,6 +118,29 @@ class AthleteProfile(BaseModel):
     notes: str | None = None
 
 
+class PhasePlan(BaseModel):
+    """One periodization phase in the macrocycle (GAP 2/17)."""
+
+    name: str  # base | build | specific | peak | taper | race
+    start_date: str  # ISO
+    end_date: str  # ISO
+    weeks: int
+    volume_factor: float  # weekly volume relative to the athlete's baseline
+    intensity_focus: str
+    key_workouts: list[str] = Field(default_factory=list)
+
+
+class PeriodizationPlan(BaseModel):
+    """The full macrocycle from today to the goal race."""
+
+    goal_type: str
+    target_date: str
+    weeks_to_race: int
+    baseline_km: float
+    current_phase: str
+    phases: list[PhasePlan] = Field(default_factory=list)
+
+
 class TrainingMetrics(BaseModel):
     """Derived training-load and form metrics for a window of activities."""
 
@@ -142,6 +165,11 @@ class TrainingMetrics(BaseModel):
     form_explanation: str = ""
     load_trend: str = "stable"  # rising | stable | falling
     week_start: str | None = None
+    # Periodization (populated only when a goal with a target date is set). GAP 2/17.
+    phase: str | None = None  # base | build | specific | peak | taper | race
+    phase_focus: str | None = None
+    weeks_to_race: int | None = None
+    phase_volume_target_km: float | None = None
 
 
 class WeeklyBucket(BaseModel):

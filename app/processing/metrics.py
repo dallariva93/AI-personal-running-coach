@@ -23,6 +23,7 @@ import statistics
 from datetime import date, datetime, timedelta
 
 from app.processing.load import internal_load, is_truly_easy
+from app.processing.periodization import build_periodization, phase_for
 from app.schemas import AthleteProfile, RunSummary, TrainingMetrics, WeeklyBucket
 
 EASY_TYPES = {"easy", "recupero"}
@@ -30,6 +31,10 @@ EASY_TYPES = {"easy", "recupero"}
 # Time constants (days) for the impulse-response model.
 CTL_TAU = 42
 ATL_TAU = 7
+# Internal load (sRPE = RPE × minutes) runs ~6× larger than the TrainingPeaks
+# TSS scale the CTL/ATL/TSB thresholds are calibrated for. Normalise so that a
+# ~1h threshold effort ≈ 100 units and steady training settles near TSB 0.
+LOAD_SCALE = 6.0
 
 
 def _parse_date(value: str) -> date | None:
@@ -106,7 +111,7 @@ def fitness_fatigue(
     prev_ctl, prev_atl = 0.0, 0.0
     day = start
     while day <= ref:
-        load = daily.get(day, 0.0)
+        load = daily.get(day, 0.0) / LOAD_SCALE
         prev_ctl, prev_atl = ctl, atl
         ctl = ctl + ctl_k * (load - ctl)
         atl = atl + atl_k * (load - atl)
@@ -123,26 +128,39 @@ def _classify_form(
     acute: float,
     chronic: float,
 ) -> tuple[str, str]:
-    """Map TSB (primary) to a form state, with ACWR as a secondary guardrail."""
-    if (ctl is None or ctl <= 0) and acute <= 0:
+    """Map TSB (primary) to a form state, with ACWR as a secondary guardrail.
+
+    Thresholds follow the TrainingPeaks convention on a TSS-like scale (see
+    ``LOAD_SCALE``): positive TSB = fresh, deeply negative = overreaching.
+    """
+    has_history = (ctl is not None and ctl > 0) or chronic > 0
+    if not has_history and acute <= 0:
         return "unknown", "Dati insufficienti per stimare lo stato di forma."
     if tsb is None:
         if acute > 0:
             return "fresh", "Carico recente presente ma storico ancora troppo corto."
         return "unknown", "Storico insufficiente."
 
+    # No training in the last 7 days but a fitness base exists → losing condition.
+    if acute <= 0 and has_history:
+        return (
+            "detraining",
+            f"Nessun allenamento negli ultimi 7 giorni (TSB {tsb:+.0f}): "
+            "stai perdendo condizione, riprendi con gradualità.",
+        )
+
     acwr_note = ""
     if acwr is not None and acwr > 1.5:
         acwr_note = f" Nota: ACWR {acwr:.2f} elevato, occhio ai salti di carico."
 
-    # TSB thresholds (impulse-response convention).
-    if tsb > 15:
-        # Sustained very-low acute load while fresh = losing condition.
+    # TSB thresholds (TrainingPeaks convention on the normalised scale).
+    if tsb > 8:
+        # Fresh while acute load is collapsing = drifting into detraining.
         if acwr is not None and acwr < 0.8:
             return (
                 "detraining",
                 f"Forma fresca ma carico in calo (TSB {tsb:+.0f}, ACWR {acwr:.2f}): "
-                "rischio di perdere condizione, puoi spingere un po'.",
+                "puoi aumentare un po' il carico.",
             )
         return (
             "fresh",
@@ -231,6 +249,19 @@ def compute_metrics(
 
     form_state, form_explanation = _classify_form(tsb, ctl, acwr, acute, chronic)
 
+    # Periodization: where are we in the macrocycle towards the goal race?
+    phase = phase_focus = None
+    weeks_to_race = phase_volume_target = None
+    if profile and profile.goal:
+        baseline = max(chronic, acute / 1.5, 20.0)
+        plan = build_periodization(profile.goal, baseline_km=baseline, ref=ref)
+        active = phase_for(plan, ref) if plan else None
+        if plan and active:
+            phase = active.name
+            phase_focus = active.intensity_focus
+            weeks_to_race = plan.weeks_to_race
+            phase_volume_target = round(baseline * active.volume_factor, 1)
+
     return TrainingMetrics(
         runs_count=len(runs),
         total_distance_km=round(sum(r.distance_km for r in runs), 2),
@@ -250,4 +281,8 @@ def compute_metrics(
         form_explanation=form_explanation,
         load_trend=load_trend,
         week_start=_monday(ref).isoformat(),
+        phase=phase,
+        phase_focus=phase_focus,
+        weeks_to_race=weeks_to_race,
+        phase_volume_target_km=phase_volume_target,
     )

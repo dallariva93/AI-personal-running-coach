@@ -260,6 +260,8 @@ class OfflineCoach:
                     f"Obiettivo {g.goal_type} il {g.target_date}: "
                     f"mancano {days} giorni (~{max(0, days)//7} settimane)."
                 )
+        if m.phase:
+            pts.append(f"Fase del piano: **{m.phase}** — {m.phase_focus or ''}".rstrip())
         pts += [
             f"Volume ultimi 7 giorni: {m.acute_load_km} km; media settimanale (28 gg): "
             f"{m.chronic_load_km} km.",
@@ -282,7 +284,64 @@ class OfflineCoach:
             )
         return "- " + "\n- ".join(pts)
 
+    # Per-phase weekly templates (used when a goal/periodization is active).
+    _PHASE_SESSIONS = {
+        "base": [
+            "Mar: 8-10 km easy Z2",
+            "Mer: 6 km recupero + allunghi",
+            "Ven: 8 km easy Z2",
+            "Dom: lungo progressivo 16-20 km Z2",
+        ],
+        "build": [
+            "Mar: 10 km easy Z2",
+            "Mer: tempo 12 km con 6 km Z3-Z4",
+            "Ven: 8 km easy",
+            "Dom: lungo 18-22 km con ultimi 5 km a ritmo medio",
+        ],
+        "specific": [
+            "Mar: 10 km easy + 4 allunghi",
+            "Mer: ripetute al ritmo gara (es. 5x2 km)",
+            "Ven: 8 km easy Z2",
+            "Dom: lungo 20-26 km con porzioni a ritmo gara",
+        ],
+        "peak": [
+            "Mar: 8 km easy",
+            "Mer: VO2max 6x1000 m Z5 (rec 2-3')",
+            "Ven: 6 km easy + allunghi",
+            "Dom: medio 16 km con finale veloce",
+        ],
+        "taper": [
+            "Mar: 6 km easy con 4x30 s a ritmo gara",
+            "Gio: 5 km easy",
+            "Sab: 4 km sciolti + 3 allunghi",
+            "Dom: 8-10 km lento Z2",
+        ],
+        "race": [
+            "Mar: 5 km easy con 3 allunghi a ritmo gara",
+            "Gio: 4 km sciolti",
+            "Sab: attivazione 20 min + 3 allunghi",
+            "Dom: 🏁 GARA",
+        ],
+    }
+
     def _suggest_week(self, m: TrainingMetrics) -> str:
+        # Phase-driven plan when periodization is active (and not over-fatigued).
+        if m.phase and m.phase in self._PHASE_SESSIONS and m.form_state != "fatigued":
+            target = m.phase_volume_target_km or round(
+                max(m.chronic_load_km, m.acute_load_km, 20.0), 1
+            )
+            label = {
+                "base": "Base", "build": "Build", "specific": "Specifico",
+                "peak": "Peak", "taper": "Taper", "race": "Settimana gara",
+            }[m.phase]
+            intro = (
+                f"Fase **{label}** (~{round(target)} km"
+                + (f", {m.weeks_to_race} sett. alla gara" if m.weeks_to_race else "")
+                + f"). {m.phase_focus or ''}".rstrip()
+            )
+            sessions = ["Lun: riposo o recupero"] + self._PHASE_SESSIONS[m.phase]
+            return intro + "\n\n" + "\n".join(f"- {s}" for s in sessions)
+
         base = max(m.chronic_load_km, m.acute_load_km, 20.0)
         if m.form_state == "fatigued":
             target = round(base * 0.7)

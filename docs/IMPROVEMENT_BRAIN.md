@@ -45,7 +45,7 @@ non misura il progresso, non personalizza sulle soglie reali dell'atleta.
 | # | Gap | Impatto | Dove interviene | Stato |
 |---|-----|---------|-----------------|-------|
 | 1 | Nessun obiettivo sportivo (Goal) | Massimo | `schemas.py` + `db` model + form | ✅ persistito |
-| 2 | Nessuna periodizzazione (macro/meso/micro) | Molto alto | nuovo `processing/periodization.py` | ⬜ |
+| 2 | Nessuna periodizzazione (macro/meso/micro) | Molto alto | `processing/periodization.py` | ✅ |
 | 3 | ACWR sovrastimato | Molto alto | `metrics.py` (demota a secondaria) | ✅ |
 | 4 | Carico solo su km | Molto alto | nuovo `processing/load.py` | ✅ |
 | 5 | Easy ratio poco affidabile (etichetta) | Alto | `load.py` (intensità reale da FC/zone) | ✅ parziale |
@@ -60,7 +60,7 @@ non misura il progresso, non personalizza sulle soglie reali dell'atleta.
 | 14 | Modello infortuni troppo semplice | Molto alto | `processing/injury.py` | ⬜ |
 | 15 | Disponibilità atleta ignorata | Molto alto | `AthleteProfile.available_days` | ✅ schema+prompt |
 | 16 | Nessuna gestione gare B/C | Medio-alto | `Goal.priority` + lista gare | ✅ schema |
-| 17 | Assenza di taper | Molto alto | `periodization.py` | ⬜ |
+| 17 | Assenza di taper | Molto alto | `periodization.py` (taper progressivo) | ✅ |
 | 18 | Meteo ignorato | Medio | collection + correzione | ⬜ |
 | 19 | Dislivello sottostimato | Alto | `load.py` (equivalent flat / GAP) | ✅ parziale |
 | 20 | Trail running non supportato | Medio-alto | metriche D+/D-/vert speed | ⬜ |
@@ -88,7 +88,7 @@ mantengono l'app eseguibile offline e la coverage ≥ 80%.
 ### Fase 2 — Coach reale
 5. **Fitness/Fatigue (CTL/ATL/TSB)** come input principale; ACWR retrocesso a
    metrica secondaria; `form_state` derivato dal TSB. ✅
-6. **Periodizzazione** macro→meso→micro verso `Goal.target_date` + **taper**.
+6. **Periodizzazione** macro→meso→micro verso `Goal.target_date` + **taper**. ✅
 7. **Injury Risk Score** composito (giorni consecutivi, qualità ravvicinate,
    dislivello, salti di volume/intensità) al posto del solo ACWR/monotonia.
 8. **Gare multiple** (A/B/C).
@@ -129,10 +129,28 @@ Prima slice verticale (Fase 1 + cuore della Fase 2), perché tocca direttamente
 - Dashboard: banner obiettivo + form profilo/gara (HTMX); card forma con
   TSB/CTL/ATL. API `GET/PUT /api/profile`.
 
+**Terza slice — periodizzazione e taper:**
+
+- `app/processing/periodization.py` — costruisce il macrociclo a ritroso dalla
+  data gara: Base→Build→Specific→Peak→Taper→Race, con volume target relativo al
+  baseline e focus per fase; taper progressivo (più lungo per la maratona).
+- `compute_metrics` espone la **fase attuale** in `TrainingMetrics`
+  (`phase`, `phase_focus`, `weeks_to_race`, `phase_volume_target_km`) — così la
+  periodizzazione viaggia verso il coach tramite il contratto `schemas`,
+  rispettando il disaccoppiamento dei layer.
+- Coach: prompt e OfflineCoach rispettano la fase (template di settimana per
+  fase; in taper riducono il volume). La rete di sicurezza "affaticato → scarico"
+  ha la precedenza.
+- Ricalibrato il modello Fitness/Fatigue su scala TSS-like (`LOAD_SCALE`) e i
+  threshold del `form_state`; aggiunto stato `detraining` esplicito (nessun
+  carico negli ultimi 7 giorni con base presente).
+- Dashboard: timeline delle fasi con evidenza della fase corrente.
+  API `GET /api/plan/periodization`.
+
 ## 5. Prossimi passi
-- `periodization.py` con fasi (Base→Build→Specific→Peak→Taper) e taper guidati
-  da `Goal.target_date`; usare `available_days` per posizionare le sedute.
+- Usare `available_days` per posizionare le sedute nei giorni reali dell'atleta.
 - `injury.py` con Injury Risk Score composito.
 - `efficiency.py` (deriva cardiaca, decoupling, Aerobic Efficiency Index).
+- Gare multiple A/B/C nel macrociclo.
 </content>
 </invoke>

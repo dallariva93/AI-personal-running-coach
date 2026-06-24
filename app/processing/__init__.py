@@ -12,6 +12,11 @@ from app.processing.load import (
     is_truly_easy,
 )
 from app.processing.metrics import compute_metrics, fitness_fatigue, weekly_buckets
+from app.processing.periodization import (
+    build_periodization,
+    current_phase,
+    phase_for,
+)
 
 __all__ = [
     "compute_metrics",
@@ -21,4 +26,7 @@ __all__ = [
     "estimate_rpe",
     "equivalent_flat_km",
     "is_truly_easy",
+    "build_periodization",
+    "current_phase",
+    "phase_for",
 ]

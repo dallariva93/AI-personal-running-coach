@@ -20,7 +20,7 @@ from app.db.database import get_session, init_db
 from app.exceptions import CoachError, CollectionError
 from app.logging_config import configure_logging, get_logger
 from app.middleware import AuthMiddleware, RequestLogMiddleware, SecurityHeadersMiddleware
-from app.processing import compute_metrics, weekly_buckets
+from app.processing import build_periodization, compute_metrics, weekly_buckets
 from app.schemas import AthletePhysiology, AthleteProfile, Goal, HRZones
 from app.services import (
     get_profile,
@@ -90,6 +90,10 @@ def _dashboard_context(session: Session, request: Request, flash: str | None = N
     weekly = weekly_buckets(summaries, weeks=8)
     max_week = max((w.distance_km for w in weekly), default=0.0) or 1.0
     goal = profile.goal if profile else None
+    plan = None
+    if goal and goal.target_date:
+        baseline = max(metrics.chronic_load_km, metrics.acute_load_km / 1.5, 20.0)
+        plan = build_periodization(goal, baseline_km=baseline)
     return {
         "request": request,
         "settings": get_settings(),
@@ -101,6 +105,7 @@ def _dashboard_context(session: Session, request: Request, flash: str | None = N
         "profile": profile,
         "goal": goal,
         "days_to_goal": goal.days_to_go() if goal else None,
+        "plan": plan,
         "version": __version__,
         "flash": flash,
     }

@@ -54,6 +54,9 @@ Il tuo compito:
    - Monotonia: la settimana è troppo uniforme (rischio) o ben variata?
 
 2) PROPONI il piano della prossima settimana (4-5 sedute):
+   - Se è indicata una FASE del piano (base/build/specific/peak/taper/race),
+     rispetta il suo focus e il volume target: in taper RIDUCI il volume,
+     in base privilegia il fondo facile, in specific lavora al ritmo gara.
    - Bilancia facile/intenso secondo l'80/20.
    - Tieni conto dello stato di forma e dell'ACWR (se alto, settimana di scarico).
    - Una progressione settimanale sensata (non più del ~10% di volume).
@@ -73,6 +76,15 @@ def semantic_summary(m: TrainingMetrics) -> str:
     prepend a few plain-language sentences highlighting what matters.
     """
     lines: list[str] = []
+    if m.phase:
+        phase_line = f"Fase del piano: {m.phase}"
+        if m.weeks_to_race is not None:
+            phase_line += f" ({m.weeks_to_race} settimane alla gara)"
+        if m.phase_focus:
+            phase_line += f" — {m.phase_focus}"
+        if m.phase_volume_target_km is not None:
+            phase_line += f" Volume target ~{m.phase_volume_target_km} km."
+        lines.append(phase_line)
     if m.tsb is not None:
         lines.append(
             f"Forma (TSB): {m.tsb:+.0f} → {m.form_state}. "

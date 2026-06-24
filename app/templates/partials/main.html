@@ -17,6 +17,34 @@
     {% endif %}
   </div>
   {% endif %}
+
+  {% if plan and plan.phases %}
+  {% set phase_colors = {"base": "secondary", "build": "info", "specific": "primary",
+                         "peak": "warning", "taper": "success", "race": "danger"} %}
+  <div class="card shadow-sm mb-3">
+    <div class="card-body py-3">
+      <h6 class="card-subtitle text-muted mb-2">Periodizzazione verso la gara</h6>
+      <div class="d-flex flex-wrap gap-1 align-items-stretch">
+        {% for p in plan.phases %}
+        <div class="text-center flex-fill" style="min-width: 60px;"
+             title="{{ p.start_date }} → {{ p.end_date }} · {{ p.intensity_focus }}">
+          <div class="rounded-top text-white small fw-bold
+                      {{ 'border border-3 border-dark' if p.name == plan.current_phase }}
+                      bg-{{ phase_colors.get(p.name, 'secondary') }}"
+               style="padding: .35rem .2rem;">
+            {{ p.name | upper }}
+          </div>
+          <div class="small text-muted" style="font-size:.7rem;">{{ p.weeks }} sett.</div>
+        </div>
+        {% endfor %}
+      </div>
+      <p class="small text-muted mt-2 mb-0">
+        Fase attuale: <strong>{{ plan.current_phase | upper }}</strong>
+        {% if metrics.phase_focus %}— {{ metrics.phase_focus }}{% endif %}
+      </p>
+    </div>
+  </div>
+  {% endif %}
   <div class="row g-4">
     <!-- Form state -->
     <div class="col-md-4">

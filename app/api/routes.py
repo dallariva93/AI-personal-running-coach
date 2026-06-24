@@ -13,11 +13,12 @@ from app import __version__
 from app.config import get_settings
 from app.db.database import db_healthy, get_session
 from app.db.models import Activity
-from app.processing import compute_metrics, weekly_buckets
+from app.processing import build_periodization, compute_metrics, weekly_buckets
 from app.schemas import (
     ActivityOut,
     AthleteProfile,
     ManualActivityIn,
+    PeriodizationPlan,
     ReportOut,
     RunSummary,
     TrainingMetrics,
@@ -112,6 +113,20 @@ def put_athlete_profile(
     save_profile(session, payload)
     _commit(session)
     return get_profile(session) or AthleteProfile()
+
+
+@router.get("/plan/periodization", response_model=PeriodizationPlan)
+def get_periodization(session: Session = Depends(get_session)) -> PeriodizationPlan:
+    profile = get_profile(session)
+    goal = profile.goal if profile else None
+    metrics = compute_metrics(_all_summaries(session), profile=profile)
+    baseline = max(metrics.chronic_load_km, metrics.acute_load_km / 1.5, 20.0)
+    plan = build_periodization(goal, baseline_km=baseline) if goal else None
+    if plan is None:
+        raise HTTPException(
+            status_code=404, detail="Nessun obiettivo con data gara configurato."
+        )
+    return plan
 
 
 @router.get("/metrics", response_model=TrainingMetrics)
