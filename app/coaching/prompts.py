@@ -8,7 +8,7 @@ from __future__ import annotations
 
 import json
 
-from app.schemas import AthleteProfile, RunSummary, TrainingMetrics
+from app.schemas import AthleteProfile, AthleteSnapshot, RunSummary, TrainingMetrics
 
 SINGLE_SYSTEM_PROMPT = """\
 Sei un coach di corsa esperto. Parli in italiano, in modo diretto e pratico.
@@ -52,6 +52,9 @@ Il tuo compito:
      TSB (forma = CTL − ATL). L'ACWR è un controllo secondario.
    - Trend del carico (in salita, stabile, in discesa) e rischi associati.
    - Monotonia: la settimana è troppo uniforme (rischio) o ben variata?
+   - Rischio infortunio (injury_score/level): se moderato/alto, agisci sui
+     fattori indicati (volume, giorni consecutivi, sedute ravvicinate).
+   - Progresso: l'efficienza aerobica (passo a pari FC) sta migliorando?
 
 2) PROPONI il piano della prossima settimana (4-5 sedute):
    - Se è indicata una FASE del piano (base/build/specific/peak/taper/race),
@@ -100,6 +103,11 @@ def semantic_summary(m: TrainingMetrics) -> str:
         )
     if m.monotony is not None and m.monotony > 2.0:
         lines.append(f"Monotonia alta ({m.monotony}): settimana poco variata.")
+    if m.injury_level and m.injury_level != "low":
+        detail = f" ({', '.join(m.injury_factors)})" if m.injury_factors else ""
+        lines.append(f"Rischio infortunio {m.injury_level} ({m.injury_score:.0f}/100){detail}.")
+    if m.efficiency_trend and m.efficiency_trend not in ("unknown",):
+        lines.append(f"Efficienza aerobica: {m.efficiency_trend} (passo/FC sulle uscite facili).")
     return "Sintesi:\n- " + "\n- ".join(lines)
 
 
@@ -149,16 +157,41 @@ def build_single_user_message(
     )
 
 
+def snapshot_context(snapshot: AthleteSnapshot | None) -> str:
+    """A compact line of long-horizon history for the coach (GAP 22)."""
+    if not snapshot or snapshot.runs_count == 0:
+        return ""
+    bits = [
+        f"{snapshot.runs_count} corse / {snapshot.total_distance_km} km negli ultimi 6 mesi",
+        f"media {snapshot.avg_weekly_volume_km} km/sett",
+        f"lungo max {snapshot.longest_run_km} km",
+    ]
+    bests = [
+        (label, value)
+        for label, value in (
+            ("5k", snapshot.best_5k), ("10k", snapshot.best_10k),
+            ("mezza", snapshot.best_half), ("maratona", snapshot.best_marathon),
+        )
+        if value
+    ]
+    if bests:
+        bits.append("best: " + ", ".join(f"{lbl} {val}" for lbl, val in bests))
+    return "Storico atleta (6 mesi): " + "; ".join(bits) + "."
+
+
 def build_weekly_user_message(
     runs: list[RunSummary],
     metrics: TrainingMetrics,
     weekly: list[dict],
     profile: AthleteProfile | None = None,
+    snapshot: AthleteSnapshot | None = None,
 ) -> str:
     """Assemble the user-turn payload for weekly planning."""
     goal = goal_context(profile)
+    snap = snapshot_context(snapshot)
     return (
         (f"{goal}\n\n" if goal else "")
+        + (f"{snap}\n\n" if snap else "")
         + f"{semantic_summary(metrics)}\n\n"
         "Metriche di carico e forma:\n"
         f"{json.dumps(metrics.model_dump(), ensure_ascii=False, indent=2)}\n\n"

@@ -118,6 +118,27 @@ class AthleteProfile(BaseModel):
     notes: str | None = None
 
 
+class InjuryRisk(BaseModel):
+    """Composite overuse-injury risk (GAP 14)."""
+
+    score: float = 0.0  # 0-100
+    level: str = "low"  # low | moderate | high
+    factors: list[str] = Field(default_factory=list)
+
+
+class AthleteSnapshot(BaseModel):
+    """Long-horizon training memory for the coach (GAP 22)."""
+
+    runs_count: int = 0
+    total_distance_km: float = 0.0
+    avg_weekly_volume_km: float = 0.0
+    longest_run_km: float = 0.0
+    best_5k: str | None = None
+    best_10k: str | None = None
+    best_half: str | None = None
+    best_marathon: str | None = None
+
+
 class PhasePlan(BaseModel):
     """One periodization phase in the macrocycle (GAP 2/17)."""
 
@@ -170,6 +191,12 @@ class TrainingMetrics(BaseModel):
     phase_focus: str | None = None
     weeks_to_race: int | None = None
     phase_volume_target_km: float | None = None
+    # Injury risk (GAP 14) and aerobic-efficiency progress (GAP 13).
+    injury_score: float | None = None
+    injury_level: str | None = None  # low | moderate | high
+    injury_factors: list[str] = Field(default_factory=list)
+    aerobic_efficiency: float | None = None  # pace-sec per beat on easy runs
+    efficiency_trend: str | None = None  # improving | stable | declining | unknown
 
 
 class WeeklyBucket(BaseModel):

@@ -5,6 +5,8 @@ ACWR, weekly load, monotony, the 80/20 ratio, a form-state classification and
 the load trend. This is the quantitative input the coaching layer reasons over.
 """
 
+from app.processing.efficiency import aerobic_efficiency, decoupling
+from app.processing.injury import injury_risk
 from app.processing.load import (
     equivalent_flat_km,
     estimate_rpe,
@@ -17,6 +19,7 @@ from app.processing.periodization import (
     current_phase,
     phase_for,
 )
+from app.processing.snapshot import build_snapshot
 
 __all__ = [
     "compute_metrics",
@@ -29,4 +32,8 @@ __all__ = [
     "build_periodization",
     "current_phase",
     "phase_for",
+    "injury_risk",
+    "aerobic_efficiency",
+    "decoupling",
+    "build_snapshot",
 ]

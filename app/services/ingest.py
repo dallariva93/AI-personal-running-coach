@@ -17,7 +17,7 @@ from app.collection import get_source
 from app.collection.sources import ActivitySource
 from app.config import get_settings
 from app.db.models import Activity, CoachingReport
-from app.processing import compute_metrics, weekly_buckets
+from app.processing import build_snapshot, compute_metrics, weekly_buckets
 from app.schemas import CoachingResult, RunSummary
 from app.services.profile import get_profile
 
@@ -142,8 +142,9 @@ def run_weekly_plan(
     profile = get_profile(session)
     metrics = compute_metrics(summaries, ref=ref, profile=profile)
     weekly = [b.model_dump() for b in weekly_buckets(summaries)]
+    snapshot = build_snapshot(summaries, ref=ref)
     coach = coach or get_coach()
-    result = coach.plan_week(summaries, metrics, weekly, profile)
+    result = coach.plan_week(summaries, metrics, weekly, profile, snapshot)
     return _persist_report(session, result, metrics, activity_id=None)
 
 

@@ -22,6 +22,8 @@ from __future__ import annotations
 import statistics
 from datetime import date, datetime, timedelta
 
+from app.processing.efficiency import aerobic_efficiency
+from app.processing.injury import injury_risk
 from app.processing.load import internal_load, is_truly_easy
 from app.processing.periodization import build_periodization, phase_for
 from app.schemas import AthleteProfile, RunSummary, TrainingMetrics, WeeklyBucket
@@ -262,7 +264,7 @@ def compute_metrics(
             weeks_to_race = plan.weeks_to_race
             phase_volume_target = round(baseline * active.volume_factor, 1)
 
-    return TrainingMetrics(
+    m = TrainingMetrics(
         runs_count=len(runs),
         total_distance_km=round(sum(r.distance_km for r in runs), 2),
         total_duration_min=round(sum(r.duration_min for r in runs), 1),
@@ -286,3 +288,11 @@ def compute_metrics(
         weeks_to_race=weeks_to_race,
         phase_volume_target_km=phase_volume_target,
     )
+
+    # Injury risk (needs the assembled load metrics) and efficiency progress.
+    risk = injury_risk(runs, m, ref=ref)
+    m.injury_score = risk.score
+    m.injury_level = risk.level
+    m.injury_factors = risk.factors
+    m.aerobic_efficiency, m.efficiency_trend = aerobic_efficiency(runs, ref=ref)
+    return m

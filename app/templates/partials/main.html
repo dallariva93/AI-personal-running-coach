@@ -78,7 +78,25 @@
               <span>Quota facile (80/20)</span>
               <strong>{{ (metrics.easy_ratio * 100) | round | int if metrics.easy_ratio is not none else '–' }}%</strong>
             </li>
+            {% if metrics.injury_level %}
+            {% set risk_colors = {"low": "success", "moderate": "warning", "high": "danger"} %}
+            <li class="list-group-item d-flex justify-content-between">
+              <span>Rischio infortunio</span>
+              <strong class="text-{{ risk_colors.get(metrics.injury_level, 'secondary') }}">
+                {{ metrics.injury_level | upper }} ({{ metrics.injury_score | round | int }})
+              </strong>
+            </li>
+            {% endif %}
+            {% if metrics.efficiency_trend and metrics.efficiency_trend != 'unknown' %}
+            <li class="list-group-item d-flex justify-content-between">
+              <span>Efficienza aerobica</span>
+              <strong>{{ {'improving':'↑ migliora','declining':'↓ cala','stable':'→ stabile'}.get(metrics.efficiency_trend, metrics.efficiency_trend) }}</strong>
+            </li>
+            {% endif %}
           </ul>
+          {% if metrics.injury_factors %}
+          <p class="small text-muted mt-2 mb-0">⚠️ {{ metrics.injury_factors | join('; ') }}</p>
+          {% endif %}
         </div>
       </div>
     </div>
@@ -102,6 +120,16 @@
           </div>
           {% else %}
           <p class="text-muted">Nessun dato. Sincronizza le corse per iniziare.</p>
+          {% endif %}
+          {% if snapshot and snapshot.runs_count %}
+          <hr class="my-2">
+          <div class="small text-muted d-flex flex-wrap gap-3">
+            <span>📅 6 mesi: <strong>{{ snapshot.total_distance_km }} km</strong> ({{ snapshot.runs_count }} corse)</span>
+            <span>~<strong>{{ snapshot.avg_weekly_volume_km }} km</strong>/sett</span>
+            <span>lungo max <strong>{{ snapshot.longest_run_km }} km</strong></span>
+            {% if snapshot.best_10k %}<span>best 10k <strong>{{ snapshot.best_10k }}</strong></span>{% endif %}
+            {% if snapshot.best_half %}<span>best mezza <strong>{{ snapshot.best_half }}</strong></span>{% endif %}
+          </div>
           {% endif %}
         </div>
       </div>

@@ -9,7 +9,13 @@ from app.coaching import prompts
 from app.config import Settings, get_settings
 from app.exceptions import CoachingError
 from app.logging_config import get_logger
-from app.schemas import AthleteProfile, CoachingResult, RunSummary, TrainingMetrics
+from app.schemas import (
+    AthleteProfile,
+    AthleteSnapshot,
+    CoachingResult,
+    RunSummary,
+    TrainingMetrics,
+)
 from app.utils import retry_call
 
 logger = get_logger("app.coaching")
@@ -30,6 +36,7 @@ class Coach(Protocol):
         metrics: TrainingMetrics,
         weekly: list[dict],
         profile: AthleteProfile | None = None,
+        snapshot: AthleteSnapshot | None = None,
     ) -> CoachingResult: ...
 
 
@@ -111,17 +118,18 @@ class AICoach:
         metrics: TrainingMetrics,
         weekly: list[dict],
         profile: AthleteProfile | None = None,
+        snapshot: AthleteSnapshot | None = None,
     ) -> CoachingResult:
         system = prompts.WEEKLY_SYSTEM_PROMPT.format(
             athlete_profile=self._profile_text(profile)
         )
-        user = prompts.build_weekly_user_message(runs, metrics, weekly, profile)
+        user = prompts.build_weekly_user_message(runs, metrics, weekly, profile, snapshot)
         model = self.settings.planner_model or self.settings.coach_model
         try:
             text = self._call(system, user, model, max_tokens=2000)
         except Exception as exc:
             return self._handle_failure(
-                exc, self._fallback.plan_week, runs, metrics, weekly, profile
+                exc, self._fallback.plan_week, runs, metrics, weekly, profile, snapshot
             )
         analysis, next_workout = _split_sections(text)
         return CoachingResult(
@@ -191,6 +199,7 @@ class OfflineCoach:
         metrics: TrainingMetrics,
         weekly: list[dict],
         profile: AthleteProfile | None = None,
+        snapshot: AthleteSnapshot | None = None,
     ) -> CoachingResult:
         analysis = self._analyze_week_text(metrics, weekly, profile)
         next_workout = self._suggest_week(metrics)
@@ -275,6 +284,16 @@ class OfflineCoach:
             pts.append(m.form_explanation)
         pts.append(f"ACWR (secondario): {m.acwr if m.acwr is not None else 'n/d'}.")
         pts.append(f"Trend del carico: {m.load_trend}.")
+        if m.injury_level:
+            extra = f" — {', '.join(m.injury_factors)}" if m.injury_factors else ""
+            pts.append(
+                f"Rischio infortunio: {m.injury_level} ({m.injury_score:.0f}/100){extra}."
+            )
+        if m.efficiency_trend and m.efficiency_trend != "unknown":
+            label = {
+                "improving": "in miglioramento", "declining": "in calo", "stable": "stabile",
+            }.get(m.efficiency_trend, m.efficiency_trend)
+            pts.append(f"Efficienza aerobica (passo a pari FC): {label}.")
         if m.easy_ratio is not None:
             pts.append(f"Quota volume facile: {m.easy_ratio*100:.0f}% (target ~80%).")
         if m.monotony is not None and m.monotony > 2.0:

@@ -20,7 +20,12 @@ from app.db.database import get_session, init_db
 from app.exceptions import CoachError, CollectionError
 from app.logging_config import configure_logging, get_logger
 from app.middleware import AuthMiddleware, RequestLogMiddleware, SecurityHeadersMiddleware
-from app.processing import build_periodization, compute_metrics, weekly_buckets
+from app.processing import (
+    build_periodization,
+    build_snapshot,
+    compute_metrics,
+    weekly_buckets,
+)
 from app.schemas import AthletePhysiology, AthleteProfile, Goal, HRZones
 from app.services import (
     get_profile,
@@ -106,6 +111,7 @@ def _dashboard_context(session: Session, request: Request, flash: str | None = N
         "goal": goal,
         "days_to_goal": goal.days_to_go() if goal else None,
         "plan": plan,
+        "snapshot": build_snapshot(summaries),
         "version": __version__,
         "flash": flash,
     }

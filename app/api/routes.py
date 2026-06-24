@@ -13,10 +13,16 @@ from app import __version__
 from app.config import get_settings
 from app.db.database import db_healthy, get_session
 from app.db.models import Activity
-from app.processing import build_periodization, compute_metrics, weekly_buckets
+from app.processing import (
+    build_periodization,
+    build_snapshot,
+    compute_metrics,
+    weekly_buckets,
+)
 from app.schemas import (
     ActivityOut,
     AthleteProfile,
+    AthleteSnapshot,
     ManualActivityIn,
     PeriodizationPlan,
     ReportOut,
@@ -127,6 +133,11 @@ def get_periodization(session: Session = Depends(get_session)) -> PeriodizationP
             status_code=404, detail="Nessun obiettivo con data gara configurato."
         )
     return plan
+
+
+@router.get("/snapshot", response_model=AthleteSnapshot)
+def get_snapshot(session: Session = Depends(get_session)) -> AthleteSnapshot:
+    return build_snapshot(_all_summaries(session))
 
 
 @router.get("/metrics", response_model=TrainingMetrics)
