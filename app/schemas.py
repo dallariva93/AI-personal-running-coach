@@ -8,6 +8,8 @@ These form the stable contract between the three independent layers:
 
 from __future__ import annotations
 
+from datetime import date
+
 from pydantic import BaseModel, ConfigDict, Field
 
 ACTIVITY_TYPES = ("easy", "tempo", "intervalli", "lungo", "recupero", "gara", "altro")
@@ -83,6 +85,16 @@ class Goal(BaseModel):
     target_date: str | None = None  # ISO YYYY-MM-DD
     target_time: str | None = None  # HH:MM:SS
     priority: str = "A"  # A | B | C
+
+    def days_to_go(self, ref: date | None = None) -> int | None:
+        """Days from ``ref`` (default today) to the race, or None if no date."""
+        if not self.target_date:
+            return None
+        try:
+            target = date.fromisoformat(self.target_date[:10])
+        except ValueError:
+            return None
+        return (target - (ref or date.today())).days
 
 
 class AthleteProfile(BaseModel):

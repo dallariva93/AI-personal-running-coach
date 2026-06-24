@@ -44,7 +44,7 @@ non misura il progresso, non personalizza sulle soglie reali dell'atleta.
 
 | # | Gap | Impatto | Dove interviene | Stato |
 |---|-----|---------|-----------------|-------|
-| 1 | Nessun obiettivo sportivo (Goal) | Massimo | `schemas.py`, nuovo `db` model | ✅ schema |
+| 1 | Nessun obiettivo sportivo (Goal) | Massimo | `schemas.py` + `db` model + form | ✅ persistito |
 | 2 | Nessuna periodizzazione (macro/meso/micro) | Molto alto | nuovo `processing/periodization.py` | ⬜ |
 | 3 | ACWR sovrastimato | Molto alto | `metrics.py` (demota a secondaria) | ✅ |
 | 4 | Carico solo su km | Molto alto | nuovo `processing/load.py` | ✅ |
@@ -58,7 +58,7 @@ non misura il progresso, non personalizza sulle soglie reali dell'atleta.
 | 12 | Nessun decoupling | Alto | `processing/efficiency.py` | ⬜ |
 | 13 | Nessuna misura del miglioramento | Molto alto | Aerobic Efficiency Index | ⬜ |
 | 14 | Modello infortuni troppo semplice | Molto alto | `processing/injury.py` | ⬜ |
-| 15 | Disponibilità atleta ignorata | Molto alto | `AthleteProfile.available_days` | ✅ schema |
+| 15 | Disponibilità atleta ignorata | Molto alto | `AthleteProfile.available_days` | ✅ schema+prompt |
 | 16 | Nessuna gestione gare B/C | Medio-alto | `Goal.priority` + lista gare | ✅ schema |
 | 17 | Assenza di taper | Molto alto | `periodization.py` | ⬜ |
 | 18 | Meteo ignorato | Medio | collection + correzione | ⬜ |
@@ -66,7 +66,7 @@ non misura il progresso, non personalizza sulle soglie reali dell'atleta.
 | 20 | Trail running non supportato | Medio-alto | metriche D+/D-/vert speed | ⬜ |
 | 21 | Prompt troppo grezzo (solo JSON) | Alto | `prompts.py` strato semantico | ✅ parziale |
 | 22 | Memoria storica limitata (10-14 corse) | Molto alto | `AthleteSnapshot` (best/medie 6m) | ⬜ |
-| 23 | Profilo atleta non strutturato | Molto alto | `schemas.py` `AthleteProfile` | ✅ schema |
+| 23 | Profilo atleta non strutturato | Molto alto | `AthleteProfile` + `db` + form | ✅ persistito |
 
 ---
 
@@ -118,9 +118,20 @@ Prima slice verticale (Fase 1 + cuore della Fase 2), perché tocca direttamente
   e contesto obiettivo.
 - Test nuovi in `tests/unit/`.
 
+**Seconda slice — profilo atleta e obiettivo persistiti:**
+
+- `app/db/models.py` — tabella singleton `athlete_profile` (scalari + JSON per
+  zone/fisiologia + colonne goal) e migrazione Alembic `8ea1979f712e`.
+- `app/services/profile.py` — `get_profile` / `save_profile` (ORM ↔ Pydantic).
+- Pipeline collegata: `compute_metrics` e il coach ora ricevono il profilo;
+  il prompt allena *verso la gara* (countdown a settimane, giorni disponibili).
+- Zone FC derivate automaticamente dalla FC max (GAP 6).
+- Dashboard: banner obiettivo + form profilo/gara (HTMX); card forma con
+  TSB/CTL/ATL. API `GET/PUT /api/profile`.
+
 ## 5. Prossimi passi
-- Persistere `AthleteProfile`/`Goal` (tabelle + form dashboard + migrazione).
-- `periodization.py` con fasi e taper guidati da `Goal`.
+- `periodization.py` con fasi (Base→Build→Specific→Peak→Taper) e taper guidati
+  da `Goal.target_date`; usare `available_days` per posizionare le sedute.
 - `injury.py` con Injury Risk Score composito.
 - `efficiency.py` (deriva cardiaca, decoupling, Aerobic Efficiency Index).
 </content>

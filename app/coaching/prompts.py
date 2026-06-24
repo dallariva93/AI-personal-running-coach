@@ -8,7 +8,7 @@ from __future__ import annotations
 
 import json
 
-from app.schemas import RunSummary, TrainingMetrics
+from app.schemas import AthleteProfile, RunSummary, TrainingMetrics
 
 SINGLE_SYSTEM_PROMPT = """\
 Sei un coach di corsa esperto. Parli in italiano, in modo diretto e pratico.
@@ -91,8 +91,32 @@ def semantic_summary(m: TrainingMetrics) -> str:
     return "Sintesi:\n- " + "\n- ".join(lines)
 
 
+def goal_context(profile: AthleteProfile | None) -> str:
+    """A line describing the target race so the coach trains *towards* it."""
+    if not profile or not profile.goal:
+        return ""
+    g = profile.goal
+    parts = [f"Obiettivo: {g.goal_type}"]
+    if g.target_time:
+        parts.append(f"tempo target {g.target_time}")
+    days = g.days_to_go()
+    if g.target_date:
+        when = f"il {g.target_date}"
+        if days is not None:
+            when += f" (tra {days} giorni, ~{max(0, days)//7} settimane)"
+        parts.append(when)
+    parts.append(f"priorità {g.priority}")
+    line = "Gara obiettivo → " + ", ".join(parts) + "."
+    if profile.available_days:
+        line += f"\nGiorni disponibili: {', '.join(profile.available_days)}."
+    return line
+
+
 def build_single_user_message(
-    run: RunSummary, history: list[RunSummary], metrics: TrainingMetrics
+    run: RunSummary,
+    history: list[RunSummary],
+    metrics: TrainingMetrics,
+    profile: AthleteProfile | None = None,
 ) -> str:
     """Assemble the user-turn payload for single-run coaching."""
     history_lines = [
@@ -100,8 +124,10 @@ def build_single_user_message(
         f"FC{h.avg_hr or '?'}"
         for h in history[:10]
     ]
+    goal = goal_context(profile)
     return (
-        f"{semantic_summary(metrics)}\n\n"
+        (f"{goal}\n\n" if goal else "")
+        + f"{semantic_summary(metrics)}\n\n"
         "Metriche di carico e forma:\n"
         f"{json.dumps(metrics.model_dump(), ensure_ascii=False, indent=2)}\n\n"
         "Storico recente (una riga per corsa):\n"
@@ -112,11 +138,16 @@ def build_single_user_message(
 
 
 def build_weekly_user_message(
-    runs: list[RunSummary], metrics: TrainingMetrics, weekly: list[dict]
+    runs: list[RunSummary],
+    metrics: TrainingMetrics,
+    weekly: list[dict],
+    profile: AthleteProfile | None = None,
 ) -> str:
     """Assemble the user-turn payload for weekly planning."""
+    goal = goal_context(profile)
     return (
-        f"{semantic_summary(metrics)}\n\n"
+        (f"{goal}\n\n" if goal else "")
+        + f"{semantic_summary(metrics)}\n\n"
         "Metriche di carico e forma:\n"
         f"{json.dumps(metrics.model_dump(), ensure_ascii=False, indent=2)}\n\n"
         "Carico per settimana (le ultime):\n"

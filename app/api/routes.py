@@ -16,6 +16,7 @@ from app.db.models import Activity
 from app.processing import compute_metrics, weekly_buckets
 from app.schemas import (
     ActivityOut,
+    AthleteProfile,
     ManualActivityIn,
     ReportOut,
     RunSummary,
@@ -23,11 +24,13 @@ from app.schemas import (
     WeeklyBucket,
 )
 from app.services import (
+    get_profile,
     ingest_runs,
     list_activities,
     list_reports,
     run_single_analysis,
     run_weekly_plan,
+    save_profile,
     upsert_activity,
 )
 from app.services.ingest import _all_summaries
@@ -97,9 +100,23 @@ def post_ingest(limit: int | None = None, session: Session = Depends(get_session
     return saved
 
 
+@router.get("/profile", response_model=AthleteProfile)
+def get_athlete_profile(session: Session = Depends(get_session)) -> AthleteProfile:
+    return get_profile(session) or AthleteProfile()
+
+
+@router.put("/profile", response_model=AthleteProfile)
+def put_athlete_profile(
+    payload: AthleteProfile, session: Session = Depends(get_session)
+) -> AthleteProfile:
+    save_profile(session, payload)
+    _commit(session)
+    return get_profile(session) or AthleteProfile()
+
+
 @router.get("/metrics", response_model=TrainingMetrics)
 def get_metrics(session: Session = Depends(get_session)) -> TrainingMetrics:
-    return compute_metrics(_all_summaries(session))
+    return compute_metrics(_all_summaries(session), profile=get_profile(session))
 
 
 @router.get("/metrics/weekly", response_model=list[WeeklyBucket])

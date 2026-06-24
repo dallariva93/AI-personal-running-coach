@@ -8,6 +8,7 @@ from app.services.ingest import (
     run_weekly_plan,
     upsert_activity,
 )
+from app.services.profile import get_profile, save_profile
 
 __all__ = [
     "ingest_runs",
@@ -16,4 +17,6 @@ __all__ = [
     "run_single_analysis",
     "run_weekly_plan",
     "upsert_activity",
+    "get_profile",
+    "save_profile",
 ]

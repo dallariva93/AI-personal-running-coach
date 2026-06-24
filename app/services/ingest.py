@@ -19,6 +19,7 @@ from app.config import get_settings
 from app.db.models import Activity, CoachingReport
 from app.processing import compute_metrics, weekly_buckets
 from app.schemas import CoachingResult, RunSummary
+from app.services.profile import get_profile
 
 
 def _activity_to_summary(a: Activity) -> RunSummary:
@@ -122,10 +123,11 @@ def run_single_analysis(
         target_summary = summaries[0]
 
     history = [s for s in summaries if s.date < target_summary.date or s != target_summary][:10]
-    metrics = compute_metrics(summaries, ref=ref)
+    profile = get_profile(session)
+    metrics = compute_metrics(summaries, ref=ref, profile=profile)
 
     coach = coach or get_coach()
-    result = coach.analyze_run(target_summary, history, metrics)
+    result = coach.analyze_run(target_summary, history, metrics, profile)
     return _persist_report(session, result, metrics, activity_id=target.id if target else None)
 
 
@@ -137,10 +139,11 @@ def run_weekly_plan(
     if not summaries:
         raise ValueError("Nessuna attività disponibile: esegui prima un ingest.")
 
-    metrics = compute_metrics(summaries, ref=ref)
+    profile = get_profile(session)
+    metrics = compute_metrics(summaries, ref=ref, profile=profile)
     weekly = [b.model_dump() for b in weekly_buckets(summaries)]
     coach = coach or get_coach()
-    result = coach.plan_week(summaries, metrics, weekly)
+    result = coach.plan_week(summaries, metrics, weekly, profile)
     return _persist_report(session, result, metrics, activity_id=None)
 
 

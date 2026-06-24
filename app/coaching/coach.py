@@ -9,7 +9,7 @@ from app.coaching import prompts
 from app.config import Settings, get_settings
 from app.exceptions import CoachingError
 from app.logging_config import get_logger
-from app.schemas import CoachingResult, RunSummary, TrainingMetrics
+from app.schemas import AthleteProfile, CoachingResult, RunSummary, TrainingMetrics
 from app.utils import retry_call
 
 logger = get_logger("app.coaching")
@@ -17,11 +17,19 @@ logger = get_logger("app.coaching")
 
 class Coach(Protocol):
     def analyze_run(
-        self, run: RunSummary, history: list[RunSummary], metrics: TrainingMetrics
+        self,
+        run: RunSummary,
+        history: list[RunSummary],
+        metrics: TrainingMetrics,
+        profile: AthleteProfile | None = None,
     ) -> CoachingResult: ...
 
     def plan_week(
-        self, runs: list[RunSummary], metrics: TrainingMetrics, weekly: list[dict]
+        self,
+        runs: list[RunSummary],
+        metrics: TrainingMetrics,
+        weekly: list[dict],
+        profile: AthleteProfile | None = None,
     ) -> CoachingResult: ...
 
 
@@ -75,14 +83,22 @@ class AICoach:
         )
 
     def analyze_run(
-        self, run: RunSummary, history: list[RunSummary], metrics: TrainingMetrics
+        self,
+        run: RunSummary,
+        history: list[RunSummary],
+        metrics: TrainingMetrics,
+        profile: AthleteProfile | None = None,
     ) -> CoachingResult:
-        system = prompts.SINGLE_SYSTEM_PROMPT.format(athlete_profile=self.settings.athlete_profile)
-        user = prompts.build_single_user_message(run, history, metrics)
+        system = prompts.SINGLE_SYSTEM_PROMPT.format(
+            athlete_profile=self._profile_text(profile)
+        )
+        user = prompts.build_single_user_message(run, history, metrics, profile)
         try:
             text = self._call(system, user, self.settings.coach_model)
         except Exception as exc:
-            return self._handle_failure(exc, self._fallback.analyze_run, run, history, metrics)
+            return self._handle_failure(
+                exc, self._fallback.analyze_run, run, history, metrics, profile
+            )
         analysis, next_workout = _split_sections(text)
         return CoachingResult(
             scope="single", model=self.settings.coach_model,
@@ -90,19 +106,50 @@ class AICoach:
         )
 
     def plan_week(
-        self, runs: list[RunSummary], metrics: TrainingMetrics, weekly: list[dict]
+        self,
+        runs: list[RunSummary],
+        metrics: TrainingMetrics,
+        weekly: list[dict],
+        profile: AthleteProfile | None = None,
     ) -> CoachingResult:
-        system = prompts.WEEKLY_SYSTEM_PROMPT.format(athlete_profile=self.settings.athlete_profile)
-        user = prompts.build_weekly_user_message(runs, metrics, weekly)
+        system = prompts.WEEKLY_SYSTEM_PROMPT.format(
+            athlete_profile=self._profile_text(profile)
+        )
+        user = prompts.build_weekly_user_message(runs, metrics, weekly, profile)
         model = self.settings.planner_model or self.settings.coach_model
         try:
             text = self._call(system, user, model, max_tokens=2000)
         except Exception as exc:
-            return self._handle_failure(exc, self._fallback.plan_week, runs, metrics, weekly)
+            return self._handle_failure(
+                exc, self._fallback.plan_week, runs, metrics, weekly, profile
+            )
         analysis, next_workout = _split_sections(text)
         return CoachingResult(
             scope="weekly", model=model, analysis=analysis, next_workout=next_workout,
         )
+
+    def _profile_text(self, profile: AthleteProfile | None) -> str:
+        """Render the athlete profile for the system prompt.
+
+        Prefers the structured profile, falling back to the free-text setting.
+        """
+        if profile is None:
+            return self.settings.athlete_profile
+        bits: list[str] = []
+        if profile.age:
+            bits.append(f"{profile.age} anni")
+        if profile.sex:
+            bits.append(profile.sex)
+        if profile.experience_years:
+            bits.append(f"{profile.experience_years:g} anni di corsa")
+        if profile.max_hr:
+            bits.append(f"FCmax {profile.max_hr}")
+        if profile.weekly_runs:
+            bits.append(f"{profile.weekly_runs} uscite/sett")
+        descr = ", ".join(bits) if bits else self.settings.athlete_profile
+        if profile.physiology and profile.physiology.lt2_pace:
+            descr += f". Soglia (LT2) ~{profile.physiology.lt2_pace}/km"
+        return f"Atleta: {descr}."
 
     def _handle_failure(self, exc: Exception, fallback_fn, *args) -> CoachingResult:
         """On AI failure, either degrade to the offline coach or re-raise."""
@@ -126,7 +173,11 @@ class OfflineCoach:
     MODEL = "offline-rules"
 
     def analyze_run(
-        self, run: RunSummary, history: list[RunSummary], metrics: TrainingMetrics
+        self,
+        run: RunSummary,
+        history: list[RunSummary],
+        metrics: TrainingMetrics,
+        profile: AthleteProfile | None = None,
     ) -> CoachingResult:
         analysis = self._analyze_run_text(run, metrics)
         next_workout = self._suggest_next(run, metrics)
@@ -135,9 +186,13 @@ class OfflineCoach:
         )
 
     def plan_week(
-        self, runs: list[RunSummary], metrics: TrainingMetrics, weekly: list[dict]
+        self,
+        runs: list[RunSummary],
+        metrics: TrainingMetrics,
+        weekly: list[dict],
+        profile: AthleteProfile | None = None,
     ) -> CoachingResult:
-        analysis = self._analyze_week_text(metrics, weekly)
+        analysis = self._analyze_week_text(metrics, weekly, profile)
         next_workout = self._suggest_week(metrics)
         return CoachingResult(
             scope="weekly", model=self.MODEL, analysis=analysis, next_workout=next_workout
@@ -193,8 +248,19 @@ class OfflineCoach:
             "Se ti senti bene, ultimi 2 km leggermente più veloci (progressione)."
         )
 
-    def _analyze_week_text(self, m: TrainingMetrics, weekly: list[dict]) -> str:
-        pts = [
+    def _analyze_week_text(
+        self, m: TrainingMetrics, weekly: list[dict], profile: AthleteProfile | None = None
+    ) -> str:
+        pts = []
+        if profile and profile.goal and profile.goal.target_date:
+            g = profile.goal
+            days = g.days_to_go()
+            if days is not None:
+                pts.append(
+                    f"Obiettivo {g.goal_type} il {g.target_date}: "
+                    f"mancano {days} giorni (~{max(0, days)//7} settimane)."
+                )
+        pts += [
             f"Volume ultimi 7 giorni: {m.acute_load_km} km; media settimanale (28 gg): "
             f"{m.chronic_load_km} km.",
             f"Carico interno 7gg: {m.acute_load_internal} unità (RPE×durata).",

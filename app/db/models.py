@@ -50,6 +50,44 @@ class Activity(Base):
         return f"<Activity {self.date} {self.activity_type} {self.distance_km}km>"
 
 
+class AthleteProfileRow(Base):
+    """The athlete's structured profile, goal, zones and thresholds.
+
+    Single-athlete app → a singleton row (``id == 1``). Flat scalar columns for
+    the common fields (easy to edit from a form) and JSON for the nested zones /
+    physiology blobs. See :class:`app.schemas.AthleteProfile`.
+    """
+
+    __tablename__ = "athlete_profile"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+
+    age: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    sex: Mapped[str | None] = mapped_column(String(16), nullable=True)
+    height_cm: Mapped[float | None] = mapped_column(Float, nullable=True)
+    weight_kg: Mapped[float | None] = mapped_column(Float, nullable=True)
+    experience_years: Mapped[float | None] = mapped_column(Float, nullable=True)
+    max_hr: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    resting_hr: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    weekly_runs: Mapped[int | None] = mapped_column(Integer, nullable=True)
+
+    available_days: Mapped[list | None] = mapped_column(JSON, nullable=True)
+    zones: Mapped[dict | None] = mapped_column(JSON, nullable=True)
+    physiology: Mapped[dict | None] = mapped_column(JSON, nullable=True)
+
+    # Goal (denormalised for querying / display / periodization).
+    goal_type: Mapped[str | None] = mapped_column(String(32), nullable=True)
+    goal_target_date: Mapped[str | None] = mapped_column(String(10), nullable=True)
+    goal_target_time: Mapped[str | None] = mapped_column(String(16), nullable=True)
+    goal_priority: Mapped[str | None] = mapped_column(String(4), nullable=True)
+
+    notes: Mapped[str | None] = mapped_column(Text, nullable=True)
+    updated_at: Mapped[datetime] = mapped_column(DateTime, default=_utcnow, onupdate=_utcnow)
+
+    def __repr__(self) -> str:  # pragma: no cover - debug helper
+        return f"<AthleteProfileRow goal={self.goal_type} target={self.goal_target_date}>"
+
+
 class CoachingReport(Base):
     """The AI (or rule-based) coaching output tied to an activity or a week."""
 
