@@ -19,6 +19,7 @@ from app.config import get_settings
 from app.db.models import Activity, CoachingReport
 from app.processing import build_snapshot, compute_metrics, weekly_buckets
 from app.schemas import CoachingResult, RunSummary
+from app.services.checkin import latest_checkin
 from app.services.profile import get_profile
 
 
@@ -38,6 +39,9 @@ def _activity_to_summary(a: Activity) -> RunSummary:
         notes=a.notes,
         hr_zones=a.hr_zones,
         splits_km=a.splits_km,
+        temperature_c=a.temperature_c,
+        humidity_pct=a.humidity_pct,
+        elevation_loss_m=a.elevation_loss_m,
     )
 
 
@@ -67,6 +71,9 @@ def upsert_activity(session: Session, run: RunSummary) -> Activity:
         existing.notes = run.notes
     existing.hr_zones = run.hr_zones
     existing.splits_km = run.splits_km
+    existing.temperature_c = run.temperature_c
+    existing.humidity_pct = run.humidity_pct
+    existing.elevation_loss_m = run.elevation_loss_m
     return existing
 
 
@@ -124,7 +131,9 @@ def run_single_analysis(
 
     history = [s for s in summaries if s.date < target_summary.date or s != target_summary][:10]
     profile = get_profile(session)
-    metrics = compute_metrics(summaries, ref=ref, profile=profile)
+    metrics = compute_metrics(
+        summaries, ref=ref, profile=profile, checkin=latest_checkin(session)
+    )
 
     coach = coach or get_coach()
     result = coach.analyze_run(target_summary, history, metrics, profile)
@@ -140,7 +149,9 @@ def run_weekly_plan(
         raise ValueError("Nessuna attività disponibile: esegui prima un ingest.")
 
     profile = get_profile(session)
-    metrics = compute_metrics(summaries, ref=ref, profile=profile)
+    metrics = compute_metrics(
+        summaries, ref=ref, profile=profile, checkin=latest_checkin(session)
+    )
     weekly = [b.model_dump() for b in weekly_buckets(summaries)]
     snapshot = build_snapshot(summaries, ref=ref)
     coach = coach or get_coach()

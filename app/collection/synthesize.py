@@ -28,6 +28,14 @@ _TYPE_HINTS = {
 }
 
 
+def _num(value: Any) -> float | None:
+    """Best-effort float parse (Garmin fields are inconsistently typed)."""
+    try:
+        return float(value) if value is not None else None
+    except (TypeError, ValueError):
+        return None
+
+
 def _format_pace(distance_m: float, duration_s: float) -> str | None:
     """Return average pace as ``M:SS/km`` from distance (m) and duration (s)."""
     if not distance_m or not duration_s:
@@ -98,4 +106,9 @@ def synthesize(activity: dict[str, Any]) -> RunSummary:
         splits_km=None,
         rpe=None,
         notes=None,
+        temperature_c=_num(activity.get("temperature") or activity.get("avgTemperature")),
+        humidity_pct=_num(activity.get("humidity")),
+        elevation_loss_m=(
+            round(float(activity["elevationLoss"]), 0) if activity.get("elevationLoss") else None
+        ),
     )

@@ -26,7 +26,14 @@ from app.processing.efficiency import aerobic_efficiency
 from app.processing.injury import injury_risk
 from app.processing.load import internal_load, is_truly_easy
 from app.processing.periodization import build_periodization, phase_for
-from app.schemas import AthleteProfile, RunSummary, TrainingMetrics, WeeklyBucket
+from app.processing.recovery import readiness
+from app.schemas import (
+    AthleteProfile,
+    DailyCheckin,
+    RunSummary,
+    TrainingMetrics,
+    WeeklyBucket,
+)
 
 EASY_TYPES = {"easy", "recupero"}
 
@@ -192,11 +199,13 @@ def compute_metrics(
     runs: list[RunSummary],
     ref: date | None = None,
     profile: AthleteProfile | None = None,
+    checkin: DailyCheckin | None = None,
 ) -> TrainingMetrics:
     """Compute the full :class:`TrainingMetrics` snapshot for the given runs.
 
     ``profile`` (optional) personalises internal load and the easy/hard split
-    via the athlete's HR zones and thresholds.
+    via the athlete's HR zones and thresholds. ``checkin`` (optional) adds a
+    subjective readiness signal.
     """
     ref = ref or date.today()
     if not runs:
@@ -295,4 +304,5 @@ def compute_metrics(
     m.injury_level = risk.level
     m.injury_factors = risk.factors
     m.aerobic_efficiency, m.efficiency_trend = aerobic_efficiency(runs, ref=ref)
+    m.readiness, m.readiness_state = readiness(checkin)
     return m

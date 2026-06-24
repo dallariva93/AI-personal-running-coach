@@ -11,7 +11,7 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from app.db.models import AthleteProfileRow
-from app.schemas import AthletePhysiology, AthleteProfile, Goal, HRZones
+from app.schemas import AthletePhysiology, AthleteProfile, Goal, HRZones, Race
 
 _SINGLETON_ID = 1
 
@@ -38,6 +38,7 @@ def _row_to_profile(row: AthleteProfileRow) -> AthleteProfile:
         zones=HRZones(**row.zones) if row.zones else None,
         physiology=AthletePhysiology(**row.physiology) if row.physiology else None,
         goal=goal,
+        races=[Race(**r) for r in (row.races or [])],
         notes=row.notes,
     )
 
@@ -74,6 +75,7 @@ def save_profile(session: Session, profile: AthleteProfile) -> AthleteProfileRow
     row.physiology = (
         profile.physiology.model_dump(exclude_none=True) if profile.physiology else None
     )
+    row.races = [r.model_dump(exclude_none=True) for r in profile.races] or None
     if profile.goal:
         row.goal_type = profile.goal.goal_type
         row.goal_target_date = profile.goal.target_date

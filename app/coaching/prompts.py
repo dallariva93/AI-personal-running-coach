@@ -108,6 +108,10 @@ def semantic_summary(m: TrainingMetrics) -> str:
         lines.append(f"Rischio infortunio {m.injury_level} ({m.injury_score:.0f}/100){detail}.")
     if m.efficiency_trend and m.efficiency_trend not in ("unknown",):
         lines.append(f"Efficienza aerobica: {m.efficiency_trend} (passo/FC sulle uscite facili).")
+    if m.readiness_state and m.readiness_state != "unknown":
+        lines.append(
+            f"Recupero (check-in odierno): {m.readiness_state} ({m.readiness:.0f}/100)."
+        )
     return "Sintesi:\n- " + "\n- ".join(lines)
 
 
@@ -127,6 +131,13 @@ def goal_context(profile: AthleteProfile | None) -> str:
         parts.append(when)
     parts.append(f"priorità {g.priority}")
     line = "Gara obiettivo → " + ", ".join(parts) + "."
+    secondary = [r for r in profile.races if r.priority in ("B", "C") and r.date]
+    if secondary:
+        races_txt = "; ".join(
+            f"{r.race_type or r.name or 'gara'} {r.date} (prio {r.priority})"
+            for r in secondary
+        )
+        line += f"\nGare secondarie (tune-up): {races_txt}."
     if profile.available_days:
         line += f"\nGiorni disponibili: {', '.join(profile.available_days)}."
     return line

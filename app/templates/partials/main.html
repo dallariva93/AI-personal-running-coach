@@ -93,10 +93,38 @@
               <strong>{{ {'improving':'↑ migliora','declining':'↓ cala','stable':'→ stabile'}.get(metrics.efficiency_trend, metrics.efficiency_trend) }}</strong>
             </li>
             {% endif %}
+            {% if metrics.readiness_state and metrics.readiness_state != 'unknown' %}
+            {% set ready_colors = {"green": "success", "amber": "warning", "red": "danger"} %}
+            <li class="list-group-item d-flex justify-content-between">
+              <span>Recupero (check-in)</span>
+              <strong class="text-{{ ready_colors.get(metrics.readiness_state, 'secondary') }}">
+                {{ metrics.readiness_state | upper }} ({{ metrics.readiness | round | int }})
+              </strong>
+            </li>
+            {% endif %}
           </ul>
           {% if metrics.injury_factors %}
           <p class="small text-muted mt-2 mb-0">⚠️ {{ metrics.injury_factors | join('; ') }}</p>
           {% endif %}
+          <form class="mt-3 border-top pt-2" hx-post="/ui/checkin" hx-target="#main"
+                hx-swap="outerHTML" hx-indicator="#spin">
+            <div class="small text-muted mb-1">Check-in di oggi (1-10):</div>
+            <div class="row g-1">
+              <div class="col"><input class="form-control form-control-sm" type="number" step="0.5"
+                     name="sleep_h" placeholder="sonno h"
+                     value="{{ checkin.sleep_h if checkin and checkin.sleep_h is not none else '' }}"></div>
+              <div class="col"><input class="form-control form-control-sm" type="number" min="1" max="10"
+                     name="fatigue" placeholder="fatica"
+                     value="{{ checkin.fatigue if checkin and checkin.fatigue is not none else '' }}"></div>
+              <div class="col"><input class="form-control form-control-sm" type="number" min="1" max="10"
+                     name="soreness" placeholder="dolori"
+                     value="{{ checkin.soreness if checkin and checkin.soreness is not none else '' }}"></div>
+              <div class="col"><input class="form-control form-control-sm" type="number" min="1" max="10"
+                     name="motivation" placeholder="motiv."
+                     value="{{ checkin.motivation if checkin and checkin.motivation is not none else '' }}"></div>
+              <div class="col-auto"><button class="btn btn-sm btn-outline-primary" type="submit">✓</button></div>
+            </div>
+          </form>
         </div>
       </div>
     </div>

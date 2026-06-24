@@ -1,0 +1,45 @@
+"""Persist and retrieve daily wellness check-ins (GAP 9)."""
+
+from __future__ import annotations
+
+from sqlalchemy import select
+from sqlalchemy.orm import Session
+
+from app.db.models import DailyCheckinRow
+from app.schemas import DailyCheckin
+
+
+def _row_to_schema(row: DailyCheckinRow) -> DailyCheckin:
+    return DailyCheckin(
+        date=row.date,
+        sleep_h=row.sleep_h,
+        fatigue=row.fatigue,
+        soreness=row.soreness,
+        motivation=row.motivation,
+        notes=row.notes,
+    )
+
+
+def save_checkin(session: Session, checkin: DailyCheckin) -> DailyCheckinRow:
+    """Insert or update the check-in for its date (one per day)."""
+    row = session.scalar(
+        select(DailyCheckinRow).where(DailyCheckinRow.date == checkin.date)
+    )
+    if row is None:
+        row = DailyCheckinRow(date=checkin.date)
+        session.add(row)
+    row.sleep_h = checkin.sleep_h
+    row.fatigue = checkin.fatigue
+    row.soreness = checkin.soreness
+    row.motivation = checkin.motivation
+    row.notes = checkin.notes
+    session.flush()
+    return row
+
+
+def latest_checkin(session: Session, within_days: int = 2) -> DailyCheckin | None:
+    """Return the most recent check-in (used as today's readiness signal)."""
+    row = session.scalar(
+        select(DailyCheckinRow).order_by(DailyCheckinRow.date.desc()).limit(1)
+    )
+    return _row_to_schema(row) if row else None

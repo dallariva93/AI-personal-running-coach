@@ -34,6 +34,33 @@ class RunSummary(BaseModel):
     notes: str | None = None
     hr_zones: dict[str, float] | None = None
     splits_km: list[str] | None = None
+    # Environment (GAP 18) and trail (GAP 20) extras — all optional.
+    temperature_c: float | None = None
+    humidity_pct: float | None = None
+    elevation_loss_m: float | None = None  # D-
+
+
+class DailyCheckin(BaseModel):
+    """Subjective daily wellness check-in (GAP 9). Scales are 1-10."""
+
+    model_config = ConfigDict(extra="ignore")
+
+    date: str  # ISO YYYY-MM-DD
+    sleep_h: float | None = None
+    fatigue: int | None = None  # 1 (none) .. 10 (exhausted)
+    soreness: int | None = None  # 1 (none) .. 10 (very sore)
+    motivation: int | None = None  # 1 (none) .. 10 (high)
+    notes: str | None = None
+
+
+class Race(BaseModel):
+    """A race in the season plan (GAP 16). Priority A is the main goal."""
+
+    name: str | None = None
+    race_type: str = "general"
+    date: str | None = None  # ISO
+    target_time: str | None = None
+    priority: str = "A"  # A | B | C
 
 
 class HRZones(BaseModel):
@@ -115,6 +142,8 @@ class AthleteProfile(BaseModel):
     zones: HRZones | None = None
     physiology: AthletePhysiology | None = None
     goal: Goal | None = None
+    # Secondary races (B/C) beyond the main goal (GAP 16).
+    races: list[Race] = Field(default_factory=list)
     notes: str | None = None
 
 
@@ -197,6 +226,9 @@ class TrainingMetrics(BaseModel):
     injury_factors: list[str] = Field(default_factory=list)
     aerobic_efficiency: float | None = None  # pace-sec per beat on easy runs
     efficiency_trend: str | None = None  # improving | stable | declining | unknown
+    # Daily readiness from the latest wellness check-in (GAP 9).
+    readiness: float | None = None  # 0-100
+    readiness_state: str | None = None  # green | amber | red | unknown
 
 
 class WeeklyBucket(BaseModel):

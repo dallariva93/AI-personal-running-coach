@@ -202,7 +202,8 @@ class OfflineCoach:
         snapshot: AthleteSnapshot | None = None,
     ) -> CoachingResult:
         analysis = self._analyze_week_text(metrics, weekly, profile)
-        next_workout = self._suggest_week(metrics)
+        available = profile.available_days if profile else None
+        next_workout = self._suggest_week(metrics, available)
         return CoachingResult(
             scope="weekly", model=self.MODEL, analysis=analysis, next_workout=next_workout
         )
@@ -225,6 +226,12 @@ class OfflineCoach:
         if run.elevation_gain_m and run.elevation_gain_m > 100:
             pts.append(
                 f"Dislivello significativo ({run.elevation_gain_m:.0f} m): occhio al recupero."
+            )
+        if run.temperature_c is not None and run.temperature_c >= 25:
+            extra = " e umidità alta" if (run.humidity_pct or 0) >= 70 else ""
+            pts.append(
+                f"Caldo ({run.temperature_c:.0f}°C{extra}): FC e fatica risultano più alte "
+                "a parità di sforzo, non farti ingannare dal passo."
             )
         pts.append(m.form_explanation)
         if m.easy_ratio is not None and m.easy_ratio < 0.7:
@@ -294,6 +301,8 @@ class OfflineCoach:
                 "improving": "in miglioramento", "declining": "in calo", "stable": "stabile",
             }.get(m.efficiency_trend, m.efficiency_trend)
             pts.append(f"Efficienza aerobica (passo a pari FC): {label}.")
+        if m.readiness_state and m.readiness_state != "unknown":
+            pts.append(f"Recupero (check-in): {m.readiness_state} ({m.readiness:.0f}/100).")
         if m.easy_ratio is not None:
             pts.append(f"Quota volume facile: {m.easy_ratio*100:.0f}% (target ~80%).")
         if m.monotony is not None and m.monotony > 2.0:
@@ -303,49 +312,83 @@ class OfflineCoach:
             )
         return "- " + "\n- ".join(pts)
 
-    # Per-phase weekly templates (used when a goal/periodization is active).
+    # Per-phase weekly templates: the *workout content* only (no day labels).
+    # Days are assigned afterwards from the athlete's available days (GAP 15).
     _PHASE_SESSIONS = {
         "base": [
-            "Mar: 8-10 km easy Z2",
-            "Mer: 6 km recupero + allunghi",
-            "Ven: 8 km easy Z2",
-            "Dom: lungo progressivo 16-20 km Z2",
+            "8-10 km easy Z2",
+            "6 km recupero + allunghi",
+            "8 km easy Z2",
+            "lungo progressivo 16-20 km Z2",
         ],
         "build": [
-            "Mar: 10 km easy Z2",
-            "Mer: tempo 12 km con 6 km Z3-Z4",
-            "Ven: 8 km easy",
-            "Dom: lungo 18-22 km con ultimi 5 km a ritmo medio",
+            "10 km easy Z2",
+            "tempo 12 km con 6 km Z3-Z4",
+            "8 km easy",
+            "lungo 18-22 km con ultimi 5 km a ritmo medio",
         ],
         "specific": [
-            "Mar: 10 km easy + 4 allunghi",
-            "Mer: ripetute al ritmo gara (es. 5x2 km)",
-            "Ven: 8 km easy Z2",
-            "Dom: lungo 20-26 km con porzioni a ritmo gara",
+            "10 km easy + 4 allunghi",
+            "ripetute al ritmo gara (es. 5x2 km)",
+            "8 km easy Z2",
+            "lungo 20-26 km con porzioni a ritmo gara",
         ],
         "peak": [
-            "Mar: 8 km easy",
-            "Mer: VO2max 6x1000 m Z5 (rec 2-3')",
-            "Ven: 6 km easy + allunghi",
-            "Dom: medio 16 km con finale veloce",
+            "8 km easy",
+            "VO2max 6x1000 m Z5 (rec 2-3')",
+            "6 km easy + allunghi",
+            "medio 16 km con finale veloce",
         ],
         "taper": [
-            "Mar: 6 km easy con 4x30 s a ritmo gara",
-            "Gio: 5 km easy",
-            "Sab: 4 km sciolti + 3 allunghi",
-            "Dom: 8-10 km lento Z2",
+            "6 km easy con 4x30 s a ritmo gara",
+            "5 km easy",
+            "4 km sciolti + 3 allunghi",
+            "8-10 km lento Z2",
         ],
         "race": [
-            "Mar: 5 km easy con 3 allunghi a ritmo gara",
-            "Gio: 4 km sciolti",
-            "Sab: attivazione 20 min + 3 allunghi",
-            "Dom: 🏁 GARA",
+            "5 km easy con 3 allunghi a ritmo gara",
+            "4 km sciolti",
+            "attivazione 20 min + 3 allunghi",
+            "🏁 GARA",
         ],
     }
 
-    def _suggest_week(self, m: TrainingMetrics) -> str:
-        # Phase-driven plan when periodization is active (and not over-fatigued).
-        if m.phase and m.phase in self._PHASE_SESSIONS and m.form_state != "fatigued":
+    _DAY_ABBR = {
+        "monday": "Lun", "tuesday": "Mar", "wednesday": "Mer", "thursday": "Gio",
+        "friday": "Ven", "saturday": "Sab", "sunday": "Dom",
+        "lun": "Lun", "mar": "Mar", "mer": "Mer", "gio": "Gio",
+        "ven": "Ven", "sab": "Sab", "dom": "Dom",
+    }
+    # Sensible default training days by number of sessions, when none are set.
+    _DEFAULT_DAYS = {
+        1: ["Dom"], 2: ["Mar", "Dom"], 3: ["Mar", "Gio", "Dom"],
+        4: ["Mar", "Gio", "Sab", "Dom"], 5: ["Mar", "Mer", "Ven", "Sab", "Dom"],
+        6: ["Mar", "Mer", "Gio", "Ven", "Sab", "Dom"],
+    }
+
+    def _assign_days(self, contents: list[str], available_days: list[str] | None) -> list[str]:
+        """Lay workout contents onto real week days (GAP 15)."""
+        if available_days:
+            days = [self._DAY_ABBR.get(d.strip().lower(), d[:3]) for d in available_days]
+        else:
+            days = self._DEFAULT_DAYS.get(len(contents), self._DEFAULT_DAYS[5])
+        lines = []
+        for i, content in enumerate(contents):
+            day = days[i] if i < len(days) else days[-1]
+            lines.append(f"{day}: {content}")
+        return lines
+
+    def _suggest_week(
+        self, m: TrainingMetrics, available_days: list[str] | None = None
+    ) -> str:
+        low_readiness = m.readiness_state == "red"
+        # Phase-driven plan when periodization is active (and recovery is OK).
+        if (
+            m.phase
+            and m.phase in self._PHASE_SESSIONS
+            and m.form_state != "fatigued"
+            and not low_readiness
+        ):
             target = m.phase_volume_target_km or round(
                 max(m.chronic_load_km, m.acute_load_km, 20.0), 1
             )
@@ -358,41 +401,40 @@ class OfflineCoach:
                 + (f", {m.weeks_to_race} sett. alla gara" if m.weeks_to_race else "")
                 + f"). {m.phase_focus or ''}".rstrip()
             )
-            sessions = ["Lun: riposo o recupero"] + self._PHASE_SESSIONS[m.phase]
+            sessions = self._assign_days(self._PHASE_SESSIONS[m.phase], available_days)
             return intro + "\n\n" + "\n".join(f"- {s}" for s in sessions)
 
         base = max(m.chronic_load_km, m.acute_load_km, 20.0)
-        if m.form_state == "fatigued":
+        if m.form_state == "fatigued" or low_readiness:
             target = round(base * 0.7)
-            intro = f"Settimana di **scarico** (~{target} km), il carico è alto."
-            sessions = [
-                "Lun: riposo",
-                "Mar: 6 km easy Z2",
-                "Gio: 6 km easy + 4x1 min Z4 leggeri",
-                "Sab: 5 km recupero Z1-Z2",
-                "Dom: 8-10 km lento Z2",
+            reason = "il recupero è basso" if low_readiness else "il carico è alto"
+            intro = f"Settimana di **scarico** (~{target} km), {reason}."
+            contents = [
+                "6 km easy Z2",
+                "6 km easy + 4x1 min Z4 leggeri",
+                "5 km recupero Z1-Z2",
+                "8-10 km lento Z2",
             ]
         elif m.form_state == "detraining":
             target = round(base * 1.1)
             intro = f"Settimana di **ricostruzione** (~{target} km), puoi risalire gradualmente."
-            sessions = [
-                "Lun: riposo",
-                "Mar: 8 km easy Z2",
-                "Mer: 6 km recupero",
-                "Gio: tempo 10 km con 5 km Z3-Z4",
-                "Sab: 6 km easy",
-                "Dom: lungo 14-16 km Z2",
+            contents = [
+                "8 km easy Z2",
+                "6 km recupero",
+                "tempo 10 km con 5 km Z3-Z4",
+                "6 km easy",
+                "lungo 14-16 km Z2",
             ]
         else:
             target = round(base * 1.05)
             intro = f"Settimana **di mantenimento/progressione** (~{target} km), 80/20."
-            sessions = [
-                "Lun: riposo o 5 km recupero",
-                "Mar: 8-10 km easy Z2",
-                "Mer: intervalli 6x800 m Z4 (rec 2')",
-                "Ven: 8 km easy",
-                "Dom: lungo 16-18 km Z2",
+            contents = [
+                "8-10 km easy Z2",
+                "intervalli 6x800 m Z4 (rec 2')",
+                "8 km easy",
+                "lungo 16-18 km Z2",
             ]
+        sessions = self._assign_days(contents, available_days)
         return intro + "\n\n" + "\n".join(f"- {s}" for s in sessions)
 
 

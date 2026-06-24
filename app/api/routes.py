@@ -23,6 +23,7 @@ from app.schemas import (
     ActivityOut,
     AthleteProfile,
     AthleteSnapshot,
+    DailyCheckin,
     ManualActivityIn,
     PeriodizationPlan,
     ReportOut,
@@ -33,10 +34,12 @@ from app.schemas import (
 from app.services import (
     get_profile,
     ingest_runs,
+    latest_checkin,
     list_activities,
     list_reports,
     run_single_analysis,
     run_weekly_plan,
+    save_checkin,
     save_profile,
     upsert_activity,
 )
@@ -140,9 +143,27 @@ def get_snapshot(session: Session = Depends(get_session)) -> AthleteSnapshot:
     return build_snapshot(_all_summaries(session))
 
 
+@router.get("/checkin", response_model=DailyCheckin | None)
+def get_checkin(session: Session = Depends(get_session)) -> DailyCheckin | None:
+    return latest_checkin(session)
+
+
+@router.post("/checkin", response_model=DailyCheckin, status_code=201)
+def post_checkin(
+    payload: DailyCheckin, session: Session = Depends(get_session)
+) -> DailyCheckin:
+    save_checkin(session, payload)
+    _commit(session)
+    return latest_checkin(session)
+
+
 @router.get("/metrics", response_model=TrainingMetrics)
 def get_metrics(session: Session = Depends(get_session)) -> TrainingMetrics:
-    return compute_metrics(_all_summaries(session), profile=get_profile(session))
+    return compute_metrics(
+        _all_summaries(session),
+        profile=get_profile(session),
+        checkin=latest_checkin(session),
+    )
 
 
 @router.get("/metrics/weekly", response_model=list[WeeklyBucket])

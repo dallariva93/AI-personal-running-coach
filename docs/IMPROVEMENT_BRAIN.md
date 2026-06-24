@@ -52,20 +52,20 @@ non misura il progresso, non personalizza sulle soglie reali dell'atleta.
 | 6 | Zone personalizzate assenti | Molto alto | `schemas.py` `HRZones` | ✅ schema |
 | 7 | Soglie fisiologiche assenti (LT1/LT2/CS) | Molto alto | `schemas.py` `AthletePhysiology` | ✅ schema |
 | 8 | Nessun modello Fitness/Fatigue | Molto alto | `metrics.py` CTL/ATL/TSB | ✅ |
-| 9 | Nessun monitoraggio recupero (sonno/stress) | Alto | nuovo `DailyCheckin` | ⬜ |
+| 9 | Nessun monitoraggio recupero (sonno/stress) | Alto | `DailyCheckin` + `recovery.py` + form | ✅ |
 | 10 | RPE sottoutilizzato | Molto alto | `load.py` (session load) | ✅ |
-| 11 | Nessuna deriva cardiaca | Medio-alto | `processing/efficiency.py` | ⬜ |
-| 12 | Nessun decoupling | Alto | `processing/efficiency.py` | ⬜ |
-| 13 | Nessuna misura del miglioramento | Molto alto | Aerobic Efficiency Index | ⬜ |
-| 14 | Modello infortuni troppo semplice | Molto alto | `processing/injury.py` | ⬜ |
+| 11 | Nessuna deriva cardiaca | Medio-alto | `processing/efficiency.py` | ✅ |
+| 12 | Nessun decoupling | Alto | `processing/efficiency.py` | ✅ |
+| 13 | Nessuna misura del miglioramento | Molto alto | Aerobic Efficiency Index | ✅ |
+| 14 | Modello infortuni troppo semplice | Molto alto | `processing/injury.py` | ✅ |
 | 15 | Disponibilità atleta ignorata | Molto alto | `AthleteProfile.available_days` | ✅ schema+prompt |
-| 16 | Nessuna gestione gare B/C | Medio-alto | `Goal.priority` + lista gare | ✅ schema |
+| 16 | Nessuna gestione gare B/C | Medio-alto | `AthleteProfile.races` (A/B/C) | ✅ persistito |
 | 17 | Assenza di taper | Molto alto | `periodization.py` (taper progressivo) | ✅ |
-| 18 | Meteo ignorato | Medio | collection + correzione | ⬜ |
+| 18 | Meteo ignorato | Medio | synthesize + nota caldo | ✅ parziale |
 | 19 | Dislivello sottostimato | Alto | `load.py` (equivalent flat / GAP) | ✅ parziale |
-| 20 | Trail running non supportato | Medio-alto | metriche D+/D-/vert speed | ⬜ |
+| 20 | Trail running non supportato | Medio-alto | D-/meteo catturati | ✅ parziale |
 | 21 | Prompt troppo grezzo (solo JSON) | Alto | `prompts.py` strato semantico | ✅ parziale |
-| 22 | Memoria storica limitata (10-14 corse) | Molto alto | `AthleteSnapshot` (best/medie 6m) | ⬜ |
+| 22 | Memoria storica limitata (10-14 corse) | Molto alto | `snapshot.py` (best/medie 6m) | ✅ |
 | 23 | Profilo atleta non strutturato | Molto alto | `AthleteProfile` + `db` + form | ✅ persistito |
 
 ---
@@ -147,10 +147,31 @@ Prima slice verticale (Fase 1 + cuore della Fase 2), perché tocca direttamente
 - Dashboard: timeline delle fasi con evidenza della fase corrente.
   API `GET /api/plan/periodization`.
 
-## 5. Prossimi passi
-- Usare `available_days` per posizionare le sedute nei giorni reali dell'atleta.
-- `injury.py` con Injury Risk Score composito.
-- `efficiency.py` (deriva cardiaca, decoupling, Aerobic Efficiency Index).
-- Gare multiple A/B/C nel macrociclo.
-</content>
-</invoke>
+**Quarta slice — rischio infortunio, efficienza e memoria:**
+
+- `app/processing/injury.py` (GAP 14) — Injury Risk Score 0-100 composito
+  (ACWR, monotonia, salti di volume, giorni consecutivi, sedute intense
+  ravvicinate, quota facile bassa) con livello e fattori spiegabili.
+- `app/processing/efficiency.py` (GAP 11/12/13) — Aerobic Efficiency Index
+  (passo a pari FC) con trend; decoupling/deriva cardiaca per-corsa dagli split.
+- `app/processing/snapshot.py` (GAP 22) — `AthleteSnapshot` a 6 mesi come
+  memoria storica nel piano settimanale.
+
+**Quinta slice — recupero, scheduling, gare multiple, meteo/trail:**
+
+- `app/processing/recovery.py` + `DailyCheckin` (GAP 9) — readiness 0-100
+  (sonno/fatica/dolori/motivazione) con semaforo; `red` forza lo scarico.
+  Form di check-in in dashboard, API `GET/POST /api/checkin`, migrazione
+  `f9e70191b8b5`.
+- Scheduling sui `available_days` reali nel planner offline (GAP 15).
+- Gare secondarie A/B/C in `AthleteProfile.races`, citate nel prompt (GAP 16).
+- Cattura meteo (temperatura/umidità) e trail (D-) in `synthesize`, con nota
+  "caldo" nell'analisi (GAP 18/20).
+
+## 5. Prossimi passi (Fase 4 — coach elite)
+- **Adaptive Planning Engine**: ricalcolo dinamico del piano a ogni nuova corsa.
+- **Race/Goal Pace Predictor**: stima del tempo gara da CTL + efficienza.
+- Evoluzione automatica di zone e soglie nel tempo (GAP 7 dinamico).
+- Trail engine completo (vertical speed, time on feet, difficoltà tecnica) e
+  correzione meteo del carico (oltre alla nota qualitativa attuale).
+- UI per gestire le gare B/C e affinare manualmente le zone.

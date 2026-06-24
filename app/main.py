@@ -26,14 +26,16 @@ from app.processing import (
     compute_metrics,
     weekly_buckets,
 )
-from app.schemas import AthletePhysiology, AthleteProfile, Goal, HRZones
+from app.schemas import AthletePhysiology, AthleteProfile, DailyCheckin, Goal, HRZones
 from app.services import (
     get_profile,
     ingest_runs,
+    latest_checkin,
     list_activities,
     list_reports,
     run_single_analysis,
     run_weekly_plan,
+    save_checkin,
     save_profile,
 )
 from app.services.ingest import _all_summaries
@@ -91,7 +93,8 @@ async def _coach_error_handler(_request: Request, exc: CoachError):
 def _dashboard_context(session: Session, request: Request, flash: str | None = None) -> dict:
     summaries = _all_summaries(session)
     profile = get_profile(session)
-    metrics = compute_metrics(summaries, profile=profile)
+    checkin = latest_checkin(session)
+    metrics = compute_metrics(summaries, profile=profile, checkin=checkin)
     weekly = weekly_buckets(summaries, weeks=8)
     max_week = max((w.distance_km for w in weekly), default=0.0) or 1.0
     goal = profile.goal if profile else None
@@ -112,6 +115,7 @@ def _dashboard_context(session: Session, request: Request, flash: str | None = N
         "days_to_goal": goal.days_to_go() if goal else None,
         "plan": plan,
         "snapshot": build_snapshot(summaries),
+        "checkin": checkin,
         "version": __version__,
         "flash": flash,
     }
@@ -232,6 +236,34 @@ def ui_profile(  # noqa: PLR0913 - one field per form input
     flash = "Profilo aggiornato."
     return templates.TemplateResponse(
         request, "partials/main.html", _dashboard_context(session, request, flash)
+    )
+
+
+@app.post("/ui/checkin", response_class=HTMLResponse)
+def ui_checkin(
+    request: Request,
+    sleep_h: str | None = Form(default=None),
+    fatigue: str | None = Form(default=None),
+    soreness: str | None = Form(default=None),
+    motivation: str | None = Form(default=None),
+    session: Session = Depends(get_session),
+):
+    from datetime import date as _date
+
+    save_checkin(
+        session,
+        DailyCheckin(
+            date=_date.today().isoformat(),
+            sleep_h=_float(sleep_h),
+            fatigue=_int(fatigue),
+            soreness=_int(soreness),
+            motivation=_int(motivation),
+        ),
+    )
+    session.commit()
+    return templates.TemplateResponse(
+        request, "partials/main.html",
+        _dashboard_context(session, request, "Check-in salvato."),
     )
 
 
