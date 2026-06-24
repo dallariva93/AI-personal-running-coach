@@ -19,10 +19,15 @@ from app.config import get_settings
 from app.db.models import Activity, CoachingReport
 from app.exceptions import CollectionError
 from app.logging_config import get_logger
-from app.processing import build_snapshot, compute_metrics, weekly_buckets
+from app.processing import (
+    build_snapshot,
+    compute_metrics,
+    estimate_thresholds,
+    weekly_buckets,
+)
 from app.schemas import CoachingResult, RunSummary
 from app.services.checkin import latest_checkin
-from app.services.profile import get_profile
+from app.services.profile import get_profile, save_profile
 
 logger = get_logger("app.services.ingest")
 
@@ -127,6 +132,7 @@ def ingest_runs(
     runs = source.get_recent_runs(limit)
     saved = [upsert_activity(session, r) for r in runs]
     session.flush()
+    _refresh_physiology(session)
     return saved
 
 
@@ -149,6 +155,24 @@ def sync_before_analysis(
         logger.warning("Pre-analysis sync skipped: %s", exc)
         return 0
     return len(saved)
+
+
+def _refresh_physiology(session: Session) -> None:
+    """Auto-fill the athlete's thresholds from recent hard efforts (GAP 7).
+
+    Only writes when the profile exists and the LT2 pace hasn't been set by
+    hand, so the estimate tracks fitness without overriding manual input.
+    """
+    profile = get_profile(session)
+    if profile is None:
+        return
+    if profile.physiology and profile.physiology.lt2_pace:
+        return
+    estimated = estimate_thresholds(_all_summaries(session))
+    if estimated is None:
+        return
+    profile.physiology = estimated
+    save_profile(session, profile)
 
 
 def list_activities(session: Session, limit: int = 50) -> list[Activity]:

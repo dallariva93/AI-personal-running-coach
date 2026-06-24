@@ -16,6 +16,15 @@
       <small class="text-muted">(~{{ (days_to_goal // 7) if days_to_goal > 0 else 0 }} sett.)</small></span>
     {% endif %}
   </div>
+  {% if metrics.predicted_race_time %}
+  <div class="alert alert-info py-2 d-flex justify-content-between align-items-center">
+    <span>🔮 Previsione: arrivi in <strong>~{{ metrics.predicted_race_time }}</strong>
+      <small class="text-muted">(confidenza {{ metrics.race_confidence }})</small></span>
+    {% if metrics.race_probability is not none %}
+    <span class="fw-bold">probabilità obiettivo {{ (metrics.race_probability * 100) | round | int }}%</span>
+    {% endif %}
+  </div>
+  {% endif %}
   {% endif %}
 
   {% if plan and plan.phases %}

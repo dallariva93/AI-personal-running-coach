@@ -25,8 +25,10 @@ from datetime import date, datetime, timedelta
 from app.processing.efficiency import aerobic_efficiency
 from app.processing.injury import injury_risk
 from app.processing.load import internal_load, is_truly_easy
+from app.processing.performance import predict_race_time
 from app.processing.periodization import build_periodization, phase_for
 from app.processing.recovery import readiness
+from app.processing.snapshot import build_snapshot
 from app.schemas import (
     AthleteProfile,
     DailyCheckin,
@@ -305,4 +307,14 @@ def compute_metrics(
     m.injury_factors = risk.factors
     m.aerobic_efficiency, m.efficiency_trend = aerobic_efficiency(runs, ref=ref)
     m.readiness, m.readiness_state = readiness(checkin)
+
+    # Goal-race forecast (Fase 4) when a goal is set.
+    if profile and profile.goal:
+        prediction = predict_race_time(
+            profile.goal, build_snapshot(runs, ref=ref), m.efficiency_trend
+        )
+        if prediction:
+            m.predicted_race_time = prediction.predicted_time
+            m.race_probability = prediction.probability
+            m.race_confidence = prediction.confidence
     return m

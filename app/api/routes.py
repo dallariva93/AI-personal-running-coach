@@ -14,9 +14,11 @@ from app.config import get_settings
 from app.db.database import db_healthy, get_session
 from app.db.models import Activity
 from app.processing import (
+    aerobic_efficiency,
     build_periodization,
     build_snapshot,
     compute_metrics,
+    predict_race_time,
     weekly_buckets,
 )
 from app.schemas import (
@@ -26,6 +28,7 @@ from app.schemas import (
     DailyCheckin,
     ManualActivityIn,
     PeriodizationPlan,
+    RacePrediction,
     ReportOut,
     RunSummary,
     TrainingMetrics,
@@ -141,6 +144,20 @@ def get_periodization(session: Session = Depends(get_session)) -> PeriodizationP
 @router.get("/snapshot", response_model=AthleteSnapshot)
 def get_snapshot(session: Session = Depends(get_session)) -> AthleteSnapshot:
     return build_snapshot(_all_summaries(session))
+
+
+@router.get("/predict", response_model=RacePrediction)
+def get_prediction(session: Session = Depends(get_session)) -> RacePrediction:
+    profile = get_profile(session)
+    goal = profile.goal if profile else None
+    summaries = _all_summaries(session)
+    _, eff_trend = aerobic_efficiency(summaries)
+    prediction = predict_race_time(goal, build_snapshot(summaries), eff_trend)
+    if prediction is None:
+        raise HTTPException(
+            status_code=404, detail="Nessun obiettivo gara configurato."
+        )
+    return prediction
 
 
 @router.get("/checkin", response_model=DailyCheckin | None)

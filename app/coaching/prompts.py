@@ -79,6 +79,13 @@ def semantic_summary(m: TrainingMetrics) -> str:
     prepend a few plain-language sentences highlighting what matters.
     """
     lines: list[str] = []
+    if m.predicted_race_time:
+        pred = f"Previsione gara: ~{m.predicted_race_time}"
+        if m.race_probability is not None:
+            pred += f" (prob. obiettivo {m.race_probability*100:.0f}%)"
+        if m.race_confidence:
+            pred += f", confidenza {m.race_confidence}"
+        lines.append(pred + ".")
     if m.phase:
         phase_line = f"Fase del piano: {m.phase}"
         if m.weeks_to_race is not None:

@@ -14,6 +14,12 @@ from app.processing.load import (
     is_truly_easy,
 )
 from app.processing.metrics import compute_metrics, fitness_fatigue, weekly_buckets
+from app.processing.performance import (
+    estimate_thresholds,
+    predict_race_time,
+    seconds_to_time,
+    time_to_seconds,
+)
 from app.processing.periodization import (
     build_periodization,
     current_phase,
@@ -36,4 +42,8 @@ __all__ = [
     "aerobic_efficiency",
     "decoupling",
     "build_snapshot",
+    "predict_race_time",
+    "estimate_thresholds",
+    "seconds_to_time",
+    "time_to_seconds",
 ]

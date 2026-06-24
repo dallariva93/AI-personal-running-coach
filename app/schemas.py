@@ -191,6 +191,20 @@ class AthleteSnapshot(BaseModel):
     best_marathon: str | None = None
 
 
+class RacePrediction(BaseModel):
+    """Predicted finish time and target probability for the goal race (Fase 4)."""
+
+    goal_type: str
+    distance_km: float
+    predicted_time: str | None = None
+    predicted_seconds: float | None = None
+    target_time: str | None = None
+    target_seconds: float | None = None
+    probability: float | None = None  # 0-1 of hitting the target time
+    basis: str | None = None  # which effort/method the estimate rests on
+    confidence: str = "low"  # low | medium | high
+
+
 class PhasePlan(BaseModel):
     """One periodization phase in the macrocycle (GAP 2/17)."""
 
@@ -252,6 +266,10 @@ class TrainingMetrics(BaseModel):
     # Daily readiness from the latest wellness check-in (GAP 9).
     readiness: float | None = None  # 0-100
     readiness_state: str | None = None  # green | amber | red | unknown
+    # Goal-race forecast (Fase 4): predicted finish + probability of the target.
+    predicted_race_time: str | None = None
+    race_probability: float | None = None  # 0-1
+    race_confidence: str | None = None  # low | medium | high
 
 
 class WeeklyBucket(BaseModel):

@@ -278,6 +278,14 @@ class OfflineCoach:
                 )
         if m.phase:
             pts.append(f"Fase del piano: **{m.phase}** — {m.phase_focus or ''}".rstrip())
+        if m.predicted_race_time:
+            prob = ""
+            if m.race_probability is not None:
+                prob = f", probabilità obiettivo ~{m.race_probability*100:.0f}%"
+            pts.append(
+                f"Previsione gara: **~{m.predicted_race_time}**{prob} "
+                f"(confidenza {m.race_confidence})."
+            )
         pts += [
             f"Volume ultimi 7 giorni: {m.acute_load_km} km; media settimanale (28 gg): "
             f"{m.chronic_load_km} km.",
