@@ -7,8 +7,6 @@ from app.collection.synthesize import (
     _format_pace,
     _has_walking_pauses,
     _infer_type,
-    _stamina_drop,
-    extract_details_enrichment,
     extract_rpe_from_details,
     synthesize,
 )

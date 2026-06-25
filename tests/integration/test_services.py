@@ -51,8 +51,8 @@ def test_weekly_plan_creates_report(session, demo_source):
     assert report.metrics["acute_load_km"] >= 0
 
 
-def test_analysis_without_data_raises(session, demo_source):
+def test_analysis_without_data_raises(session, empty_source):
     import pytest
 
     with pytest.raises(ValueError):
-        run_single_analysis(session, coach=OfflineCoach(), ref=REF, source=demo_source)
+        run_single_analysis(session, coach=OfflineCoach(), ref=REF, source=empty_source)
