@@ -15,7 +15,7 @@ import json
 from pathlib import Path
 from typing import Any, Protocol
 
-from app.collection.synthesize import synthesize
+from app.collection.synthesize import extract_details_enrichment, synthesize
 from app.config import Settings, get_settings
 from app.exceptions import CollectionError
 from app.logging_config import get_logger
@@ -103,9 +103,38 @@ class GarminSource:
         except Exception as exc:  # network, auth, library breakage
             logger.error("Garmin fetch failed: %s", exc)
             raise CollectionError(f"Impossibile scaricare i dati da Garmin: {exc}") from exc
-        runs = [synthesize(a) for a in activities if _is_running(a)]
-        runs.sort(key=lambda r: r.date, reverse=True)
-        return runs[:limit]
+        running = [a for a in activities if _is_running(a)]
+        running.sort(key=lambda a: str(a.get("startTimeLocal", "")), reverse=True)
+        running = running[:limit]
+        runs: list[RunSummary] = []
+        for activity in running:
+            run = synthesize(activity)
+            extras = self._fetch_enrichment(client, activity.get("activityId"))
+            if extras:
+                run = run.model_copy(update=extras)
+            runs.append(run)
+        return runs
+
+    def _fetch_enrichment(self, client: Any, activity_id: Any) -> dict[str, Any]:
+        """Fetch the per-activity fields that only live on the details endpoint.
+
+        Currently: user-entered RPE and stamina drop. One extra API call per
+        activity; rate-limit failures are swallowed (warning logged) so a
+        transient 429 leaves those fields unset rather than aborting the
+        whole ingest.
+        """
+        if activity_id is None:
+            return {}
+        try:
+            details = retry_call(
+                lambda: client.get_activity(activity_id),
+                retries=self.settings.garmin_max_retries,
+                description=f"garmin.get_activity({activity_id})",
+            )
+        except Exception as exc:  # noqa: BLE001
+            logger.warning("Details enrich failed for %s: %s", activity_id, exc)
+            return {}
+        return extract_details_enrichment(details or {})
 
 
 def get_source(settings: Settings | None = None) -> ActivitySource:

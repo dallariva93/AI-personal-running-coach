@@ -44,6 +44,19 @@ class Activity(Base):
     humidity_pct: Mapped[float | None] = mapped_column(Float, nullable=True)
     elevation_loss_m: Mapped[float | None] = mapped_column(Float, nullable=True)
 
+    # Garmin-derived rich metrics (filled by the details enrichment step).
+    garmin_training_load: Mapped[float | None] = mapped_column(Float, nullable=True)
+    vigorous_minutes: Mapped[float | None] = mapped_column(Float, nullable=True)
+    moderate_minutes: Mapped[float | None] = mapped_column(Float, nullable=True)
+    body_battery_delta: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    stamina_drop: Mapped[float | None] = mapped_column(Float, nullable=True)
+    avg_grade_adjusted_pace: Mapped[str | None] = mapped_column(String(16), nullable=True)
+    fastest_split_1k: Mapped[str | None] = mapped_column(String(16), nullable=True)
+    fastest_split_5k: Mapped[str | None] = mapped_column(String(16), nullable=True)
+    vo2max: Mapped[float | None] = mapped_column(Float, nullable=True)
+    aerobic_te_message: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    anaerobic_te_message: Mapped[str | None] = mapped_column(String(64), nullable=True)
+
     created_at: Mapped[datetime] = mapped_column(DateTime, default=_utcnow)
 
     reports: Mapped[list[CoachingReport]] = relationship(

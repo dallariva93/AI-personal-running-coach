@@ -12,7 +12,17 @@ from datetime import date
 
 from pydantic import BaseModel, ConfigDict, Field
 
-ACTIVITY_TYPES = ("easy", "tempo", "intervalli", "lungo", "recupero", "gara", "altro")
+ACTIVITY_TYPES = (
+    "easy",
+    "recupero",
+    "medio",
+    "trail",
+    "lungo",
+    "tempo",
+    "intervalli",
+    "gara",
+    "altro",
+)
 
 
 class RunSummary(BaseModel):
@@ -38,6 +48,19 @@ class RunSummary(BaseModel):
     temperature_c: float | None = None
     humidity_pct: float | None = None
     elevation_loss_m: float | None = None  # D-
+    # Garmin-derived rich metrics (filled when the Garmin payload is available).
+    # None on manual entries or pre-enrichment activities.
+    garmin_training_load: float | None = None  # Garmin's per-session load score
+    vigorous_minutes: float | None = None  # minutes in Z4-Z5 (Garmin's count)
+    moderate_minutes: float | None = None  # minutes in Z3
+    body_battery_delta: int | None = None  # Body Battery change (negative = drained)
+    stamina_drop: float | None = None  # beginPotentialStamina - end (positive = used)
+    avg_grade_adjusted_pace: str | None = None  # Garmin GAP, e.g. "4:32/km"
+    fastest_split_1k: str | None = None  # fastest 1 km segment, e.g. "4:22/km"
+    fastest_split_5k: str | None = None  # fastest 5 km segment pace
+    vo2max: float | None = None  # Garmin's estimated VO2max for the session
+    aerobic_te_message: str | None = None  # e.g. "IMPROVING_LACTATE_THRESHOLD_12"
+    anaerobic_te_message: str | None = None  # e.g. "NO_ANAEROBIC_BENEFIT_0"
 
 
 class DailyCheckin(BaseModel):

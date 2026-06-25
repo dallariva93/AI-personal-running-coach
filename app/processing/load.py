@@ -24,6 +24,12 @@ _RPE_BY_TYPE = {
     "recupero": 2.0,
     "easy": 3.0,
     "lungo": 5.0,
+    # Medio: sustained Z3 effort (Italian "fondo medio" / Garmin TEMPO label).
+    # Harder than lungo, easier than the threshold-based tempo run.
+    "medio": 5.5,
+    # Trail is rated between lungo and tempo: the climbing cost adds load
+    # even at modest pace, but it is not as systemic as a true tempo effort.
+    "trail": 6.0,
     "tempo": 7.0,
     "intervalli": 8.0,
     "gara": 9.0,
