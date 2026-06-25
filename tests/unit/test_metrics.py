@@ -42,15 +42,25 @@ def test_form_state_balanced():
     assert m.acwr is not None
 
 
-def test_form_state_fatigued_on_spike():
+def test_form_state_fatigued_on_heavy_overload():
+    # A sustained block of hard days drives TSB well below -25 -> fatigued.
+    runs = [_run(f"2026-06-{d:02d}", 20, "tempo") for d in range(16, 23)]
+    m = compute_metrics(runs, ref=REF)
+    assert m.tsb is not None and m.tsb < -25
+    assert m.form_state == "fatigued"
+
+
+def test_moderate_negative_tsb_is_productive_not_fatigued():
+    # A short 2-day spike (TSB roughly -10..-25) is productive training now,
+    # not "fatigued" — the relaxed endurance-amateur calibration.
     runs = [
-        _run("2026-06-22", 30, "tempo"),
-        _run("2026-06-21", 25, "tempo"),
+        _run("2026-06-22", 25, "tempo"),
+        _run("2026-06-21", 20, "tempo"),
         _run("2026-06-01", 5),
     ]
     m = compute_metrics(runs, ref=REF)
-    assert m.acwr is not None and m.acwr > 1.5
-    assert m.form_state == "fatigued"
+    assert m.tsb is not None and -25 <= m.tsb < -10
+    assert m.form_state == "balanced"
 
 
 def test_easy_ratio():
