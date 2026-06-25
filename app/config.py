@@ -40,7 +40,7 @@ class Settings(BaseSettings):
 
     # -- Application ---------------------------------------------------------
     database_url: str = "sqlite:///data/running_coach.db"
-    fetch_limit: int = 10
+    fetch_limit: int = 50
     athlete_profile: str = "Runner amatoriale, 4-5 uscite a settimana."
     rolling_window_days: int = 14
 

@@ -13,21 +13,39 @@ from app import __version__
 from app.config import get_settings
 from app.db.database import db_healthy, get_session
 from app.db.models import Activity
-from app.processing import compute_metrics, weekly_buckets
+from app.processing import (
+    aerobic_efficiency,
+    build_periodization,
+    build_snapshot,
+    compute_metrics,
+    predict_race_time,
+    trail_metrics,
+    weekly_buckets,
+)
 from app.schemas import (
     ActivityOut,
+    AthleteProfile,
+    AthleteSnapshot,
+    DailyCheckin,
     ManualActivityIn,
+    PeriodizationPlan,
+    RacePrediction,
     ReportOut,
     RunSummary,
+    TrailMetrics,
     TrainingMetrics,
     WeeklyBucket,
 )
 from app.services import (
+    get_profile,
     ingest_runs,
+    latest_checkin,
     list_activities,
     list_reports,
     run_single_analysis,
     run_weekly_plan,
+    save_checkin,
+    save_profile,
     upsert_activity,
 )
 from app.services.ingest import _all_summaries
@@ -97,9 +115,89 @@ def post_ingest(limit: int | None = None, session: Session = Depends(get_session
     return saved
 
 
+@router.get("/profile", response_model=AthleteProfile)
+def get_athlete_profile(session: Session = Depends(get_session)) -> AthleteProfile:
+    return get_profile(session) or AthleteProfile()
+
+
+@router.put("/profile", response_model=AthleteProfile)
+def put_athlete_profile(
+    payload: AthleteProfile, session: Session = Depends(get_session)
+) -> AthleteProfile:
+    save_profile(session, payload)
+    _commit(session)
+    return get_profile(session) or AthleteProfile()
+
+
+@router.get("/plan/periodization", response_model=PeriodizationPlan)
+def get_periodization(session: Session = Depends(get_session)) -> PeriodizationPlan:
+    profile = get_profile(session)
+    goal = profile.goal if profile else None
+    metrics = compute_metrics(_all_summaries(session), profile=profile)
+    baseline = max(metrics.chronic_load_km, metrics.acute_load_km / 1.5, 20.0)
+    plan = build_periodization(goal, baseline_km=baseline) if goal else None
+    if plan is None:
+        raise HTTPException(
+            status_code=404, detail="Nessun obiettivo con data gara configurato."
+        )
+    return plan
+
+
+@router.get("/snapshot", response_model=AthleteSnapshot)
+def get_snapshot(session: Session = Depends(get_session)) -> AthleteSnapshot:
+    return build_snapshot(_all_summaries(session))
+
+
+@router.get("/activities/{activity_id}/trail", response_model=TrailMetrics)
+def get_trail_metrics(
+    activity_id: int, session: Session = Depends(get_session)
+) -> TrailMetrics:
+    from app.services.ingest import _activity_to_summary
+
+    activity = session.get(Activity, activity_id)
+    if activity is None:
+        raise HTTPException(status_code=404, detail="Attività non trovata.")
+    tm = trail_metrics(_activity_to_summary(activity))
+    if tm is None:
+        raise HTTPException(status_code=404, detail="Nessun dato di dislivello per l'attività.")
+    return tm
+
+
+@router.get("/predict", response_model=RacePrediction)
+def get_prediction(session: Session = Depends(get_session)) -> RacePrediction:
+    profile = get_profile(session)
+    goal = profile.goal if profile else None
+    summaries = _all_summaries(session)
+    _, eff_trend = aerobic_efficiency(summaries)
+    prediction = predict_race_time(goal, build_snapshot(summaries), eff_trend)
+    if prediction is None:
+        raise HTTPException(
+            status_code=404, detail="Nessun obiettivo gara configurato."
+        )
+    return prediction
+
+
+@router.get("/checkin", response_model=DailyCheckin | None)
+def get_checkin(session: Session = Depends(get_session)) -> DailyCheckin | None:
+    return latest_checkin(session)
+
+
+@router.post("/checkin", response_model=DailyCheckin, status_code=201)
+def post_checkin(
+    payload: DailyCheckin, session: Session = Depends(get_session)
+) -> DailyCheckin:
+    save_checkin(session, payload)
+    _commit(session)
+    return latest_checkin(session)
+
+
 @router.get("/metrics", response_model=TrainingMetrics)
 def get_metrics(session: Session = Depends(get_session)) -> TrainingMetrics:
-    return compute_metrics(_all_summaries(session))
+    return compute_metrics(
+        _all_summaries(session),
+        profile=get_profile(session),
+        checkin=latest_checkin(session),
+    )
 
 
 @router.get("/metrics/weekly", response_model=list[WeeklyBucket])
