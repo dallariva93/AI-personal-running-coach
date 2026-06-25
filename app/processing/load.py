@@ -16,6 +16,7 @@ All functions are pure: no I/O, no network. They operate on
 
 from __future__ import annotations
 
+from app.processing.tuning import easy_hr_reserve_ceiling, hard_hr_reserve_floor
 from app.schemas import AthleteProfile, RunSummary
 
 # Rough RPE (1-10) by activity label, used only when neither RPE nor HR is
@@ -155,13 +156,10 @@ def equivalent_flat_km(run: RunSummary) -> float:
     return round(base, 2)
 
 
-# Intensity boundaries on the HR-reserve scale. The easy ceiling sits at the
-# top of Z2 (~82% HRR ≈ aerobic threshold) — the old 0.75 was too strict and
-# mislabelled honest aerobic runs as "hard", deflating the 80/20 ratio. Above
-# the hard floor (~88% HRR ≈ Z4) the effort is clearly hard; in between it is a
-# distinct "moderate" (Z3) band, neither easy nor hard.
-EASY_HR_RESERVE_CEILING = 0.82
-HARD_HR_RESERVE_FLOOR = 0.88
+# Intensity boundaries (HR-reserve fractions) come from ``tuning`` so they scale
+# with the athlete's level: top of Z2 ≈ easy ceiling (the old fixed 0.75 was too
+# strict and mislabelled honest aerobic runs as hard); above the hard floor ≈ Z4
+# is clearly hard; in between is a distinct "moderate" (Z3) band.
 
 # Fallback intensity by activity label when neither zones, HR nor RPE exist.
 _LABEL_INTENSITY = {
@@ -192,9 +190,9 @@ def intensity_class(run: RunSummary, profile: AthleteProfile | None = None) -> s
             return "moderate" if zone == 3 else "hard"
     frac = _hr_fraction(run, profile)
     if frac is not None:
-        if frac < EASY_HR_RESERVE_CEILING:
+        if frac < easy_hr_reserve_ceiling(profile):
             return "easy"
-        return "moderate" if frac < HARD_HR_RESERVE_FLOOR else "hard"
+        return "moderate" if frac < hard_hr_reserve_floor(profile) else "hard"
     if run.rpe is not None:
         if run.rpe <= 4:
             return "easy"

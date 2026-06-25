@@ -34,6 +34,8 @@ def _row_to_profile(row: AthleteProfileRow) -> AthleteProfile:
         max_hr=row.max_hr,
         resting_hr=row.resting_hr,
         weekly_runs=row.weekly_runs,
+        level=row.level or "intermediate",
+        risk_tolerance=row.risk_tolerance or "moderate",
         available_days=row.available_days or [],
         zones=HRZones(**row.zones) if row.zones else None,
         physiology=AthletePhysiology(**row.physiology) if row.physiology else None,
@@ -70,6 +72,8 @@ def save_profile(session: Session, profile: AthleteProfile) -> AthleteProfileRow
     row.max_hr = profile.max_hr
     row.resting_hr = profile.resting_hr
     row.weekly_runs = profile.weekly_runs
+    row.level = profile.level
+    row.risk_tolerance = profile.risk_tolerance
     row.available_days = profile.available_days or None
     row.zones = profile.zones.model_dump(exclude_none=True) if profile.zones else None
     row.physiology = (

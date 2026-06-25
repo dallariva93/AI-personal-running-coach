@@ -20,7 +20,8 @@ from __future__ import annotations
 
 from datetime import date, datetime, timedelta
 
-from app.schemas import InjuryRisk, RunSummary, TrainingMetrics
+from app.processing.tuning import injury_cutoffs
+from app.schemas import AthleteProfile, InjuryRisk, RunSummary, TrainingMetrics
 
 _HARD_TYPES = {"tempo", "intervalli", "gara"}
 
@@ -62,9 +63,16 @@ def _km_between(runs: list[RunSummary], start: date, end: date) -> float:
 
 
 def injury_risk(
-    runs: list[RunSummary], metrics: TrainingMetrics, ref: date | None = None
+    runs: list[RunSummary],
+    metrics: TrainingMetrics,
+    ref: date | None = None,
+    profile: AthleteProfile | None = None,
 ) -> InjuryRisk:
-    """Blend independent overuse signals into a 0-100 score."""
+    """Blend independent overuse signals into a 0-100 score.
+
+    The moderate/high cutoffs scale with the athlete's risk tolerance, so a
+    risk-aggressive runner is flagged only on clearly elevated combinations.
+    """
     ref = ref or date.today()
     score = 0.0
     factors: list[str] = []
@@ -111,9 +119,10 @@ def injury_risk(
         factors.append(f"poco volume facile ({metrics.easy_ratio*100:.0f}%)")
 
     score = round(min(100.0, score), 0)
-    if score >= 60:
+    moderate_at, high_at = injury_cutoffs(profile)
+    if score >= high_at:
         level = "high"
-    elif score >= 30:
+    elif score >= moderate_at:
         level = "moderate"
     else:
         level = "low"

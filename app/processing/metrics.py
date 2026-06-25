@@ -30,6 +30,7 @@ from app.processing.performance import predict_race_time
 from app.processing.periodization import build_periodization, phase_for
 from app.processing.recovery import readiness
 from app.processing.snapshot import build_snapshot
+from app.processing.tuning import tsb_fatigue_threshold, tsb_overreach_threshold
 from app.schemas import (
     AthleteProfile,
     DailyCheckin,
@@ -142,6 +143,8 @@ def _classify_form(
     acwr: float | None,
     acute: float,
     chronic: float,
+    fatigue_threshold: float = -25.0,
+    overreach_threshold: float = -35.0,
 ) -> tuple[str, str]:
     """Map TSB (primary) to a form state, with ACWR as a secondary guardrail.
 
@@ -191,13 +194,13 @@ def _classify_form(
             f"Equilibrio carico/recupero (TSB {tsb:+.0f}): prosegui con "
             "progressione graduale." + acwr_note,
         )
-    if tsb >= -25:
+    if tsb >= fatigue_threshold:
         return (
             "balanced",
             f"Carico produttivo (TSB {tsb:+.0f}): stai assorbendo un buon volume, "
             "è la zona dove si costruisce. Continua e monitora il recupero." + acwr_note,
         )
-    if tsb >= -35:
+    if tsb >= overreach_threshold:
         return (
             "fatigued",
             f"Fatica in accumulo (TSB {tsb:+.0f}): inizia a privilegiare "
@@ -292,7 +295,11 @@ def compute_metrics(
         moderate_ratio = round(dist["moderate"] / total_km, 2)
         hard_ratio = round(dist["hard"] / total_km, 2)
 
-    form_state, form_explanation = _classify_form(tsb, ctl, acwr, acute, chronic)
+    form_state, form_explanation = _classify_form(
+        tsb, ctl, acwr, acute, chronic,
+        fatigue_threshold=tsb_fatigue_threshold(profile),
+        overreach_threshold=tsb_overreach_threshold(profile),
+    )
 
     # Periodization: where are we in the macrocycle towards the goal race?
     phase = phase_focus = None
@@ -336,7 +343,7 @@ def compute_metrics(
     )
 
     # Injury risk (needs the assembled load metrics) and efficiency progress.
-    risk = injury_risk(runs, m, ref=ref)
+    risk = injury_risk(runs, m, ref=ref, profile=profile)
     m.injury_score = risk.score
     m.injury_level = risk.level
     m.injury_factors = risk.factors

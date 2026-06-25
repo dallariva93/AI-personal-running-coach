@@ -87,6 +87,8 @@ class AthleteProfileRow(Base):
     max_hr: Mapped[int | None] = mapped_column(Integer, nullable=True)
     resting_hr: Mapped[int | None] = mapped_column(Integer, nullable=True)
     weekly_runs: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    level: Mapped[str | None] = mapped_column(String(16), nullable=True)
+    risk_tolerance: Mapped[str | None] = mapped_column(String(16), nullable=True)
 
     available_days: Mapped[list | None] = mapped_column(JSON, nullable=True)
     zones: Mapped[dict | None] = mapped_column(JSON, nullable=True)

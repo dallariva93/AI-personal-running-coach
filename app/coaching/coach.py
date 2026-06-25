@@ -162,7 +162,24 @@ class AICoach:
         zones = self._zones_text(profile.zones)
         if zones:
             descr += f". Zone FC: {zones}"
+        descr += f". {self._tone_directive(profile)}"
         return f"Atleta: {descr}."
+
+    @staticmethod
+    def _tone_directive(profile: AthleteProfile) -> str:
+        """Tone guidance from level + risk tolerance (priority #4)."""
+        lvl = {
+            "beginner": "Principiante: progredisci con prudenza e spiega il perché",
+            "intermediate": "Atleta intermedio",
+            "advanced": "Atleta avanzato: può sostenere stimoli e carichi impegnativi",
+        }.get(profile.level, "Atleta intermedio")
+        risk = {
+            "conservative": "tolleranza al rischio bassa, privilegia la cautela",
+            "moderate": "tolleranza al rischio media",
+            "aggressive": "tolleranza al rischio alta: spingi sugli stimoli, "
+            "allarmati solo su segnali davvero rossi",
+        }.get(profile.risk_tolerance, "tolleranza al rischio media")
+        return f"{lvl}; {risk}."
 
     @staticmethod
     def _zones_text(zones) -> str:
@@ -340,7 +357,7 @@ class OfflineCoach:
                 "improving": "in miglioramento", "declining": "in calo", "stable": "stabile",
             }.get(m.efficiency_trend, m.efficiency_trend)
             pts.append(f"Efficienza aerobica (passo a pari FC): {label}.")
-        if m.readiness_state and m.readiness_state != "unknown":
+        if m.readiness_state and m.readiness_state != "unknown" and m.readiness is not None:
             pts.append(f"Recupero (check-in): {m.readiness_state} ({m.readiness:.0f}/100).")
         if m.easy_ratio is not None:
             pts.append(f"Quota volume facile: {m.easy_ratio*100:.0f}% (target ~80%).")
@@ -447,14 +464,25 @@ class OfflineCoach:
         base = max(m.chronic_load_km, m.acute_load_km, 20.0)
         if m.form_state == "fatigued" or low_readiness:
             target = round(base * 0.7)
-            reason = "il recupero è basso" if low_readiness else "il carico è alto"
-            intro = f"Settimana di **scarico** (~{target} km), {reason}."
-            contents = [
-                "6 km easy Z2",
-                "6 km easy + 4x1 min Z4 leggeri",
-                "5 km recupero Z1-Z2",
-                "8-10 km lento Z2",
-            ]
+            if low_readiness:
+                # Forced deload: recovery is red → all easy, no quality.
+                intro = f"Settimana di **scarico forzato** (~{target} km), recupero basso."
+                contents = [
+                    "6 km easy Z2",
+                    "5 km recupero Z1-Z2",
+                    "6 km easy Z2",
+                    "8-10 km lento Z2",
+                ]
+            else:
+                # Programmed deload: load is high but recovery is OK → cut volume
+                # yet keep one reduced quality stimulus so fitness doesn't stall.
+                intro = f"Settimana di **scarico programmato** (~{target} km), il carico è alto."
+                contents = [
+                    "6 km easy Z2",
+                    "qualità ridotta: 8 km con 5x1 min a ritmo soglia (rec 2')",
+                    "5 km recupero Z1-Z2",
+                    "10-12 km lento Z2",
+                ]
         elif m.form_state == "detraining":
             target = round(base * 1.1)
             intro = f"Settimana di **ricostruzione** (~{target} km), puoi risalire gradualmente."

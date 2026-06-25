@@ -161,6 +161,9 @@ class AthleteProfile(BaseModel):
     max_hr: int | None = None
     resting_hr: int | None = None
     weekly_runs: int | None = None
+    # Coaching calibration (priority #4): scale all the thresholds coherently.
+    level: str = "intermediate"  # beginner | intermediate | advanced
+    risk_tolerance: str = "moderate"  # conservative | moderate | aggressive
     available_days: list[str] = Field(default_factory=list)
     zones: HRZones | None = None
     physiology: AthletePhysiology | None = None

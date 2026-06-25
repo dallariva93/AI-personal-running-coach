@@ -234,6 +234,24 @@
                 <input class="form-control form-control-sm" type="text" name="lt2_pace" placeholder="4:25"
                        value="{{ profile.physiology.lt2_pace if profile and profile.physiology and profile.physiology.lt2_pace else '' }}">
               </div>
+              <div class="col-6 col-md-2">
+                <label class="form-label small">Livello</label>
+                <select class="form-select form-select-sm" name="level">
+                  {% set lv = profile.level if profile else 'intermediate' %}
+                  {% for opt, lab in [('beginner','principiante'),('intermediate','intermedio'),('advanced','avanzato')] %}
+                  <option value="{{ opt }}" {{ 'selected' if lv == opt }}>{{ lab }}</option>
+                  {% endfor %}
+                </select>
+              </div>
+              <div class="col-6 col-md-2">
+                <label class="form-label small">Tolleranza rischio</label>
+                <select class="form-select form-select-sm" name="risk_tolerance">
+                  {% set rt = profile.risk_tolerance if profile else 'moderate' %}
+                  {% for opt, lab in [('conservative','conservativa'),('moderate','media'),('aggressive','aggressiva')] %}
+                  <option value="{{ opt }}" {{ 'selected' if rt == opt }}>{{ lab }}</option>
+                  {% endfor %}
+                </select>
+              </div>
             </div>
             <hr class="my-3">
             <div class="row g-2">

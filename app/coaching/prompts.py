@@ -137,7 +137,7 @@ def semantic_summary(m: TrainingMetrics) -> str:
         lines.append(f"Rischio infortunio {m.injury_level} ({m.injury_score:.0f}/100){detail}.")
     if m.efficiency_trend and m.efficiency_trend not in ("unknown",):
         lines.append(f"Efficienza aerobica: {m.efficiency_trend} (passo/FC sulle uscite facili).")
-    if m.readiness_state and m.readiness_state != "unknown":
+    if m.readiness_state and m.readiness_state != "unknown" and m.readiness is not None:
         lines.append(
             f"Recupero (check-in odierno): {m.readiness_state} ({m.readiness:.0f}/100)."
         )
