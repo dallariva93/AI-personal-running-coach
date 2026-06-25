@@ -103,8 +103,15 @@ fun AppScaffold(app: RunningCoachApp) {
             composable(Dest.Settings.route) {
                 SettingsScreen(
                     settings = settings,
+                    profile = state.overview?.profile,
                     onSave = { url, token ->
                         settingsVm.save(url, token) { overviewVm.refresh() }
+                    },
+                    onSaveCoach = { goalType, date, time, level, risk ->
+                        overviewVm.saveCoach(goalType, date, time, level, risk)
+                    },
+                    onCheckin = { sleep, fatigue, soreness, motivation ->
+                        overviewVm.submitCheckin(sleep, fatigue, soreness, motivation)
                     },
                 )
             }

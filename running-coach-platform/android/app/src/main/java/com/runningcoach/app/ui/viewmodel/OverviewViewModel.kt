@@ -2,6 +2,9 @@ package com.runningcoach.app.ui.viewmodel
 
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
+import com.runningcoach.app.data.model.AthleteProfile
+import com.runningcoach.app.data.model.DailyCheckin
+import com.runningcoach.app.data.model.Goal
 import com.runningcoach.app.data.model.Overview
 import com.runningcoach.app.data.repository.CoachRepository
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -41,6 +44,48 @@ class OverviewViewModel(private val repository: CoachRepository) : ViewModel() {
     fun analyze() = action("Analisi generata") { repository.analyze() }
 
     fun planWeekly() = action("Piano settimanale generato") { repository.planWeekly() }
+
+    /** Save the athlete's goal + calibration (level / risk tolerance). */
+    fun saveCoach(
+        goalType: String,
+        targetDate: String,
+        targetTime: String,
+        level: String,
+        risk: String,
+    ) = action("Profilo aggiornato") {
+        val current = state.value.overview?.profile
+        val goal = if (goalType.isNotBlank() || targetDate.isNotBlank()) {
+            Goal(
+                goalType = goalType.ifBlank { "general" },
+                targetDate = targetDate.ifBlank { null },
+                targetTime = targetTime.ifBlank { null },
+            )
+        } else {
+            null
+        }
+        val profile = (current ?: AthleteProfile()).copy(
+            level = level.ifBlank { "intermediate" },
+            riskTolerance = risk.ifBlank { "moderate" },
+            goal = goal,
+        )
+        repository.putProfile(profile)
+    }
+
+    /** Submit today's wellness check-in. */
+    fun submitCheckin(sleepH: Double?, fatigue: Int?, soreness: Int?, motivation: Int?) =
+        action("Check-in salvato") {
+            val today = java.text.SimpleDateFormat("yyyy-MM-dd", java.util.Locale.US)
+                .format(java.util.Date())
+            repository.postCheckin(
+                DailyCheckin(
+                    date = today,
+                    sleepH = sleepH,
+                    fatigue = fatigue,
+                    soreness = soreness,
+                    motivation = motivation,
+                ),
+            )
+        }
 
     private fun action(successMsg: String, block: suspend () -> Any?) {
         viewModelScope.launch {
