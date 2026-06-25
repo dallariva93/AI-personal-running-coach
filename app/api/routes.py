@@ -19,6 +19,7 @@ from app.processing import (
     build_snapshot,
     compute_metrics,
     predict_race_time,
+    trail_metrics,
     weekly_buckets,
 )
 from app.schemas import (
@@ -31,6 +32,7 @@ from app.schemas import (
     RacePrediction,
     ReportOut,
     RunSummary,
+    TrailMetrics,
     TrainingMetrics,
     WeeklyBucket,
 )
@@ -144,6 +146,21 @@ def get_periodization(session: Session = Depends(get_session)) -> PeriodizationP
 @router.get("/snapshot", response_model=AthleteSnapshot)
 def get_snapshot(session: Session = Depends(get_session)) -> AthleteSnapshot:
     return build_snapshot(_all_summaries(session))
+
+
+@router.get("/activities/{activity_id}/trail", response_model=TrailMetrics)
+def get_trail_metrics(
+    activity_id: int, session: Session = Depends(get_session)
+) -> TrailMetrics:
+    from app.services.ingest import _activity_to_summary
+
+    activity = session.get(Activity, activity_id)
+    if activity is None:
+        raise HTTPException(status_code=404, detail="Attività non trovata.")
+    tm = trail_metrics(_activity_to_summary(activity))
+    if tm is None:
+        raise HTTPException(status_code=404, detail="Nessun dato di dislivello per l'attività.")
+    return tm
 
 
 @router.get("/predict", response_model=RacePrediction)

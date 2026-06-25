@@ -170,6 +170,18 @@ class AthleteProfile(BaseModel):
     notes: str | None = None
 
 
+class TrailMetrics(BaseModel):
+    """Trail/hilly-run specific metrics (GAP 20)."""
+
+    elevation_gain_m: float | None = None
+    elevation_loss_m: float | None = None
+    vertical_speed_m_per_h: float | None = None  # climb rate (VAM)
+    climb_per_km: float | None = None  # D+ density
+    time_on_feet_min: float | None = None
+    equivalent_flat_km: float | None = None  # distance adjusted for climb
+    is_trail: bool = False
+
+
 class InjuryRisk(BaseModel):
     """Composite overuse-injury risk (GAP 14)."""
 
@@ -270,6 +282,9 @@ class TrainingMetrics(BaseModel):
     predicted_race_time: str | None = None
     race_probability: float | None = None  # 0-1
     race_confidence: str | None = None  # low | medium | high
+    # Latest Garmin VO2max and adaptive-plan adjustments (Fase 4).
+    vo2max: float | None = None
+    adaptive_notes: list[str] = Field(default_factory=list)
 
 
 class WeeklyBucket(BaseModel):

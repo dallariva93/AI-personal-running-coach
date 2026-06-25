@@ -5,7 +5,8 @@
 > sono i limiti**, e **un piano incrementale** per trasformarlo da analizzatore
 > reattivo a coach che pianifica verso un obiettivo.
 
-Stato: 🟡 in corso. Le sezioni marcate ✅ sono già implementate in questo branch.
+Stato: ✅ tutte e 4 le fasi completate. Tutti i 23 gap del documento sono coperti
+(alcuni parziali, vedi tabella). Dettaglio delle slice nella sezione 4.
 
 ---
 
@@ -90,15 +91,15 @@ mantengono l'app eseguibile offline e la coverage ≥ 80%.
    metrica secondaria; `form_state` derivato dal TSB. ✅
 6. **Periodizzazione** macro→meso→micro verso `Goal.target_date` + **taper**. ✅
 7. **Injury Risk Score** composito (giorni consecutivi, qualità ravvicinate,
-   dislivello, salti di volume/intensità) al posto del solo ACWR/monotonia.
-8. **Gare multiple** (A/B/C).
+   dislivello, salti di volume/intensità) al posto del solo ACWR/monotonia. ✅
+8. **Gare multiple** (A/B/C). ✅
 
 ### Fase 3 — Coach avanzato
-9. Deriva cardiaca, decoupling, **Aerobic Efficiency Index** (progresso).
-10. Evoluzione automatica delle soglie. Meteo.
+9. Deriva cardiaca, decoupling, **Aerobic Efficiency Index** (progresso). ✅
+10. Evoluzione automatica delle soglie. Meteo. ✅
 
 ### Fase 4 — Coach elite
-11. Trail engine, Goal/Race predictor, **Adaptive Planning Engine** dinamico.
+11. Trail engine, Goal/Race predictor, **Adaptive Planning Engine** dinamico. ✅
 
 ---
 
@@ -168,10 +169,27 @@ Prima slice verticale (Fase 1 + cuore della Fase 2), perché tocca direttamente
 - Cattura meteo (temperatura/umidità) e trail (D-) in `synthesize`, con nota
   "caldo" nell'analisi (GAP 18/20).
 
-## 5. Prossimi passi (Fase 4 — coach elite)
-- **Adaptive Planning Engine**: ricalcolo dinamico del piano a ogni nuova corsa.
-- **Race/Goal Pace Predictor**: stima del tempo gara da CTL + efficienza.
-- Evoluzione automatica di zone e soglie nel tempo (GAP 7 dinamico).
-- Trail engine completo (vertical speed, time on feet, difficoltà tecnica) e
-  correzione meteo del carico (oltre alla nota qualitativa attuale).
-- UI per gestire le gare B/C e affinare manualmente le zone.
+**Sesta slice — Fase 4, coach elite:**
+
+- `app/processing/performance.py` — **Race/Goal Pace Predictor** (Riegel dai
+  migliori sforzi, corretto dall'efficienza) con probabilità di centrare il
+  target; **stima dinamica delle soglie** (LT2/critical speed) dagli sforzi
+  intensi, auto-compilate all'ingest. API `GET /api/predict`.
+- `app/processing/adaptive.py` — **Adaptive Planning Engine**: piega rischio
+  infortunio, readiness e gap-obiettivo in un moltiplicatore di volume applicato
+  al target di fase, con note esplicative. Esposto in `TrainingMetrics`.
+- `app/processing/trail.py` (GAP 20) — **Trail engine**: vertical speed (VAM),
+  D+/km, time on feet, distanza equivalente in piano; nota trail nell'analisi.
+  API `GET /api/activities/{id}/trail`.
+- `app/processing/load.py` — **correzione meteo del carico** (heat factor su
+  temperatura/umidità), oltre alla nota qualitativa (GAP 18).
+- **Sinergia con i dati Garmin ricchi**: l'efficienza usa la GAP pace quando
+  disponibile; VO2max esposto a coach e dashboard; carico interno per `medio`/
+  `trail`.
+- Migrazione `bf76056f2179` per le colonne Garmin su `activities`.
+
+### Stato finale
+Tutti i 23 gap del documento sono coperti e le 4 fasi della roadmap completate.
+Possibili evoluzioni future: VDOT/Daniels per la previsione, difficoltà tecnica
+del trail, UI dedicata per gare B/C e zone, ricalibrazione del modello carico
+sui dati Garmin (`garmin_training_load`) una volta raccolto storico reale.

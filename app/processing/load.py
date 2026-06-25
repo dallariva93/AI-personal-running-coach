@@ -67,11 +67,27 @@ def estimate_rpe(run: RunSummary, profile: AthleteProfile | None = None) -> floa
     return _RPE_BY_TYPE.get(run.activity_type, 4.0)
 
 
+def heat_factor(run: RunSummary) -> float:
+    """Load multiplier for heat/humidity stress (GAP 18).
+
+    Running in the heat raises HR and perceived effort for the same pace, so the
+    same session costs more. Above ~20°C we add ~1.2%/°C, with a small extra
+    penalty when humidity is high. Capped to avoid runaway values.
+    """
+    temp = run.temperature_c
+    if temp is None or temp <= 20:
+        return 1.0
+    factor = 1.0 + (temp - 20) * 0.012
+    if run.humidity_pct and run.humidity_pct >= 70:
+        factor += 0.05
+    return min(factor, 1.4)
+
+
 def internal_load(run: RunSummary, profile: AthleteProfile | None = None) -> float:
-    """Session Load = effective RPE × duration (minutes). GAP 4/10."""
+    """Session Load = effective RPE × duration (min), heat-adjusted. GAP 4/10/18."""
     if run.duration_min <= 0:
         return 0.0
-    return round(estimate_rpe(run, profile) * run.duration_min, 1)
+    return round(estimate_rpe(run, profile) * run.duration_min * heat_factor(run), 1)
 
 
 def equivalent_flat_km(run: RunSummary) -> float:

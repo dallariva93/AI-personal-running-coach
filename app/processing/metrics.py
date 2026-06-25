@@ -22,6 +22,7 @@ from __future__ import annotations
 import statistics
 from datetime import date, datetime, timedelta
 
+from app.processing.adaptive import adapt_plan
 from app.processing.efficiency import aerobic_efficiency
 from app.processing.injury import injury_risk
 from app.processing.load import internal_load, is_truly_easy
@@ -308,6 +309,12 @@ def compute_metrics(
     m.aerobic_efficiency, m.efficiency_trend = aerobic_efficiency(runs, ref=ref)
     m.readiness, m.readiness_state = readiness(checkin)
 
+    # Latest available Garmin VO2max (most recent run that carries it).
+    for r in sorted(runs, key=lambda x: x.date, reverse=True):
+        if r.vo2max:
+            m.vo2max = r.vo2max
+            break
+
     # Goal-race forecast (Fase 4) when a goal is set.
     if profile and profile.goal:
         prediction = predict_race_time(
@@ -317,4 +324,10 @@ def compute_metrics(
             m.predicted_race_time = prediction.predicted_time
             m.race_probability = prediction.probability
             m.race_confidence = prediction.confidence
+
+    # Adaptive planning: fold live signals into the phase volume target (Fase 4).
+    factor, notes = adapt_plan(m)
+    m.adaptive_notes = notes
+    if m.phase_volume_target_km is not None and factor != 1.0:
+        m.phase_volume_target_km = round(m.phase_volume_target_km * factor, 1)
     return m

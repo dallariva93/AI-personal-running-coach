@@ -47,8 +47,12 @@ def pace_to_seconds(pace: str | None) -> float | None:
 
 
 def _efficiency_of(run: RunSummary) -> float | None:
-    """Seconds of pace per heart-beat for one run (lower = more efficient)."""
-    pace_s = pace_to_seconds(run.avg_pace)
+    """Seconds of pace per heart-beat for one run (lower = more efficient).
+
+    Prefers Garmin's grade-adjusted pace when present so hilly runs compare
+    fairly against flat ones (synergy with the rich Garmin metrics).
+    """
+    pace_s = pace_to_seconds(run.avg_grade_adjusted_pace) or pace_to_seconds(run.avg_pace)
     if pace_s is None or not run.avg_hr:
         return None
     return pace_s / run.avg_hr

@@ -50,7 +50,11 @@
       <p class="small text-muted mt-2 mb-0">
         Fase attuale: <strong>{{ plan.current_phase | upper }}</strong>
         {% if metrics.phase_focus %}— {{ metrics.phase_focus }}{% endif %}
+        {% if metrics.phase_volume_target_km %}· target ~{{ metrics.phase_volume_target_km | round | int }} km{% endif %}
       </p>
+      {% if metrics.adaptive_notes %}
+      <p class="small mt-1 mb-0">⚙️ <em>{{ metrics.adaptive_notes | join('; ') }}</em></p>
+      {% endif %}
     </div>
   </div>
   {% endif %}
@@ -100,6 +104,11 @@
             <li class="list-group-item d-flex justify-content-between">
               <span>Efficienza aerobica</span>
               <strong>{{ {'improving':'↑ migliora','declining':'↓ cala','stable':'→ stabile'}.get(metrics.efficiency_trend, metrics.efficiency_trend) }}</strong>
+            </li>
+            {% endif %}
+            {% if metrics.vo2max %}
+            <li class="list-group-item d-flex justify-content-between">
+              <span>VO2max (Garmin)</span><strong>{{ metrics.vo2max | round(1) }}</strong>
             </li>
             {% endif %}
             {% if metrics.readiness_state and metrics.readiness_state != 'unknown' %}

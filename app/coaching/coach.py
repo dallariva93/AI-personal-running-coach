@@ -233,6 +233,18 @@ class OfflineCoach:
                 f"Caldo ({run.temperature_c:.0f}°C{extra}): FC e fatica risultano più alte "
                 "a parità di sforzo, non farti ingannare dal passo."
             )
+        # Trail/hilly effort: >25 m of climb per km (GAP 20). Computed inline
+        # from RunSummary so the coaching layer stays decoupled from processing.
+        if run.elevation_gain_m and run.distance_km > 0 and run.duration_min > 0:
+            climb_per_km = run.elevation_gain_m / run.distance_km
+            if climb_per_km >= 25:
+                vam = run.elevation_gain_m / (run.duration_min / 60.0)
+                equiv = run.distance_km + run.elevation_gain_m * 0.01
+                pts.append(
+                    f"Uscita trail ({climb_per_km:.0f} m D+/km, VAM {vam:.0f} m/h, "
+                    f"~{equiv:.0f} km equivalenti in piano): valuta lo sforzo sul "
+                    "tempo in piedi, non sul passo."
+                )
         pts.append(m.form_explanation)
         if m.easy_ratio is not None and m.easy_ratio < 0.7:
             pts.append(
@@ -409,6 +421,7 @@ class OfflineCoach:
                 + (f", {m.weeks_to_race} sett. alla gara" if m.weeks_to_race else "")
                 + f"). {m.phase_focus or ''}".rstrip()
             )
+            intro += self._adaptive_suffix(m)
             sessions = self._assign_days(self._PHASE_SESSIONS[m.phase], available_days)
             return intro + "\n\n" + "\n".join(f"- {s}" for s in sessions)
 
@@ -442,8 +455,16 @@ class OfflineCoach:
                 "8 km easy",
                 "lungo 16-18 km Z2",
             ]
+        intro += self._adaptive_suffix(m)
         sessions = self._assign_days(contents, available_days)
         return intro + "\n\n" + "\n".join(f"- {s}" for s in sessions)
+
+    @staticmethod
+    def _adaptive_suffix(m: TrainingMetrics) -> str:
+        """Append the adaptive-engine notes (Fase 4) to the weekly intro."""
+        if not m.adaptive_notes:
+            return ""
+        return " ⚙️ Adattamenti: " + "; ".join(m.adaptive_notes) + "."
 
 
 def get_coach(settings: Settings | None = None) -> Coach:

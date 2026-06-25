@@ -119,6 +119,10 @@ def semantic_summary(m: TrainingMetrics) -> str:
         lines.append(
             f"Recupero (check-in odierno): {m.readiness_state} ({m.readiness:.0f}/100)."
         )
+    if m.vo2max:
+        lines.append(f"VO2max stimato (Garmin): {m.vo2max:g}.")
+    for note in m.adaptive_notes:
+        lines.append(f"Adattamento piano: {note}.")
     return "Sintesi:\n- " + "\n- ".join(lines)
 
 
