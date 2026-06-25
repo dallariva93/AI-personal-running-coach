@@ -253,6 +253,7 @@ class TrainingMetrics(BaseModel):
     # (Session Load = RPE × minutes, with TRIMP/estimated fallbacks). GAP 4/10.
     acute_load_internal: float = 0.0
     chronic_load_internal: float = 0.0  # daily average over 42 days
+    load_source: str | None = None  # garmin | mixed | srpe — internal-load origin
     # Fitness/Fatigue model (GAP 8) — the new headline signals.
     ctl: float | None = None  # chronic training load (fitness), 42-day EWMA
     atl: float | None = None  # acute training load (fatigue), 7-day EWMA

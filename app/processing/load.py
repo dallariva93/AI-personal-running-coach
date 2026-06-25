@@ -83,11 +83,68 @@ def heat_factor(run: RunSummary) -> float:
     return min(factor, 1.4)
 
 
-def internal_load(run: RunSummary, profile: AthleteProfile | None = None) -> float:
-    """Session Load = effective RPE × duration (min), heat-adjusted. GAP 4/10/18."""
+# Default conversion from Garmin's EPOC-based ``activityTrainingLoad`` to the
+# sRPE scale (RPE × min) the CTL/ATL/TSB model is calibrated for. Anchored on
+# real data (a hard ~42' run: Garmin load 258 vs sRPE 7×42≈294 → ~1.15; easy
+# runs sit higher), so 1.5 is a reasonable cold-start. Refined per-athlete by
+# ``calibrate_garmin_factor`` once enough paired runs exist.
+GARMIN_LOAD_TO_SRPE = 1.5
+
+
+def _srpe_load(run: RunSummary, profile: AthleteProfile | None = None) -> float:
+    """Subjective session load = effective RPE × duration (min), heat-adjusted."""
     if run.duration_min <= 0:
         return 0.0
     return round(estimate_rpe(run, profile) * run.duration_min * heat_factor(run), 1)
+
+
+def internal_load(
+    run: RunSummary,
+    profile: AthleteProfile | None = None,
+    garmin_factor: float | None = None,
+) -> float:
+    """Internal (physiological) session load, on the sRPE scale. GAP 4/10/18.
+
+    Prefers Garmin's measured ``activityTrainingLoad`` (EPOC-based) when present,
+    mapped onto the sRPE scale via ``garmin_factor`` (per-athlete calibration,
+    see :func:`calibrate_garmin_factor`) or the :data:`GARMIN_LOAD_TO_SRPE`
+    default. Heat is *not* re-applied to Garmin load — it already reflects the
+    heat-elevated heart rate. Falls back to subjective sRPE when no Garmin load
+    is available (demo / manual entries), keeping the offline path unchanged.
+    """
+    if run.garmin_training_load is not None and run.garmin_training_load > 0:
+        return round(run.garmin_training_load * (garmin_factor or GARMIN_LOAD_TO_SRPE), 1)
+    return _srpe_load(run, profile)
+
+
+def calibrate_garmin_factor(
+    runs: list[RunSummary], profile: AthleteProfile | None = None
+) -> float | None:
+    """Per-athlete sRPE/Garmin-load ratio from runs carrying both signals.
+
+    Returns ``sum(sRPE) / sum(Garmin load)`` over paired runs — a total-load
+    preserving ratio that maps Garmin's load onto *this athlete's* sRPE scale
+    (keeping the CTL/ATL/TSB thresholds valid), or None when there isn't enough
+    paired data. We only pair against a trustworthy sRPE — one backed by an
+    explicit RPE or a heart rate, not a label-only guess.
+    """
+    srpe_total = 0.0
+    garmin_total = 0.0
+    pairs = 0
+    for r in runs:
+        gl = r.garmin_training_load
+        if not gl or gl <= 0 or r.duration_min <= 0:
+            continue
+        if r.rpe is None and r.avg_hr is None:
+            continue
+        srpe = _srpe_load(r, profile)
+        if srpe > 0:
+            srpe_total += srpe
+            garmin_total += gl
+            pairs += 1
+    if pairs < 3 or garmin_total <= 0:
+        return None
+    return round(srpe_total / garmin_total, 3)
 
 
 def equivalent_flat_km(run: RunSummary) -> float:

@@ -188,8 +188,22 @@ Prima slice verticale (Fase 1 + cuore della Fase 2), perché tocca direttamente
   `trail`.
 - Migrazione `bf76056f2179` per le colonne Garmin su `activities`.
 
+**Settima slice — ricalibrazione del carico sui dati Garmin reali:**
+
+- `internal_load` ora preferisce la **training load misurata da Garmin**
+  (`activityTrainingLoad`, EPOC-based) quando presente, mappandola sulla scala
+  sRPE; ricade su sRPE in demo/manuale (path offline invariato). Il caldo NON
+  viene riapplicato alla load di Garmin (riflette già la FC elevata).
+- `calibrate_garmin_factor`: fattore **per-atleta** = somma(sRPE)/somma(Garmin)
+  sulle corse con entrambi i segnali (RPE o FC affidabili). Il rapporto-somma
+  **preserva il carico totale** ma adotta la distribuzione per-seduta di Garmin;
+  CTL/ATL/TSB restano sulla scala già tarata. Default 1.5 (ancorato a dati reali:
+  corsa dura 42′ → Garmin 258 vs sRPE ~294).
+- `TrainingMetrics.load_source` (garmin | mixed | srpe) per trasparenza, mostrato
+  nel prompt.
+
 ### Stato finale
-Tutti i 23 gap del documento sono coperti e le 4 fasi della roadmap completate.
-Possibili evoluzioni future: VDOT/Daniels per la previsione, difficoltà tecnica
-del trail, UI dedicata per gare B/C e zone, ricalibrazione del modello carico
-sui dati Garmin (`garmin_training_load`) una volta raccolto storico reale.
+Tutti i 23 gap del documento sono coperti e le 4 fasi della roadmap completate,
+con il modello di carico ora ancorato ai dati fisiologici reali di Garmin quando
+disponibili. Possibili evoluzioni future: VDOT/Daniels per la previsione,
+difficoltà tecnica del trail, UI dedicata per gare B/C e zone.

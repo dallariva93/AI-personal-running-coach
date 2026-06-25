@@ -100,7 +100,11 @@ def semantic_summary(m: TrainingMetrics) -> str:
             f"Forma (TSB): {m.tsb:+.0f} → {m.form_state}. "
             f"Fitness CTL {m.ctl}, fatica ATL {m.atl}."
         )
-    lines.append(f"Carico interno 7gg: {m.acute_load_internal} unità (Session Load).")
+    src = {
+        "garmin": "Garmin training load", "mixed": "Garmin + sRPE",
+        "srpe": "RPE×durata",
+    }.get(m.load_source or "", "Session Load")
+    lines.append(f"Carico interno 7gg: {m.acute_load_internal} unità ({src}).")
     lines.append(f"Volume 7gg: {m.acute_load_km} km, trend {m.load_trend}.")
     if m.acwr is not None:
         lines.append(f"ACWR (secondario): {m.acwr}.")

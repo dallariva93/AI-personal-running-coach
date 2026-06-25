@@ -25,7 +25,7 @@ from datetime import date, datetime, timedelta
 from app.processing.adaptive import adapt_plan
 from app.processing.efficiency import aerobic_efficiency
 from app.processing.injury import injury_risk
-from app.processing.load import internal_load, is_truly_easy
+from app.processing.load import calibrate_garmin_factor, internal_load, is_truly_easy
 from app.processing.performance import predict_race_time
 from app.processing.periodization import build_periodization, phase_for
 from app.processing.recovery import readiness
@@ -87,14 +87,16 @@ def weekly_buckets(runs: list[RunSummary], weeks: int = 8) -> list[WeeklyBucket]
 
 
 def _daily_internal_loads(
-    runs: list[RunSummary], profile: AthleteProfile | None
+    runs: list[RunSummary],
+    profile: AthleteProfile | None,
+    garmin_factor: float | None = None,
 ) -> dict[date, float]:
     """Sum internal Session Load per calendar day."""
     daily: dict[date, float] = {}
     for r in runs:
         d = _parse_date(r.date)
         if d:
-            daily[d] = daily.get(d, 0.0) + internal_load(r, profile)
+            daily[d] = daily.get(d, 0.0) + internal_load(r, profile, garmin_factor)
     return daily
 
 
@@ -102,6 +104,7 @@ def fitness_fatigue(
     runs: list[RunSummary],
     ref: date | None = None,
     profile: AthleteProfile | None = None,
+    garmin_factor: float | None = None,
 ) -> tuple[float | None, float | None, float | None]:
     """Return ``(CTL, ATL, TSB)`` from the Banister impulse-response model.
 
@@ -110,7 +113,7 @@ def fitness_fatigue(
     the standard convention so a hard day doesn't instantly read as "fresh".
     """
     ref = ref or date.today()
-    daily = _daily_internal_loads(runs, profile)
+    daily = _daily_internal_loads(runs, profile, garmin_factor)
     if not daily:
         return None, None, None
 
@@ -227,9 +230,21 @@ def compute_metrics(
     window42 = [
         r for r in runs if (d := _parse_date(r.date)) and ref - timedelta(days=41) <= d <= ref
     ]
-    acute_internal = round(sum(internal_load(r, profile) for r in window7), 1)
-    chronic_internal = round(sum(internal_load(r, profile) for r in window42) / 6.0, 1)
-    ctl, atl, tsb = fitness_fatigue(runs, ref=ref, profile=profile)
+    # Calibrate Garmin's load onto this athlete's sRPE scale (real-data driven).
+    garmin_factor = calibrate_garmin_factor(runs, profile)
+    acute_internal = round(sum(internal_load(r, profile, garmin_factor) for r in window7), 1)
+    chronic_internal = round(
+        sum(internal_load(r, profile, garmin_factor) for r in window42) / 6.0, 1
+    )
+    ctl, atl, tsb = fitness_fatigue(runs, ref=ref, profile=profile, garmin_factor=garmin_factor)
+    # Which load source feeds the recent window (transparency for the UI/coach).
+    g_count = sum(1 for r in window42 if r.garmin_training_load)
+    if g_count == 0:
+        load_source = "srpe"
+    elif g_count == len([r for r in window42 if r.duration_min > 0]):
+        load_source = "garmin"
+    else:
+        load_source = "mixed"
 
     # Previous 7-day window for trend.
     prev_week = _distance_between(runs, ref - timedelta(days=13), ref - timedelta(days=7))
@@ -285,6 +300,7 @@ def compute_metrics(
         chronic_load_km=chronic,
         acute_load_internal=acute_internal,
         chronic_load_internal=chronic_internal,
+        load_source=load_source,
         ctl=ctl,
         atl=atl,
         tsb=tsb,
