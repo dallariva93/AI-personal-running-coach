@@ -1,6 +1,8 @@
 package com.runningcoach.app.data.repository
 
 import com.runningcoach.app.data.model.Activity
+import com.runningcoach.app.data.model.AthleteProfile
+import com.runningcoach.app.data.model.DailyCheckin
 import com.runningcoach.app.data.model.Overview
 import com.runningcoach.app.data.model.Report
 import com.runningcoach.app.data.remote.ApiClient
@@ -28,4 +30,10 @@ class CoachRepository(private val settings: SettingsStore) {
     suspend fun analyze(activityId: Int? = null): Report = api().analyze(activityId)
 
     suspend fun planWeekly(): Report = api().planWeekly()
+
+    suspend fun getProfile(): AthleteProfile = api().getProfile()
+
+    suspend fun putProfile(profile: AthleteProfile): AthleteProfile = api().putProfile(profile)
+
+    suspend fun postCheckin(checkin: DailyCheckin): DailyCheckin = api().postCheckin(checkin)
 }

@@ -25,6 +25,7 @@ import com.runningcoach.app.data.model.Overview
 import com.runningcoach.app.ui.components.ActivityRow
 import com.runningcoach.app.ui.components.FormStateCard
 import com.runningcoach.app.ui.components.SectionTitle
+import com.runningcoach.app.ui.components.PredictionCard
 import com.runningcoach.app.ui.components.WeeklyChart
 import com.runningcoach.app.ui.viewmodel.OverviewUiState
 
@@ -51,6 +52,10 @@ fun HomeScreen(state: OverviewUiState, onSync: () -> Unit, onAnalyze: () -> Unit
 
         if (ov != null) {
             FormStateCard(ov.metrics)
+            ov.prediction?.let {
+                Spacer(Modifier.height(12.dp))
+                PredictionCard(it)
+            }
             Spacer(Modifier.height(12.dp))
 
             Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {

@@ -54,6 +54,21 @@ def demo_source():
 
 
 @pytest.fixture
+def empty_source():
+    """An activity source that returns no runs.
+
+    Needed since analysis now triggers a pre-sync (``sync_before_analysis``):
+    to exercise the genuine "no data" guard the source must yield nothing.
+    """
+
+    class _EmptySource:
+        def get_recent_runs(self, limit: int = 0) -> list:
+            return []
+
+    return _EmptySource()
+
+
+@pytest.fixture
 def client(db_env):
     """FastAPI TestClient against the temporary database."""
     from fastapi.testclient import TestClient

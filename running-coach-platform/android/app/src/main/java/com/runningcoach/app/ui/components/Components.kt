@@ -28,6 +28,8 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.runningcoach.app.data.model.Activity
+import com.runningcoach.app.data.model.PeriodizationPlan
+import com.runningcoach.app.data.model.RacePrediction
 import com.runningcoach.app.data.model.Report
 import com.runningcoach.app.data.model.TrainingMetrics
 import com.runningcoach.app.data.model.WeeklyBucket
@@ -83,12 +85,128 @@ fun FormStateCard(metrics: TrainingMetrics, modifier: Modifier = Modifier) {
                 Modifier.fillMaxWidth(),
                 horizontalArrangement = Arrangement.SpaceBetween,
             ) {
-                StatItem("ACWR", metrics.acwr?.let { fmt(it) } ?: "–")
+                StatItem("Forma TSB", metrics.tsb?.let { fmtSigned(it) } ?: "–")
+                StatItem("Fitness", metrics.ctl?.let { fmt(it) } ?: "–")
+                StatItem("Fatica", metrics.atl?.let { fmt(it) } ?: "–")
                 StatItem("7 gg", "${fmt(metrics.acuteLoadKm)} km")
-                StatItem("28 gg media", "${fmt(metrics.chronicLoadKm)} km")
+            }
+            Spacer(Modifier.height(12.dp))
+            // 80/20 distribution across the three real-intensity states.
+            Row(
+                Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+            ) {
+                StatItem("Facile", pct(metrics.easyRatio))
+                StatItem("Medio", pct(metrics.moderateRatio))
+                StatItem("Intenso", pct(metrics.hardRatio))
+                StatItem("ACWR", metrics.acwr?.let { fmt(it) } ?: "–")
+            }
+            val extras = buildList {
+                metrics.injuryLevel?.takeIf { it != "low" }?.let {
+                    add("⚠️ rischio infortunio: ${it} (${metrics.injuryScore?.roundToInt() ?: 0})")
+                }
+                metrics.readinessState?.takeIf { it != "unknown" }?.let {
+                    add("recupero: ${it} (${metrics.readiness?.roundToInt() ?: 0})")
+                }
+                metrics.efficiencyTrend?.takeIf { it != "unknown" }?.let {
+                    add("efficienza: ${trendLabel(it)}")
+                }
+                metrics.vo2max?.let { add("VO2max ${fmt(it)}") }
+            }
+            if (extras.isNotEmpty()) {
+                Spacer(Modifier.height(10.dp))
+                Text(
+                    extras.joinToString("  ·  "),
+                    style = MaterialTheme.typography.labelSmall,
+                    color = Color.Gray,
+                )
+            }
+        }
+    }
+}
+
+/** Goal-race forecast: predicted finish + probability of the target time. */
+@Composable
+fun PredictionCard(prediction: RacePrediction, modifier: Modifier = Modifier) {
+    Card(modifier.fillMaxWidth()) {
+        Column(Modifier.padding(16.dp)) {
+            SectionTitle("Previsione gara — ${prediction.goalType}")
+            Row(
+                Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+            ) {
+                StatItem("Previsto", prediction.predictedTime ?: "–")
+                StatItem("Obiettivo", prediction.targetTime ?: "–")
                 StatItem(
-                    "Facile",
-                    metrics.easyRatio?.let { "${(it * 100).roundToInt()}%" } ?: "–",
+                    "Probabilità",
+                    prediction.probability?.let { "${(it * 100).roundToInt()}%" } ?: "–",
+                )
+                StatItem("Confidenza", prediction.confidence)
+            }
+            prediction.basis?.let {
+                Spacer(Modifier.height(8.dp))
+                Text(it, style = MaterialTheme.typography.labelSmall, color = Color.Gray)
+            }
+        }
+    }
+}
+
+/** Periodization macrocycle: phase timeline with the current phase highlighted. */
+@Composable
+fun PhaseCard(plan: PeriodizationPlan, metrics: TrainingMetrics, modifier: Modifier = Modifier) {
+    val primary = MaterialTheme.colorScheme.primary
+    Card(modifier.fillMaxWidth()) {
+        Column(Modifier.padding(16.dp)) {
+            SectionTitle("Periodizzazione — ${plan.weeksToRace} sett. alla gara")
+            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+                plan.phases.forEach { phase ->
+                    val current = phase.name == plan.currentPhase
+                    Column(
+                        Modifier.weight(phase.weeks.coerceAtLeast(1).toFloat()),
+                        horizontalAlignment = Alignment.CenterHorizontally,
+                    ) {
+                        Box(
+                            Modifier.fillMaxWidth().height(26.dp)
+                                .clip(RoundedCornerShape(6.dp))
+                                .background(if (current) primary else Color(0xFFD0D0D0)),
+                            contentAlignment = Alignment.Center,
+                        ) {
+                            Text(
+                                phase.name.take(4).uppercase(),
+                                style = MaterialTheme.typography.labelSmall,
+                                color = if (current) Color.White else Color.DarkGray,
+                                fontSize = 9.sp,
+                            )
+                        }
+                        Text(
+                            "${phase.weeks}w",
+                            style = MaterialTheme.typography.labelSmall,
+                            color = Color.Gray,
+                            fontSize = 9.sp,
+                        )
+                    }
+                }
+            }
+            metrics.phaseFocus?.let {
+                Spacer(Modifier.height(10.dp))
+                Text(
+                    "Fase attuale: ${plan.currentPhase.uppercase()} — $it",
+                    style = MaterialTheme.typography.bodySmall,
+                )
+            }
+            metrics.phaseVolumeTargetKm?.let {
+                Text(
+                    "Volume target ~${fmt(it)} km",
+                    style = MaterialTheme.typography.labelSmall,
+                    color = Color.Gray,
+                )
+            }
+            if (metrics.adaptiveNotes.isNotEmpty()) {
+                Spacer(Modifier.height(6.dp))
+                Text(
+                    "⚙️ " + metrics.adaptiveNotes.joinToString("; "),
+                    style = MaterialTheme.typography.labelSmall,
+                    color = Color.Gray,
                 )
             }
         }
@@ -194,3 +312,14 @@ fun ReportCard(title: String, report: Report?, modifier: Modifier = Modifier) {
 
 private fun fmt(v: Double): String =
     if (v == v.roundToInt().toDouble()) v.roundToInt().toString() else "%.1f".format(v)
+
+private fun fmtSigned(v: Double): String = (if (v >= 0) "+" else "") + v.roundToInt().toString()
+
+private fun pct(v: Double?): String = v?.let { "${(it * 100).roundToInt()}%" } ?: "–"
+
+private fun trendLabel(t: String): String = when (t) {
+    "improving" -> "↑ migliora"
+    "declining" -> "↓ cala"
+    "stable" -> "→ stabile"
+    else -> t
+}

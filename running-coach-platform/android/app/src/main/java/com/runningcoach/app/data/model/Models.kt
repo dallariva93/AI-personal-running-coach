@@ -2,20 +2,50 @@ package com.runningcoach.app.data.model
 
 import com.google.gson.annotations.SerializedName
 
-/** Compact training-load and form metrics computed by the backend. */
+/** Compact training-load and form metrics computed by the backend ("brain"). */
 data class TrainingMetrics(
     @SerializedName("runs_count") val runsCount: Int = 0,
     @SerializedName("total_distance_km") val totalDistanceKm: Double = 0.0,
     @SerializedName("weekly_distance_km") val weeklyDistanceKm: Double = 0.0,
     @SerializedName("acute_load_km") val acuteLoadKm: Double = 0.0,
     @SerializedName("chronic_load_km") val chronicLoadKm: Double = 0.0,
+    @SerializedName("acute_load_internal") val acuteLoadInternal: Double = 0.0,
+    @SerializedName("load_source") val loadSource: String? = null,
+    // Fitness / Fatigue model.
+    @SerializedName("ctl") val ctl: Double? = null,
+    @SerializedName("atl") val atl: Double? = null,
+    @SerializedName("tsb") val tsb: Double? = null,
     @SerializedName("acwr") val acwr: Double? = null,
     @SerializedName("monotony") val monotony: Double? = null,
+    // Intensity distribution (three states).
     @SerializedName("easy_ratio") val easyRatio: Double? = null,
+    @SerializedName("moderate_ratio") val moderateRatio: Double? = null,
+    @SerializedName("hard_ratio") val hardRatio: Double? = null,
     @SerializedName("form_state") val formState: String = "unknown",
     @SerializedName("form_explanation") val formExplanation: String = "",
     @SerializedName("load_trend") val loadTrend: String = "stable",
     @SerializedName("week_start") val weekStart: String? = null,
+    // Periodization.
+    @SerializedName("phase") val phase: String? = null,
+    @SerializedName("phase_focus") val phaseFocus: String? = null,
+    @SerializedName("weeks_to_race") val weeksToRace: Int? = null,
+    @SerializedName("phase_volume_target_km") val phaseVolumeTargetKm: Double? = null,
+    // Injury risk + progress.
+    @SerializedName("injury_score") val injuryScore: Double? = null,
+    @SerializedName("injury_level") val injuryLevel: String? = null,
+    @SerializedName("injury_factors") val injuryFactors: List<String> = emptyList(),
+    @SerializedName("aerobic_efficiency") val aerobicEfficiency: Double? = null,
+    @SerializedName("efficiency_trend") val efficiencyTrend: String? = null,
+    // Recovery readiness.
+    @SerializedName("readiness") val readiness: Double? = null,
+    @SerializedName("readiness_state") val readinessState: String? = null,
+    // Goal-race forecast.
+    @SerializedName("predicted_race_time") val predictedRaceTime: String? = null,
+    @SerializedName("race_probability") val raceProbability: Double? = null,
+    @SerializedName("race_confidence") val raceConfidence: String? = null,
+    // VO2max + adaptive plan notes.
+    @SerializedName("vo2max") val vo2max: Double? = null,
+    @SerializedName("adaptive_notes") val adaptiveNotes: List<String> = emptyList(),
 )
 
 /** Aggregated load for one ISO week. */
@@ -53,6 +83,78 @@ data class Report(
     @SerializedName("created_at") val createdAt: String? = null,
 )
 
+/** Predicted finish time and target probability for the goal race. */
+data class RacePrediction(
+    @SerializedName("goal_type") val goalType: String,
+    @SerializedName("distance_km") val distanceKm: Double = 0.0,
+    @SerializedName("predicted_time") val predictedTime: String? = null,
+    @SerializedName("target_time") val targetTime: String? = null,
+    @SerializedName("probability") val probability: Double? = null,
+    @SerializedName("basis") val basis: String? = null,
+    @SerializedName("confidence") val confidence: String = "low",
+)
+
+/** Long-horizon training memory (last 6 months). */
+data class AthleteSnapshot(
+    @SerializedName("runs_count") val runsCount: Int = 0,
+    @SerializedName("total_distance_km") val totalDistanceKm: Double = 0.0,
+    @SerializedName("avg_weekly_volume_km") val avgWeeklyVolumeKm: Double = 0.0,
+    @SerializedName("longest_run_km") val longestRunKm: Double = 0.0,
+    @SerializedName("best_5k") val best5k: String? = null,
+    @SerializedName("best_10k") val best10k: String? = null,
+    @SerializedName("best_half") val bestHalf: String? = null,
+    @SerializedName("best_marathon") val bestMarathon: String? = null,
+)
+
+/** One periodization phase in the macrocycle. */
+data class PhasePlan(
+    @SerializedName("name") val name: String,
+    @SerializedName("start_date") val startDate: String,
+    @SerializedName("end_date") val endDate: String,
+    @SerializedName("weeks") val weeks: Int = 0,
+    @SerializedName("volume_factor") val volumeFactor: Double = 1.0,
+    @SerializedName("intensity_focus") val intensityFocus: String = "",
+    @SerializedName("key_workouts") val keyWorkouts: List<String> = emptyList(),
+)
+
+/** The full macrocycle from today to the goal race. */
+data class PeriodizationPlan(
+    @SerializedName("goal_type") val goalType: String = "",
+    @SerializedName("target_date") val targetDate: String = "",
+    @SerializedName("weeks_to_race") val weeksToRace: Int = 0,
+    @SerializedName("current_phase") val currentPhase: String = "",
+    @SerializedName("phases") val phases: List<PhasePlan> = emptyList(),
+)
+
+/** Target race the plan works towards. */
+data class Goal(
+    @SerializedName("goal_type") val goalType: String = "general",
+    @SerializedName("target_date") val targetDate: String? = null,
+    @SerializedName("target_time") val targetTime: String? = null,
+    @SerializedName("priority") val priority: String = "A",
+)
+
+/** Structured athlete profile. */
+data class AthleteProfile(
+    @SerializedName("age") val age: Int? = null,
+    @SerializedName("sex") val sex: String? = null,
+    @SerializedName("max_hr") val maxHr: Int? = null,
+    @SerializedName("resting_hr") val restingHr: Int? = null,
+    @SerializedName("weekly_runs") val weeklyRuns: Int? = null,
+    @SerializedName("level") val level: String = "intermediate",
+    @SerializedName("risk_tolerance") val riskTolerance: String = "moderate",
+    @SerializedName("goal") val goal: Goal? = null,
+)
+
+/** Subjective daily wellness check-in. */
+data class DailyCheckin(
+    @SerializedName("date") val date: String,
+    @SerializedName("sleep_h") val sleepH: Double? = null,
+    @SerializedName("fatigue") val fatigue: Int? = null,
+    @SerializedName("soreness") val soreness: Int? = null,
+    @SerializedName("motivation") val motivation: Int? = null,
+)
+
 /** Everything the app needs to render its main screens, in one response. */
 data class Overview(
     @SerializedName("version") val version: String = "",
@@ -63,4 +165,9 @@ data class Overview(
     @SerializedName("activities") val activities: List<Activity> = emptyList(),
     @SerializedName("latest_analysis") val latestAnalysis: Report? = null,
     @SerializedName("latest_plan") val latestPlan: Report? = null,
+    @SerializedName("profile") val profile: AthleteProfile? = null,
+    @SerializedName("snapshot") val snapshot: AthleteSnapshot? = null,
+    @SerializedName("prediction") val prediction: RacePrediction? = null,
+    @SerializedName("plan") val plan: PeriodizationPlan? = null,
+    @SerializedName("checkin") val checkin: DailyCheckin? = null,
 )

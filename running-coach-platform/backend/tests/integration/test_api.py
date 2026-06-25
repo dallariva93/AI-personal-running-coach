@@ -51,7 +51,14 @@ def test_weekly_plan_endpoint(client):
     assert resp.json()["scope"] == "weekly"
 
 
-def test_analyze_without_data_returns_400(client):
+def test_analyze_without_data_returns_400(client, monkeypatch):
+    # Analysis pre-syncs; point the source at an empty one so the DB stays empty
+    # and the genuine "no data" guard (400) is exercised.
+    from app.services import ingest as ingest_mod
+
+    monkeypatch.setattr(ingest_mod, "get_source", lambda settings=None: type(
+        "_Empty", (), {"get_recent_runs": lambda self, limit=0: []}
+    )())
     resp = client.post("/api/analyze")
     assert resp.status_code == 400
 

@@ -16,9 +16,16 @@ from app import __version__
 from app.config import get_settings
 from app.db.database import get_session
 from app.db.models import CoachingReport
-from app.processing import compute_metrics, weekly_buckets
+from app.processing import (
+    aerobic_efficiency,
+    build_periodization,
+    build_snapshot,
+    compute_metrics,
+    predict_race_time,
+    weekly_buckets,
+)
 from app.schemas import ActivityOut, ReportOut, TrainingMetrics, WeeklyBucket
-from app.services import list_activities
+from app.services import get_profile, latest_checkin, list_activities
 from app.services.ingest import _all_summaries
 
 router = APIRouter(prefix="/api/mobile", tags=["mobile"])
@@ -47,12 +54,29 @@ def _latest_report(session: Session, scope: str) -> ReportOut | None:
 
 @router.get("/overview")
 def overview(session: Session = Depends(get_session)) -> dict:
-    """Everything the app needs to render its main screens in one request."""
+    """Everything the app needs to render its main screens in one request.
+
+    Brain-aware: the metrics carry the full Fitness/Fatigue, periodization,
+    injury, readiness and intensity signals, and the response also bundles the
+    athlete profile, the 6-month snapshot, the goal-race prediction and the
+    periodization plan so the app can render the coaching screens natively.
+    """
     settings = get_settings()
     summaries = _all_summaries(session)
-    metrics: TrainingMetrics = compute_metrics(summaries)
+    profile = get_profile(session)
+    checkin = latest_checkin(session)
+    metrics: TrainingMetrics = compute_metrics(summaries, profile=profile, checkin=checkin)
     weekly: list[WeeklyBucket] = weekly_buckets(summaries, weeks=8)
     activities = [ActivityOut.model_validate(a) for a in list_activities(session, limit=30)]
+    snapshot = build_snapshot(summaries)
+
+    goal = profile.goal if profile else None
+    prediction = plan = None
+    if goal:
+        _, eff_trend = aerobic_efficiency(summaries)
+        prediction = predict_race_time(goal, snapshot, eff_trend)
+        baseline = max(metrics.chronic_load_km, metrics.acute_load_km / 1.5, 20.0)
+        plan = build_periodization(goal, baseline_km=baseline)
 
     return {
         "version": __version__,
@@ -63,4 +87,9 @@ def overview(session: Session = Depends(get_session)) -> dict:
         "activities": [a.model_dump() for a in activities],
         "latest_analysis": _latest_report(session, "single"),
         "latest_plan": _latest_report(session, "weekly"),
+        "profile": profile.model_dump() if profile else None,
+        "snapshot": snapshot.model_dump(),
+        "prediction": prediction.model_dump() if prediction else None,
+        "plan": plan.model_dump() if plan else None,
+        "checkin": checkin.model_dump() if checkin else None,
     }

@@ -18,6 +18,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
+import com.runningcoach.app.ui.components.PhaseCard
 import com.runningcoach.app.ui.components.ReportCard
 import com.runningcoach.app.ui.viewmodel.OverviewUiState
 
@@ -53,6 +54,11 @@ fun PlanScreen(state: OverviewUiState, onGeneratePlan: () -> Unit) {
                 Spacer(Modifier.fillMaxWidth(0.04f))
                 Text("Il coach sta pensando…", style = MaterialTheme.typography.bodySmall)
             }
+        }
+
+        ov?.plan?.let {
+            Spacer(Modifier.height(16.dp))
+            PhaseCard(it, ov.metrics)
         }
 
         Spacer(Modifier.height(16.dp))
