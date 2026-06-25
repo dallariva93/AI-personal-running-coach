@@ -152,12 +152,31 @@ class AICoach:
             bits.append(f"{profile.experience_years:g} anni di corsa")
         if profile.max_hr:
             bits.append(f"FCmax {profile.max_hr}")
+        if profile.resting_hr:
+            bits.append(f"FCriposo {profile.resting_hr}")
         if profile.weekly_runs:
             bits.append(f"{profile.weekly_runs} uscite/sett")
         descr = ", ".join(bits) if bits else self.settings.athlete_profile
         if profile.physiology and profile.physiology.lt2_pace:
             descr += f". Soglia (LT2) ~{profile.physiology.lt2_pace}/km"
+        zones = self._zones_text(profile.zones)
+        if zones:
+            descr += f". Zone FC: {zones}"
         return f"Atleta: {descr}."
+
+    @staticmethod
+    def _zones_text(zones) -> str:
+        """Render personalised HR zones as 'Z2 141-155, Z4 169-178'."""
+        if zones is None:
+            return ""
+        parts = []
+        for name, bounds in (
+            ("Z1", zones.z1_hr), ("Z2", zones.z2_hr), ("Z3", zones.z3_hr),
+            ("Z4", zones.z4_hr), ("Z5", zones.z5_hr),
+        ):
+            if bounds:
+                parts.append(f"{name} {bounds[0]}-{bounds[1]}")
+        return ", ".join(parts)
 
     def _handle_failure(self, exc: Exception, fallback_fn, *args) -> CoachingResult:
         """On AI failure, either degrade to the offline coach or re-raise."""

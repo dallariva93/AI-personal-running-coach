@@ -25,7 +25,7 @@ from datetime import date, datetime, timedelta
 from app.processing.adaptive import adapt_plan
 from app.processing.efficiency import aerobic_efficiency
 from app.processing.injury import injury_risk
-from app.processing.load import calibrate_garmin_factor, internal_load, is_truly_easy
+from app.processing.load import calibrate_garmin_factor, intensity_class, internal_load
 from app.processing.performance import predict_race_time
 from app.processing.periodization import build_periodization, phase_for
 from app.processing.recovery import readiness
@@ -168,7 +168,10 @@ def _classify_form(
     if acwr is not None and acwr > 1.5:
         acwr_note = f" Nota: ACWR {acwr:.2f} elevato, occhio ai salti di carico."
 
-    # TSB thresholds (TrainingPeaks convention on the normalised scale).
+    # TSB thresholds, relaxed for endurance amateurs (TrainingPeaks convention):
+    # TSB roughly -25..-10 is the *productive training* band, not fatigue — only
+    # below ~-25 does fatigue dominate, and below ~-35 it's overreaching. The old
+    # -10 cutoff flagged normal hard-training weeks as "fatigued".
     if tsb > 8:
         # Fresh while acute load is collapsing = drifting into detraining.
         if acwr is not None and acwr < 0.8:
@@ -190,9 +193,15 @@ def _classify_form(
         )
     if tsb >= -25:
         return (
+            "balanced",
+            f"Carico produttivo (TSB {tsb:+.0f}): stai assorbendo un buon volume, "
+            "è la zona dove si costruisce. Continua e monitora il recupero." + acwr_note,
+        )
+    if tsb >= -35:
+        return (
             "fatigued",
-            f"Fatica in accumulo (TSB {tsb:+.0f}): assorbi il lavoro, "
-            "privilegia sedute facili." + acwr_note,
+            f"Fatica in accumulo (TSB {tsb:+.0f}): inizia a privilegiare "
+            "sedute facili nei prossimi giorni." + acwr_note,
         )
     return (
         "fatigued",
@@ -270,11 +279,18 @@ def compute_metrics(
         std = statistics.pstdev(loads)
         monotony = round(mean / std, 2) if std > 0 else None
 
-    # 80/20 easy ratio over the acute window, from *real* intensity (GAP 5):
-    # fall back to the activity label only when HR/zones/RPE are missing.
-    easy_km = sum(r.distance_km for r in window7 if is_truly_easy(r, profile))
+    # Intensity distribution over the acute window from *real* intensity, in
+    # three states (easy | moderate | hard) — falls back to the label only when
+    # HR/zones/RPE are missing (GAP 5).
     total_km = sum(r.distance_km for r in window7)
-    easy_ratio = round(easy_km / total_km, 2) if total_km > 0 else None
+    easy_ratio = moderate_ratio = hard_ratio = None
+    if total_km > 0:
+        dist = {"easy": 0.0, "moderate": 0.0, "hard": 0.0}
+        for r in window7:
+            dist[intensity_class(r, profile)] += r.distance_km
+        easy_ratio = round(dist["easy"] / total_km, 2)
+        moderate_ratio = round(dist["moderate"] / total_km, 2)
+        hard_ratio = round(dist["hard"] / total_km, 2)
 
     form_state, form_explanation = _classify_form(tsb, ctl, acwr, acute, chronic)
 
@@ -307,6 +323,8 @@ def compute_metrics(
         acwr=acwr,
         monotony=monotony,
         easy_ratio=easy_ratio,
+        moderate_ratio=moderate_ratio,
+        hard_ratio=hard_ratio,
         form_state=form_state,
         form_explanation=form_explanation,
         load_trend=load_trend,

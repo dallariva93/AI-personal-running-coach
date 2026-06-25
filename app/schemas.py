@@ -261,6 +261,8 @@ class TrainingMetrics(BaseModel):
     acwr: float | None = None  # acute:chronic ratio — kept as a SECONDARY check
     monotony: float | None = None  # weekly load monotony (mean/std of daily load)
     easy_ratio: float | None = None  # fraction of easy volume (target ~0.8)
+    moderate_ratio: float | None = None  # fraction of Z3 "moderate" volume
+    hard_ratio: float | None = None  # fraction of Z4+ "hard" volume
     form_state: str = "unknown"  # fresh | balanced | fatigued | detraining | unknown
     form_explanation: str = ""
     load_trend: str = "stable"  # rising | stable | falling

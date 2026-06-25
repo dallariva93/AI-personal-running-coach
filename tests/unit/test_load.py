@@ -9,6 +9,7 @@ from app.processing import (
     equivalent_flat_km,
     estimate_rpe,
     fitness_fatigue,
+    intensity_class,
     internal_load,
     is_truly_easy,
 )
@@ -19,6 +20,41 @@ REF = date(2026, 6, 22)
 
 def _run(d: str, km: float, t: str = "easy", **kw) -> RunSummary:
     return RunSummary(date=d, distance_km=km, activity_type=t, duration_min=km * 6, **kw)
+
+
+def test_intensity_class_three_states_from_hr_reserve():
+    p = AthleteProfile(max_hr=185, resting_hr=50)  # ceiling 0.82≈161, floor 0.88≈169
+    assert intensity_class(_run("2026-06-20", 10, avg_hr=150), p) == "easy"
+    assert intensity_class(_run("2026-06-20", 10, avg_hr=163), p) == "moderate"
+    assert intensity_class(_run("2026-06-20", 10, avg_hr=172), p) == "hard"
+
+
+def test_intensity_class_raised_easy_ceiling():
+    # 158 bpm (~80% HRR) was "not easy" under the old 0.75 cutoff; now easy.
+    p = AthleteProfile(max_hr=185, resting_hr=50)
+    run = _run("2026-06-20", 10, "easy", avg_hr=158)
+    assert intensity_class(run, p) == "easy"
+    assert is_truly_easy(run, p) is True
+
+
+def test_intensity_class_medio_is_moderate_not_hard():
+    assert intensity_class(_run("2026-06-20", 8, "medio")) == "moderate"
+    assert intensity_class(_run("2026-06-20", 8, "lungo")) == "easy"
+    assert intensity_class(_run("2026-06-20", 8, "tempo")) == "hard"
+
+
+def test_metrics_expose_intensity_distribution():
+    runs = [
+        _run("2026-06-20", 8, "easy", avg_hr=140),
+        _run("2026-06-19", 6, "medio", avg_hr=163),
+        _run("2026-06-18", 4, "tempo", avg_hr=175),
+    ]
+    p = AthleteProfile(max_hr=185, resting_hr=50)
+    m = compute_metrics(runs, ref=REF, profile=p)
+    assert m.easy_ratio is not None and m.moderate_ratio is not None and m.hard_ratio is not None
+    # Ratios cover the whole window (each rounded to 2 decimals).
+    assert abs((m.easy_ratio + m.moderate_ratio + m.hard_ratio) - 1.0) < 0.02
+    assert m.moderate_ratio > 0 and m.hard_ratio > 0  # medio + tempo present
 
 
 def test_estimate_rpe_prefers_explicit_value():

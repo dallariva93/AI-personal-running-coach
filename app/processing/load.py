@@ -155,20 +155,53 @@ def equivalent_flat_km(run: RunSummary) -> float:
     return round(base, 2)
 
 
-def is_truly_easy(run: RunSummary, profile: AthleteProfile | None = None) -> bool:
-    """Whether a session was *actually* easy, from real intensity not the label.
+# Intensity boundaries on the HR-reserve scale. The easy ceiling sits at the
+# top of Z2 (~82% HRR ≈ aerobic threshold) — the old 0.75 was too strict and
+# mislabelled honest aerobic runs as "hard", deflating the 80/20 ratio. Above
+# the hard floor (~88% HRR ≈ Z4) the effort is clearly hard; in between it is a
+# distinct "moderate" (Z3) band, neither easy nor hard.
+EASY_HR_RESERVE_CEILING = 0.82
+HARD_HR_RESERVE_FLOOR = 0.88
 
-    Closes part of GAP 5: an "easy" mislabelled run that was run hard counts as
-    hard. Uses personalised zones when available, else HR reserve, else falls
-    back to the activity label.
+# Fallback intensity by activity label when neither zones, HR nor RPE exist.
+_LABEL_INTENSITY = {
+    "recupero": "easy",
+    "easy": "easy",
+    "lungo": "easy",  # long aerobic volume counts as easy for 80/20
+    "medio": "moderate",
+    "trail": "moderate",
+    "altro": "moderate",
+    "tempo": "hard",
+    "intervalli": "hard",
+    "gara": "hard",
+}
+
+
+def intensity_class(run: RunSummary, profile: AthleteProfile | None = None) -> str:
+    """Classify real intensity as ``easy`` | ``moderate`` | ``hard`` (GAP 5).
+
+    Three states instead of a binary easy/hard split: a Z3 "medio" is its own
+    thing, not lumped with intervals. Priority of evidence: personalised HR
+    zones > HR reserve > RPE > activity label.
     """
     if profile and profile.zones is not None and run.avg_hr is not None:
         zone = profile.zones.zone_of(run.avg_hr)
         if zone is not None:
-            return zone <= 2
+            if zone <= 2:
+                return "easy"
+            return "moderate" if zone == 3 else "hard"
     frac = _hr_fraction(run, profile)
     if frac is not None:
-        return frac < 0.75  # below ~75% HR reserve ≈ aerobic/easy
+        if frac < EASY_HR_RESERVE_CEILING:
+            return "easy"
+        return "moderate" if frac < HARD_HR_RESERVE_FLOOR else "hard"
     if run.rpe is not None:
-        return run.rpe <= 4
-    return run.activity_type in EASY_TYPES
+        if run.rpe <= 4:
+            return "easy"
+        return "moderate" if run.rpe <= 6 else "hard"
+    return _LABEL_INTENSITY.get(run.activity_type, "moderate")
+
+
+def is_truly_easy(run: RunSummary, profile: AthleteProfile | None = None) -> bool:
+    """Whether a session was *actually* easy (real intensity, not the label)."""
+    return intensity_class(run, profile) == "easy"

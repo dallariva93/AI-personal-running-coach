@@ -11,6 +11,7 @@ from app.processing.injury import injury_risk
 from app.processing.load import (
     equivalent_flat_km,
     estimate_rpe,
+    intensity_class,
     internal_load,
     is_truly_easy,
 )
@@ -37,6 +38,7 @@ __all__ = [
     "estimate_rpe",
     "equivalent_flat_km",
     "is_truly_easy",
+    "intensity_class",
     "build_periodization",
     "current_phase",
     "phase_for",
