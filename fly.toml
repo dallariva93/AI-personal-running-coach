@@ -17,6 +17,7 @@ primary_region = "cdg"
   LOG_JSON = "true"
   DATABASE_URL = "sqlite:///data/running_coach.db"
   DB_PATH = "/app/data/running_coach.db"
+  GARMIN_TOKEN_STORE = "/app/data/.garmin_tokens"
   PORT = "8000"
 
 [[mounts]]
