@@ -70,6 +70,23 @@ data class Activity(
     @SerializedName("avg_cadence") val avgCadence: Int? = null,
     @SerializedName("rpe") val rpe: Int? = null,
     @SerializedName("notes") val notes: String? = null,
+    // Garmin-derived rich metrics + semi-structured extras (all optional).
+    @SerializedName("hr_zones") val hrZones: Map<String, Double>? = null,
+    @SerializedName("splits_km") val splitsKm: List<String>? = null,
+    @SerializedName("temperature_c") val temperatureC: Double? = null,
+    @SerializedName("humidity_pct") val humidityPct: Double? = null,
+    @SerializedName("elevation_loss_m") val elevationLossM: Double? = null,
+    @SerializedName("garmin_training_load") val garminTrainingLoad: Double? = null,
+    @SerializedName("vigorous_minutes") val vigorousMinutes: Double? = null,
+    @SerializedName("moderate_minutes") val moderateMinutes: Double? = null,
+    @SerializedName("body_battery_delta") val bodyBatteryDelta: Int? = null,
+    @SerializedName("stamina_drop") val staminaDrop: Double? = null,
+    @SerializedName("avg_grade_adjusted_pace") val avgGradeAdjustedPace: String? = null,
+    @SerializedName("fastest_split_1k") val fastestSplit1k: String? = null,
+    @SerializedName("fastest_split_5k") val fastestSplit5k: String? = null,
+    @SerializedName("vo2max") val vo2max: Double? = null,
+    @SerializedName("aerobic_te_message") val aerobicTeMessage: String? = null,
+    @SerializedName("anaerobic_te_message") val anaerobicTeMessage: String? = null,
 )
 
 /** A coaching report (single-run analysis or weekly plan). */

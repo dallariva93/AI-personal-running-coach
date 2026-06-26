@@ -332,6 +332,25 @@ class ActivityOut(BaseModel):
     avg_cadence: int | None
     rpe: int | None
     notes: str | None
+    # Semi-structured extras and Garmin-derived rich metrics. All optional so
+    # manual entries and demo runs without enrichment still validate. These let
+    # the native app render a full per-activity detail view.
+    hr_zones: dict[str, float] | None = None
+    splits_km: list[str] | None = None
+    temperature_c: float | None = None
+    humidity_pct: float | None = None
+    elevation_loss_m: float | None = None
+    garmin_training_load: float | None = None
+    vigorous_minutes: float | None = None
+    moderate_minutes: float | None = None
+    body_battery_delta: int | None = None
+    stamina_drop: float | None = None
+    avg_grade_adjusted_pace: str | None = None
+    fastest_split_1k: str | None = None
+    fastest_split_5k: str | None = None
+    vo2max: float | None = None
+    aerobic_te_message: str | None = None
+    anaerobic_te_message: str | None = None
 
 
 class ReportOut(BaseModel):

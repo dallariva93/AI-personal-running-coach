@@ -20,7 +20,6 @@ from app.config import get_settings
 from app.db.models import Activity, CoachingReport, RawActivityAsset
 from app.exceptions import CollectionError
 from app.logging_config import get_logger
-from app.storage import ObjectStore, get_object_store
 from app.processing import (
     build_snapshot,
     compute_metrics,
@@ -30,6 +29,7 @@ from app.processing import (
 from app.schemas import CoachingResult, RunSummary
 from app.services.checkin import latest_checkin
 from app.services.profile import get_profile, save_profile
+from app.storage import ObjectStore, get_object_store
 
 logger = get_logger("app.services.ingest")
 

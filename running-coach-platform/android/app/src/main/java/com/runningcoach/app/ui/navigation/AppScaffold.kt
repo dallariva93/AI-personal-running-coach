@@ -23,12 +23,15 @@ import androidx.compose.runtime.remember
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.lifecycle.viewmodel.compose.viewModel
+import androidx.navigation.NavType
 import androidx.navigation.compose.NavHost
 import androidx.navigation.compose.composable
 import androidx.navigation.compose.currentBackStackEntryAsState
 import androidx.navigation.compose.rememberNavController
+import androidx.navigation.navArgument
 import com.runningcoach.app.RunningCoachApp
 import com.runningcoach.app.ui.screens.ActivitiesScreen
+import com.runningcoach.app.ui.screens.ActivityDetailScreen
 import com.runningcoach.app.ui.screens.HomeScreen
 import com.runningcoach.app.ui.screens.PlanScreen
 import com.runningcoach.app.ui.screens.SettingsScreen
@@ -97,14 +100,28 @@ fun AppScaffold(app: RunningCoachApp) {
             startDestination = Dest.Home.route,
             modifier = Modifier.padding(padding),
         ) {
+            val openActivity: (Int) -> Unit = { id ->
+                navController.navigate("activity/$id") { launchSingleTop = true }
+            }
             composable(Dest.Home.route) {
                 HomeScreen(
                     state = state,
                     onSync = overviewVm::sync,
                     onAnalyze = overviewVm::analyze,
+                    onOpenActivity = openActivity,
                 )
             }
-            composable(Dest.Activities.route) { ActivitiesScreen(state) }
+            composable(Dest.Activities.route) {
+                ActivitiesScreen(state, onOpenActivity = openActivity)
+            }
+            composable(
+                route = "activity/{id}",
+                arguments = listOf(navArgument("id") { type = NavType.IntType }),
+            ) { entry ->
+                val id = entry.arguments?.getInt("id")
+                val activity = state.overview?.activities?.firstOrNull { it.id == id }
+                ActivityDetailScreen(activity = activity, onBack = { navController.popBackStack() })
+            }
             composable(Dest.Plan.route) {
                 PlanScreen(state = state, onGeneratePlan = overviewVm::planWeekly)
             }

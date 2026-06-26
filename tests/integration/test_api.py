@@ -91,3 +91,38 @@ def test_reports_listing(client):
     resp = client.get("/api/reports")
     assert resp.status_code == 200
     assert len(resp.json()) >= 1
+
+
+def test_mobile_overview_exposes_rich_activity_fields(client):
+    """The mobile overview must surface the rich per-activity Garmin metrics
+    so the native app can render a full activity-detail view."""
+    client.post("/api/ingest")
+    resp = client.get("/api/mobile/overview")
+    assert resp.status_code == 200
+    activities = resp.json()["activities"]
+    assert activities, "expected demo activities"
+
+    # Every rich field is present in the contract (values may be null on a
+    # given run, but the keys must always be there).
+    rich_keys = {
+        "hr_zones",
+        "vo2max",
+        "garmin_training_load",
+        "fastest_split_1k",
+        "fastest_split_5k",
+        "avg_grade_adjusted_pace",
+        "temperature_c",
+        "humidity_pct",
+        "elevation_loss_m",
+        "body_battery_delta",
+        "vigorous_minutes",
+        "moderate_minutes",
+        "aerobic_te_message",
+        "anaerobic_te_message",
+    }
+    assert rich_keys <= set(activities[0].keys())
+
+    # The enriched demo data actually populates these for at least one run.
+    assert any(a.get("vo2max") for a in activities)
+    assert any(a.get("hr_zones") for a in activities)
+    assert any(a.get("fastest_split_1k") for a in activities)

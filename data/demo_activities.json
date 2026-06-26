@@ -3,111 +3,281 @@
     "activityId": 1001,
     "activityName": "Easy run mattutina",
     "startTimeLocal": "2026-06-07 07:30:00",
-    "activityType": {"typeKey": "running"},
+    "activityType": {
+      "typeKey": "running"
+    },
     "distance": 8000,
     "duration": 2640,
     "averageHR": 142,
     "maxHR": 158,
     "elevationGain": 45,
     "averageRunningCadenceInStepsPerMinute": 170,
-    "hrTimeInZones": {"zone1": 720, "zone2": 1500, "zone3": 360, "zone4": 60, "zone5": 0}
+    "hrTimeInZones": {
+      "zone1": 720,
+      "zone2": 1500,
+      "zone3": 360,
+      "zone4": 60,
+      "zone5": 0
+    },
+    "avgGradeAdjustedSpeed": 3.121,
+    "fastestSplit_1000": 310,
+    "fastestSplit_5000": 1600,
+    "elevationLoss": 40,
+    "vO2MaxValue": 52.0,
+    "activityTrainingLoad": 99.0,
+    "differenceBodyBattery": -14,
+    "vigorousIntensityMinutes": 1.0,
+    "moderateIntensityMinutes": 6.0,
+    "temperature": 14.0,
+    "humidity": 78,
+    "aerobicTrainingEffectMessage": "MAINTAINING_BASE_2",
+    "anaerobicTrainingEffectMessage": "NO_ANAEROBIC_BENEFIT_0"
   },
   {
     "activityId": 1002,
     "activityName": "Tempo run",
     "startTimeLocal": "2026-06-09 18:15:00",
-    "activityType": {"typeKey": "running"},
+    "activityType": {
+      "typeKey": "running"
+    },
     "distance": 10000,
     "duration": 2880,
     "averageHR": 162,
     "maxHR": 178,
     "elevationGain": 60,
     "averageRunningCadenceInStepsPerMinute": 176,
-    "hrTimeInZones": {"zone1": 300, "zone2": 600, "zone3": 900, "zone4": 900, "zone5": 180}
+    "hrTimeInZones": {
+      "zone1": 300,
+      "zone2": 600,
+      "zone3": 900,
+      "zone4": 900,
+      "zone5": 180
+    },
+    "avgGradeAdjustedSpeed": 3.576,
+    "fastestSplit_1000": 271,
+    "fastestSplit_5000": 1397,
+    "elevationLoss": 54,
+    "vO2MaxValue": 53.5,
+    "activityTrainingLoad": 206.0,
+    "differenceBodyBattery": -40,
+    "vigorousIntensityMinutes": 18.0,
+    "moderateIntensityMinutes": 15.0,
+    "temperature": 21.0,
+    "humidity": 55,
+    "aerobicTrainingEffectMessage": "IMPROVING_LACTATE_THRESHOLD_31",
+    "anaerobicTrainingEffectMessage": "MINOR_ANAEROBIC_BENEFIT_8"
   },
   {
     "activityId": 1003,
     "activityName": "Recovery jog",
     "startTimeLocal": "2026-06-10 07:45:00",
-    "activityType": {"typeKey": "running"},
+    "activityType": {
+      "typeKey": "running"
+    },
     "distance": 6000,
     "duration": 2100,
     "averageHR": 132,
     "maxHR": 145,
     "elevationGain": 20,
     "averageRunningCadenceInStepsPerMinute": 166,
-    "hrTimeInZones": {"zone1": 900, "zone2": 1140, "zone3": 60, "zone4": 0, "zone5": 0}
+    "hrTimeInZones": {
+      "zone1": 900,
+      "zone2": 1140,
+      "zone3": 60,
+      "zone4": 0,
+      "zone5": 0
+    },
+    "avgGradeAdjustedSpeed": 2.943,
+    "fastestSplit_1000": 329,
+    "fastestSplit_5000": 1698,
+    "elevationLoss": 18,
+    "vO2MaxValue": 52.0,
+    "activityTrainingLoad": 82.0,
+    "differenceBodyBattery": -12,
+    "vigorousIntensityMinutes": 0.0,
+    "moderateIntensityMinutes": 1.0,
+    "temperature": 15.0,
+    "humidity": 80,
+    "aerobicTrainingEffectMessage": "RECOVERY_1",
+    "anaerobicTrainingEffectMessage": "NO_ANAEROBIC_BENEFIT_0"
   },
   {
     "activityId": 1004,
     "activityName": "Intervalli 6x800",
     "startTimeLocal": "2026-06-12 18:00:00",
-    "activityType": {"typeKey": "running"},
+    "activityType": {
+      "typeKey": "running"
+    },
     "distance": 9000,
     "duration": 2640,
     "averageHR": 165,
     "maxHR": 184,
     "elevationGain": 30,
     "averageRunningCadenceInStepsPerMinute": 180,
-    "hrTimeInZones": {"zone1": 240, "zone2": 480, "zone3": 600, "zone4": 960, "zone5": 360}
+    "hrTimeInZones": {
+      "zone1": 240,
+      "zone2": 480,
+      "zone3": 600,
+      "zone4": 960,
+      "zone5": 360
+    },
+    "avgGradeAdjustedSpeed": 3.511,
+    "fastestSplit_1000": 276,
+    "fastestSplit_5000": 1423,
+    "elevationLoss": 27,
+    "vO2MaxValue": 54.0,
+    "activityTrainingLoad": 225.0,
+    "differenceBodyBattery": -45,
+    "vigorousIntensityMinutes": 22.0,
+    "moderateIntensityMinutes": 10.0,
+    "temperature": 19.0,
+    "humidity": 60,
+    "aerobicTrainingEffectMessage": "HIGHLY_IMPROVING_VO2MAX_42",
+    "anaerobicTrainingEffectMessage": "IMPROVING_ANAEROBIC_CAPACITY_25"
   },
   {
     "activityId": 1005,
     "activityName": "Long run",
     "startTimeLocal": "2026-06-14 08:00:00",
-    "activityType": {"typeKey": "running"},
+    "activityType": {
+      "typeKey": "running"
+    },
     "distance": 18000,
     "duration": 6300,
     "averageHR": 150,
     "maxHR": 168,
     "elevationGain": 140,
     "averageRunningCadenceInStepsPerMinute": 172,
-    "hrTimeInZones": {"zone1": 600, "zone2": 4200, "zone3": 1200, "zone4": 300, "zone5": 0}
+    "hrTimeInZones": {
+      "zone1": 600,
+      "zone2": 4200,
+      "zone3": 1200,
+      "zone4": 300,
+      "zone5": 0
+    },
+    "avgGradeAdjustedSpeed": 2.943,
+    "fastestSplit_1000": 329,
+    "fastestSplit_5000": 1698,
+    "elevationLoss": 126,
+    "vO2MaxValue": 53.0,
+    "activityTrainingLoad": 196.0,
+    "differenceBodyBattery": -26,
+    "vigorousIntensityMinutes": 5.0,
+    "moderateIntensityMinutes": 20.0,
+    "temperature": 13.0,
+    "humidity": 82,
+    "aerobicTrainingEffectMessage": "IMPROVING_BASE_22",
+    "anaerobicTrainingEffectMessage": "NO_ANAEROBIC_BENEFIT_0"
   },
   {
     "activityId": 1006,
     "activityName": "Easy run",
     "startTimeLocal": "2026-06-16 07:30:00",
-    "activityType": {"typeKey": "running"},
+    "activityType": {
+      "typeKey": "running"
+    },
     "distance": 8500,
     "duration": 2820,
     "averageHR": 145,
     "maxHR": 160,
     "elevationGain": 50,
     "averageRunningCadenceInStepsPerMinute": 171,
-    "hrTimeInZones": {"zone1": 600, "zone2": 1740, "zone3": 420, "zone4": 60, "zone5": 0}
+    "hrTimeInZones": {
+      "zone1": 600,
+      "zone2": 1740,
+      "zone3": 420,
+      "zone4": 60,
+      "zone5": 0
+    },
+    "avgGradeAdjustedSpeed": 3.105,
+    "fastestSplit_1000": 312,
+    "fastestSplit_5000": 1609,
+    "elevationLoss": 45,
+    "vO2MaxValue": 52.5,
+    "activityTrainingLoad": 102.0,
+    "differenceBodyBattery": -14,
+    "vigorousIntensityMinutes": 1.0,
+    "moderateIntensityMinutes": 7.0,
+    "temperature": 16.0,
+    "humidity": 74,
+    "aerobicTrainingEffectMessage": "MAINTAINING_BASE_3",
+    "anaerobicTrainingEffectMessage": "NO_ANAEROBIC_BENEFIT_0"
   },
   {
     "activityId": 1007,
     "activityName": "Tempo progression",
     "startTimeLocal": "2026-06-18 18:30:00",
-    "activityType": {"typeKey": "running"},
+    "activityType": {
+      "typeKey": "running"
+    },
     "distance": 11000,
     "duration": 3120,
     "averageHR": 164,
     "maxHR": 181,
     "elevationGain": 70,
     "averageRunningCadenceInStepsPerMinute": 177,
-    "hrTimeInZones": {"zone1": 240, "zone2": 720, "zone3": 1020, "zone4": 900, "zone5": 240}
+    "hrTimeInZones": {
+      "zone1": 240,
+      "zone2": 720,
+      "zone3": 1020,
+      "zone4": 900,
+      "zone5": 240
+    },
+    "avgGradeAdjustedSpeed": 3.631,
+    "fastestSplit_1000": 267,
+    "fastestSplit_5000": 1376,
+    "elevationLoss": 63,
+    "vO2MaxValue": 53.5,
+    "activityTrainingLoad": 216.0,
+    "differenceBodyBattery": -42,
+    "vigorousIntensityMinutes": 19.0,
+    "moderateIntensityMinutes": 17.0,
+    "temperature": 22.0,
+    "humidity": 52,
+    "aerobicTrainingEffectMessage": "IMPROVING_LACTATE_THRESHOLD_34",
+    "anaerobicTrainingEffectMessage": "MINOR_ANAEROBIC_BENEFIT_10"
   },
   {
     "activityId": 1008,
     "activityName": "Easy run gambe pesanti",
     "startTimeLocal": "2026-06-20 08:15:00",
-    "activityType": {"typeKey": "running"},
+    "activityType": {
+      "typeKey": "running"
+    },
     "distance": 9800,
     "duration": 3120,
     "averageHR": 152,
     "maxHR": 169,
     "elevationGain": 85,
     "averageRunningCadenceInStepsPerMinute": 168,
-    "hrTimeInZones": {"zone1": 480, "zone2": 1800, "zone3": 600, "zone4": 240, "zone5": 0}
+    "hrTimeInZones": {
+      "zone1": 480,
+      "zone2": 1800,
+      "zone3": 600,
+      "zone4": 240,
+      "zone5": 0
+    },
+    "avgGradeAdjustedSpeed": 3.235,
+    "fastestSplit_1000": 299,
+    "fastestSplit_5000": 1544,
+    "elevationLoss": 76,
+    "vO2MaxValue": 52.0,
+    "activityTrainingLoad": 126.0,
+    "differenceBodyBattery": -19,
+    "vigorousIntensityMinutes": 4.0,
+    "moderateIntensityMinutes": 10.0,
+    "temperature": 17.0,
+    "humidity": 70,
+    "aerobicTrainingEffectMessage": "MAINTAINING_BASE_4",
+    "anaerobicTrainingEffectMessage": "NO_ANAEROBIC_BENEFIT_0"
   },
   {
     "activityId": 1009,
     "activityName": "Bike ride (non-run, filtrata)",
     "startTimeLocal": "2026-06-21 09:00:00",
-    "activityType": {"typeKey": "cycling"},
+    "activityType": {
+      "typeKey": "cycling"
+    },
     "distance": 35000,
     "duration": 5400,
     "averageHR": 138,
@@ -119,13 +289,34 @@
     "activityId": 1010,
     "activityName": "Recovery jog",
     "startTimeLocal": "2026-06-21 18:00:00",
-    "activityType": {"typeKey": "running"},
+    "activityType": {
+      "typeKey": "running"
+    },
     "distance": 5500,
     "duration": 1980,
     "averageHR": 134,
     "maxHR": 148,
     "elevationGain": 25,
     "averageRunningCadenceInStepsPerMinute": 165,
-    "hrTimeInZones": {"zone1": 780, "zone2": 1140, "zone3": 60, "zone4": 0, "zone5": 0}
+    "hrTimeInZones": {
+      "zone1": 780,
+      "zone2": 1140,
+      "zone3": 60,
+      "zone4": 0,
+      "zone5": 0
+    },
+    "avgGradeAdjustedSpeed": 2.861,
+    "fastestSplit_1000": 338,
+    "fastestSplit_5000": 1746,
+    "elevationLoss": 22,
+    "vO2MaxValue": 52.0,
+    "activityTrainingLoad": 80.0,
+    "differenceBodyBattery": -11,
+    "vigorousIntensityMinutes": 0.0,
+    "moderateIntensityMinutes": 1.0,
+    "temperature": 18.0,
+    "humidity": 65,
+    "aerobicTrainingEffectMessage": "RECOVERY_1",
+    "anaerobicTrainingEffectMessage": "NO_ANAEROBIC_BENEFIT_0"
   }
 ]

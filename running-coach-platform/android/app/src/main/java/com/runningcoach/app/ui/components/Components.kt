@@ -1,6 +1,7 @@
 package com.runningcoach.app.ui.components
 
 import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -276,8 +277,13 @@ private val activityGlyphs = mapOf(
 
 /** Activity list row with a colored type badge and key stats. */
 @Composable
-fun ActivityRow(activity: Activity, modifier: Modifier = Modifier) {
-    SurfaceCard(modifier.padding(vertical = 5.dp)) {
+fun ActivityRow(
+    activity: Activity,
+    modifier: Modifier = Modifier,
+    onClick: (() -> Unit)? = null,
+) {
+    val clickable = if (onClick != null) Modifier.clickable(onClick = onClick) else Modifier
+    SurfaceCard(modifier.padding(vertical = 5.dp).then(clickable)) {
         Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
             Box(
                 Modifier

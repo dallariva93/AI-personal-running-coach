@@ -19,7 +19,7 @@ import com.runningcoach.app.ui.components.ScreenTitle
 import com.runningcoach.app.ui.viewmodel.OverviewUiState
 
 @Composable
-fun ActivitiesScreen(state: OverviewUiState) {
+fun ActivitiesScreen(state: OverviewUiState, onOpenActivity: (Int) -> Unit = {}) {
     val activities = state.overview?.activities.orEmpty()
     Column(
         Modifier
@@ -43,7 +43,9 @@ fun ActivitiesScreen(state: OverviewUiState) {
                 Modifier.fillMaxSize(),
                 contentPadding = PaddingValues(bottom = 16.dp),
             ) {
-                items(activities) { ActivityRow(it) }
+                items(activities) { act ->
+                    ActivityRow(act, onClick = { onOpenActivity(act.id) })
+                }
                 item { Spacer(Modifier.height(8.dp)) }
             }
         }

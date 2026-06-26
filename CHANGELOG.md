@@ -16,6 +16,17 @@ Il formato segue [Keep a Changelog](https://keepachangelog.com/it/1.1.0/).
   `(garmin_activity_id, kind)`. Attivato automaticamente quando le credenziali
   S3 sono configurate; vedi `.env.example` (`S3_*`) e
   `docs/DEPLOY_FLY_ANDROID.md` per il setup Tigris.
+- **Moduli archivio**: `app/storage.py` (`ObjectStore` S3-compatible,
+  `get_object_store()`) e `app/collection/garmin_raw.py` (`GarminRawFetcher`),
+  con `boto3` importato in modo lazy così l'app continua a girare in
+  demo/offline senza la dipendenza. Migrazione Alembic per `raw_activity_assets`.
+- **Dettaglio attività sull'app**: i campi ricchi già raccolti
+  (VO₂max, training load, GAP, frazioni più veloci 1k/5k, zone FC, minuti
+  intensi/moderati, temperatura, umidità, D−, Body Battery, stamina, training
+  effect aerobico/anaerobico) sono ora esposti da `ActivityOut` →
+  `/api/mobile/overview` e mostrati in una nuova schermata di dettaglio Android
+  (riga attività tappabile). Dati demo arricchiti perché la vista funzioni
+  anche senza credenziali Garmin.
 
 ## [0.2.0] — 2026-06-23 — Production ready
 

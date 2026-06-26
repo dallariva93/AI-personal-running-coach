@@ -38,7 +38,12 @@ import com.runningcoach.app.ui.theme.Coral
 import com.runningcoach.app.ui.viewmodel.OverviewUiState
 
 @Composable
-fun HomeScreen(state: OverviewUiState, onSync: () -> Unit, onAnalyze: () -> Unit) {
+fun HomeScreen(
+    state: OverviewUiState,
+    onSync: () -> Unit,
+    onAnalyze: () -> Unit,
+    onOpenActivity: (Int) -> Unit = {},
+) {
     val ov: Overview? = state.overview
     Column(
         Modifier
@@ -97,7 +102,9 @@ fun HomeScreen(state: OverviewUiState, onSync: () -> Unit, onAnalyze: () -> Unit
 
             Spacer(Modifier.height(18.dp))
             SectionTitle("Ultime corse")
-            ov.activities.take(5).forEach { ActivityRow(it) }
+            ov.activities.take(5).forEach { act ->
+                ActivityRow(act, onClick = { onOpenActivity(act.id) })
+            }
             Spacer(Modifier.height(16.dp))
         } else {
             EmptyHint()
