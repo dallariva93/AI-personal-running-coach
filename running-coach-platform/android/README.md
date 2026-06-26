@@ -7,7 +7,7 @@ FastAPI via REST.
 ## Requisiti
 - Android Studio (Giraffe 2022.3+), JDK 17
 - Un emulatore o dispositivo con **Android 8.0+ (API 26)**
-- Il backend in esecuzione e raggiungibile (vedi `../backend`)
+- Il backend in esecuzione e raggiungibile (è la radice del repo, vedi `../../README.md`)
 
 ## Build & run
 1. Apri la cartella `android/` in Android Studio (genera in automatico il
