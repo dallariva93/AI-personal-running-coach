@@ -2,7 +2,7 @@ name: Deploy to Fly.io
 
 on:
   push:
-    branches: [main]
+    branches: [main, claude/running-analytics-platform-a017s4]
   workflow_dispatch: {}
 
 jobs:
