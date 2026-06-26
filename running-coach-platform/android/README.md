@@ -19,6 +19,12 @@ Da riga di comando (richiede il wrapper generato e l'Android SDK):
 ./gradlew assembleDebug      # produce app/build/outputs/apk/debug/app-debug.apk
 ```
 
+### APK pronto da GitHub Actions (senza Android Studio)
+Ad ogni push (o manualmente da **Actions → Android APK → Run workflow**) la CI
+builda l'APK e lo pubblica come **artifact** `running-coach-debug-apk`:
+scaricalo dalla pagina del run, scompattalo e installa l'`app-debug.apk` sul
+telefono (abilita "origini sconosciute"). Workflow: `.github/workflows/android.yml`.
+
 ## Configurazione del backend
 Apri la scheda **Impostazioni** nell'app:
 - **URL del backend**:
