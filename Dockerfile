@@ -25,7 +25,10 @@ COPY migrations ./migrations
 COPY alembic.ini pyproject.toml ./
 COPY data/demo_activities.json ./data/demo_activities.json
 COPY docker-entrypoint.sh ./docker-entrypoint.sh
-RUN chmod +x ./docker-entrypoint.sh
+# Strip Windows CRLF (\r\n→\n) in case the file was checked out on Windows
+# before being sent to the Docker build context. Without this the shebang
+# becomes '#!/usr/bin/env sh\r' and the container fails with exit 127.
+RUN sed -i 's/\r$//' ./docker-entrypoint.sh && chmod +x ./docker-entrypoint.sh
 
 # Create a non-root user that owns the app. The entrypoint starts as root only
 # long enough to fix ownership of the mounted volume (Fly mounts it root-owned),

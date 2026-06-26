@@ -1,0 +1,21 @@
+# Ensure shell scripts always use LF line endings regardless of the OS
+# where they are checked out (prevents 'env: sh\r: No such file or directory'
+# inside Docker on Linux when built from a Windows checkout).
+*.sh        text eol=lf
+*.sh.bat    text eol=crlf
+
+# Standard text handling for other files
+*.py        text eol=lf
+*.txt       text eol=lf
+*.md        text eol=lf
+*.yml       text eol=lf
+*.yaml      text eol=lf
+*.toml      text eol=lf
+*.cfg       text eol=lf
+*.ini       text eol=lf
+*.sql       text eol=lf
+*.json      text eol=lf
+*.kt        text eol=lf
+*.gradle    text eol=lf
+Dockerfile  text eol=lf
+gradlew     text eol=lf
