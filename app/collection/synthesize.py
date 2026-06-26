@@ -257,24 +257,94 @@ def extract_details_enrichment(details: dict[str, Any]) -> dict[str, Any]:
     invalid fields are skipped (no ``None`` entries) so the caller can
     update an existing record without overwriting good data with nulls.
 
-    Currently extracts:
-
-    * ``rpe`` from ``summaryDTO.directWorkoutRpe`` (10-100 scale → 1-10)
-    * ``stamina_drop`` from beginning/ending potential stamina
+    Extracts the full set of optional metrics (VO2max, training load, HR
+    zones, intensity minutes, temperature, grade-adjusted pace, fastest
+    splits, body battery, training effect, RPE and stamina). The detail
+    payload nests most of these under ``summaryDTO``; we flatten that on top
+    of the top-level dict so a single :func:`_rich_fields` pass sees both.
     """
     out: dict[str, Any] = {}
-    summary = details.get("summaryDTO") if isinstance(details, dict) else None
-    if not isinstance(summary, dict):
+    if not isinstance(details, dict):
         return out
+
+    summary = details.get("summaryDTO")
+    merged: dict[str, Any] = dict(details)
+    if isinstance(summary, dict):
+        merged.update(summary)
+    if not merged:
+        return out
+
+    out.update(_rich_fields(merged))
 
     rpe = extract_rpe_from_details(details)
     if rpe is not None:
         out["rpe"] = rpe
 
-    drop = _stamina_drop(summary)
-    if drop is not None:
-        out["stamina_drop"] = drop
+    if isinstance(summary, dict):
+        drop = _stamina_drop(summary)
+        if drop is not None:
+            out["stamina_drop"] = drop
 
+    return out
+
+
+def extract_hr_zones_from_timezones(payload: Any) -> dict[str, float] | None:
+    """Parse ``get_activity_hr_in_timezones`` into ``{"z1": minutes, ...}``.
+
+    Garmin returns a list of ``{"zoneNumber": n, "secsInZone": s}`` dicts.
+    """
+    if not isinstance(payload, list):
+        return None
+    out: dict[str, float] = {}
+    for entry in payload:
+        if not isinstance(entry, dict):
+            continue
+        zone = entry.get("zoneNumber")
+        secs = _num(entry.get("secsInZone"))
+        if zone is None or secs is None:
+            continue
+        try:
+            out[f"z{int(zone)}"] = round(secs / 60.0, 1)
+        except (TypeError, ValueError):
+            continue
+    return out or None
+
+
+def extract_splits(payload: Any) -> list[str] | None:
+    """Parse ``get_activity_splits`` into a list of per-km pace strings.
+
+    Uses the ``lapDTOs`` array; each lap's distance/duration becomes a pace.
+    Only whole-kilometre-ish laps are kept so the list reads as clean splits.
+    """
+    laps = payload.get("lapDTOs") if isinstance(payload, dict) else None
+    if not isinstance(laps, list):
+        return None
+    out: list[str] = []
+    for lap in laps:
+        if not isinstance(lap, dict):
+            continue
+        distance = _num(lap.get("distance"))
+        duration = _num(lap.get("duration") or lap.get("movingDuration"))
+        if distance is None or distance < 300:  # skip tiny trailing laps
+            continue
+        pace = _format_pace(distance, duration or 0.0)
+        if pace:
+            out.append(pace)
+    return out or None
+
+
+def extract_weather(payload: Any) -> dict[str, Any]:
+    """Parse ``get_activity_weather`` for humidity (unit-safe fields only).
+
+    Temperature from the weather endpoint is locale/unit-ambiguous, so we take
+    it from the activity summary instead and only read relative humidity here.
+    """
+    out: dict[str, Any] = {}
+    if not isinstance(payload, dict):
+        return out
+    humidity = _num(payload.get("relativeHumidity"))
+    if humidity is not None:
+        out["humidity_pct"] = humidity
     return out
 
 
@@ -346,12 +416,7 @@ def synthesize(activity: dict[str, Any]) -> RunSummary:
     duration_min = round(duration_s / 60.0, 1)
     hr_zones = _extract_hr_zones(activity)
 
-    bb_delta = _num(activity.get("differenceBodyBattery"))
-    grade_pace = _speed_to_pace(_num(activity.get("avgGradeAdjustedSpeed")))
-    fastest_1k = _split_seconds_to_pace(_num(activity.get("fastestSplit_1000")), 1000.0)
-    fastest_5k = _split_seconds_to_pace(_num(activity.get("fastestSplit_5000")), 5000.0)
-
-    return RunSummary(
+    base = RunSummary(
         garmin_activity_id=(
             str(activity["activityId"]) if activity.get("activityId") is not None else None
         ),
@@ -374,19 +439,107 @@ def synthesize(activity: dict[str, Any]) -> RunSummary:
         splits_km=None,
         rpe=None,
         notes=None,
-        temperature_c=_num(activity.get("temperature") or activity.get("avgTemperature")),
-        humidity_pct=_num(activity.get("humidity")),
-        elevation_loss_m=(
-            round(float(activity["elevationLoss"]), 0) if activity.get("elevationLoss") else None
-        ),
-        garmin_training_load=_num(activity.get("activityTrainingLoad")),
-        vigorous_minutes=_num(activity.get("vigorousIntensityMinutes")),
-        moderate_minutes=_num(activity.get("moderateIntensityMinutes")),
-        body_battery_delta=int(bb_delta) if bb_delta is not None else None,
-        avg_grade_adjusted_pace=grade_pace,
-        fastest_split_1k=fastest_1k,
-        fastest_split_5k=fastest_5k,
-        vo2max=_num(activity.get("vO2MaxValue")),
-        aerobic_te_message=(activity.get("aerobicTrainingEffectMessage") or None),
-        anaerobic_te_message=(activity.get("anaerobicTrainingEffectMessage") or None),
     )
+    # Layer the optional Garmin-derived metrics on top. ``_rich_fields`` only
+    # emits keys it could actually compute, so this never nulls out core data.
+    return base.model_copy(update=_rich_fields(activity))
+
+
+# Garmin field aliases seen across the list (``get_activities``) and detail
+# (``get_activity`` / ``summaryDTO``) payloads. The same metric is named
+# differently depending on the endpoint and account locale.
+_TEMP_KEYS = ("temperature", "avgTemperature", "averageTemperature")
+_GAP_KEYS = ("avgGradeAdjustedSpeed", "averageGradeAdjustedSpeed")
+_VO2_KEYS = ("vO2MaxValue", "vo2MaxValue", "vO2MaxPreciseValue", "maxMetValue")
+
+
+def _first_num(activity: dict[str, Any], keys: tuple[str, ...]) -> float | None:
+    for key in keys:
+        value = _num(activity.get(key))
+        if value is not None:
+            return value
+    return None
+
+
+def _rich_fields(activity: dict[str, Any]) -> dict[str, Any]:
+    """Extract every optional Garmin metric present in ``activity``.
+
+    Works on both the sparse list payload and the much richer detail payload
+    (``summaryDTO`` flattened in). Only keys with a usable value are returned,
+    so callers can ``model_copy(update=...)`` without clobbering good data.
+    """
+    out: dict[str, Any] = {}
+
+    hr_zones = _extract_hr_zones(activity)
+    if hr_zones:
+        out["hr_zones"] = hr_zones
+
+    temp = _first_num(activity, _TEMP_KEYS)
+    if temp is None:
+        lo, hi = _num(activity.get("minTemperature")), _num(activity.get("maxTemperature"))
+        if lo is not None and hi is not None:
+            temp = round((lo + hi) / 2.0, 1)
+    if temp is not None:
+        out["temperature_c"] = temp
+
+    humidity = _num(activity.get("humidity") or activity.get("relativeHumidity"))
+    if humidity is not None:
+        out["humidity_pct"] = humidity
+
+    eloss = _num(activity.get("elevationLoss"))
+    if eloss is not None:
+        out["elevation_loss_m"] = round(eloss, 0)
+
+    egain = _num(activity.get("elevationGain"))
+    if egain is not None:
+        out["elevation_gain_m"] = round(egain, 0)
+
+    cadence = _num(activity.get("averageRunningCadenceInStepsPerMinute"))
+    if cadence is not None:
+        out["avg_cadence"] = int(cadence)
+
+    training_load = _num(activity.get("activityTrainingLoad"))
+    if training_load is not None:
+        out["garmin_training_load"] = round(training_load, 0)
+
+    vigorous = _num(activity.get("vigorousIntensityMinutes"))
+    if vigorous is not None:
+        out["vigorous_minutes"] = vigorous
+    moderate = _num(activity.get("moderateIntensityMinutes"))
+    if moderate is not None:
+        out["moderate_minutes"] = moderate
+
+    bb_delta = _num(activity.get("differenceBodyBattery"))
+    if bb_delta is not None:
+        out["body_battery_delta"] = int(bb_delta)
+
+    gap = _speed_to_pace(_first_num(activity, _GAP_KEYS))
+    if gap:
+        out["avg_grade_adjusted_pace"] = gap
+
+    fastest_1k = _split_seconds_to_pace(_num(activity.get("fastestSplit_1000")), 1000.0)
+    if fastest_1k:
+        out["fastest_split_1k"] = fastest_1k
+    fastest_5k = _split_seconds_to_pace(_num(activity.get("fastestSplit_5000")), 5000.0)
+    if fastest_5k:
+        out["fastest_split_5k"] = fastest_5k
+
+    vo2max = _first_num(activity, _VO2_KEYS)
+    if vo2max is not None:
+        out["vo2max"] = round(vo2max, 1)
+
+    aerobic_te = _num(activity.get("aerobicTrainingEffect"))
+    if aerobic_te is not None:
+        out["aerobic_training_effect"] = round(aerobic_te, 1)
+    anaerobic_te = _num(activity.get("anaerobicTrainingEffect"))
+    if anaerobic_te is not None:
+        out["anaerobic_training_effect"] = round(anaerobic_te, 1)
+
+    aerobic_msg = activity.get("aerobicTrainingEffectMessage")
+    if aerobic_msg:
+        out["aerobic_te_message"] = aerobic_msg
+    anaerobic_msg = activity.get("anaerobicTrainingEffectMessage")
+    if anaerobic_msg:
+        out["anaerobic_te_message"] = anaerobic_msg
+
+    return out

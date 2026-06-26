@@ -27,6 +27,18 @@ Il formato segue [Keep a Changelog](https://keepachangelog.com/it/1.1.0/).
   `/api/mobile/overview` e mostrati in una nuova schermata di dettaglio Android
   (riga attività tappabile). Dati demo arricchiti perché la vista funzioni
   anche senza credenziali Garmin.
+- **Arricchimento profondo delle attività**: la sincronizzazione Garmin ora
+  estrae le metriche dagli endpoint di dettaglio (non solo dalla lista, che è
+  scarna). `extract_details_enrichment` legge l'intero `summaryDTO`
+  (VO₂max, training load, zone FC, training effect, GAP, frazioni veloci,
+  temperatura, intensità, body battery, stamina); fallback dedicati per zone FC
+  (`get_activity_hr_in_timezones`), parziali al km (`get_activity_splits`) e
+  umidità (`get_activity_weather`), tutti best-effort. Aggiunto il Training
+  Effect numerico aerobico/anaerobico (0–5) con nuova migrazione Alembic.
+  `upsert_activity` non sovrascrive più dati buoni con `null` su fetch falliti.
+- **Schermata dettaglio production-ready**: sezioni Performance, Frequenza
+  cardiaca (zone), Effetto allenante (barre TE 0–5 + descrizione), Parziali al
+  km (grafico a barre + lista), Ambiente & dislivello, Recupero & intensità.
 
 ## [0.2.0] — 2026-06-23 — Production ready
 

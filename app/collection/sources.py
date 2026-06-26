@@ -15,7 +15,13 @@ import json
 from pathlib import Path
 from typing import Any, Protocol
 
-from app.collection.synthesize import extract_details_enrichment, synthesize
+from app.collection.synthesize import (
+    extract_details_enrichment,
+    extract_hr_zones_from_timezones,
+    extract_splits,
+    extract_weather,
+    synthesize,
+)
 from app.config import Settings, get_settings
 from app.exceptions import CollectionError
 from app.logging_config import get_logger
@@ -137,25 +143,73 @@ class GarminSource:
         return running[:limit]
 
     def _fetch_enrichment(self, client: Any, activity_id: Any) -> dict[str, Any]:
-        """Fetch the per-activity fields that only live on the details endpoint.
+        """Fetch the per-activity fields that only live on the detail endpoints.
 
-        Currently: user-entered RPE and stamina drop. One extra API call per
-        activity; rate-limit failures are swallowed (warning logged) so a
-        transient 429 leaves those fields unset rather than aborting the
-        whole ingest.
+        The list payload from ``get_activities`` is sparse; the real metrics
+        (VO2max, training load, HR zones, training effect, grade-adjusted pace,
+        fastest splits, temperature, per-km splits...) live on the per-activity
+        endpoints. We pull them here, falling back to dedicated endpoints only
+        when the main detail payload didn't already carry the value, to keep the
+        number of calls (and rate-limit pressure) down.
+
+        Every call is best-effort: failures are logged and skipped so a
+        transient 429 leaves a field unset rather than aborting the whole
+        ingest.
         """
         if activity_id is None:
             return {}
-        try:
-            details = retry_call(
-                lambda: client.get_activity(activity_id),
-                retries=self.settings.garmin_max_retries,
-                description=f"garmin.get_activity({activity_id})",
+
+        out: dict[str, Any] = {}
+        details = self._safe_call(
+            getattr(client, "get_activity", None), activity_id, "get_activity"
+        )
+        if details:
+            out.update(extract_details_enrichment(details))
+
+        if "hr_zones" not in out:
+            zones = extract_hr_zones_from_timezones(
+                self._safe_call(
+                    getattr(client, "get_activity_hr_in_timezones", None),
+                    activity_id,
+                    "hr_in_timezones",
+                )
             )
-        except Exception as exc:  # noqa: BLE001
-            logger.warning("Details enrich failed for %s: %s", activity_id, exc)
-            return {}
-        return extract_details_enrichment(details or {})
+            if zones:
+                out["hr_zones"] = zones
+
+        if "splits_km" not in out:
+            splits = extract_splits(
+                self._safe_call(
+                    getattr(client, "get_activity_splits", None), activity_id, "splits"
+                )
+            )
+            if splits:
+                out["splits_km"] = splits
+
+        if "humidity_pct" not in out:
+            weather = extract_weather(
+                self._safe_call(
+                    getattr(client, "get_activity_weather", None), activity_id, "weather"
+                )
+            )
+            for key, value in weather.items():
+                out.setdefault(key, value)
+
+        return out
+
+    def _safe_call(self, fn: Any, activity_id: Any, label: str) -> Any:
+        """Call a Garmin client method with retry; return ``None`` on failure."""
+        if fn is None:
+            return None
+        try:
+            return retry_call(
+                lambda: fn(activity_id),
+                retries=self.settings.garmin_max_retries,
+                description=f"garmin.{label}({activity_id})",
+            )
+        except Exception as exc:  # noqa: BLE001 - one bad endpoint must not abort
+            logger.warning("Enrichment %s failed for %s: %s", label, activity_id, exc)
+            return None
 
 
 def get_source(settings: Settings | None = None) -> ActivitySource:

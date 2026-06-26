@@ -117,6 +117,8 @@ def test_mobile_overview_exposes_rich_activity_fields(client):
         "body_battery_delta",
         "vigorous_minutes",
         "moderate_minutes",
+        "aerobic_training_effect",
+        "anaerobic_training_effect",
         "aerobic_te_message",
         "anaerobic_te_message",
     }
@@ -126,3 +128,4 @@ def test_mobile_overview_exposes_rich_activity_fields(client):
     assert any(a.get("vo2max") for a in activities)
     assert any(a.get("hr_zones") for a in activities)
     assert any(a.get("fastest_split_1k") for a in activities)
+    assert any(a.get("aerobic_training_effect") for a in activities)

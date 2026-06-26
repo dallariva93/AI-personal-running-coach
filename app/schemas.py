@@ -59,6 +59,8 @@ class RunSummary(BaseModel):
     fastest_split_1k: str | None = None  # fastest 1 km segment, e.g. "4:22/km"
     fastest_split_5k: str | None = None  # fastest 5 km segment pace
     vo2max: float | None = None  # Garmin's estimated VO2max for the session
+    aerobic_training_effect: float | None = None  # Garmin TE, 0.0-5.0
+    anaerobic_training_effect: float | None = None  # Garmin anaerobic TE, 0.0-5.0
     aerobic_te_message: str | None = None  # e.g. "IMPROVING_LACTATE_THRESHOLD_12"
     anaerobic_te_message: str | None = None  # e.g. "NO_ANAEROBIC_BENEFIT_0"
 
@@ -349,6 +351,8 @@ class ActivityOut(BaseModel):
     fastest_split_1k: str | None = None
     fastest_split_5k: str | None = None
     vo2max: float | None = None
+    aerobic_training_effect: float | None = None
+    anaerobic_training_effect: float | None = None
     aerobic_te_message: str | None = None
     anaerobic_te_message: str | None = None
 

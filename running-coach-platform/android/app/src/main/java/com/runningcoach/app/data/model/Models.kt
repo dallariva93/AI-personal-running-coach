@@ -85,6 +85,8 @@ data class Activity(
     @SerializedName("fastest_split_1k") val fastestSplit1k: String? = null,
     @SerializedName("fastest_split_5k") val fastestSplit5k: String? = null,
     @SerializedName("vo2max") val vo2max: Double? = null,
+    @SerializedName("aerobic_training_effect") val aerobicTrainingEffect: Double? = null,
+    @SerializedName("anaerobic_training_effect") val anaerobicTrainingEffect: Double? = null,
     @SerializedName("aerobic_te_message") val aerobicTeMessage: String? = null,
     @SerializedName("anaerobic_te_message") val anaerobicTeMessage: String? = null,
 )

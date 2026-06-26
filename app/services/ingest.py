@@ -91,14 +91,19 @@ def upsert_activity(session: Session, run: RunSummary) -> Activity:
         existing.rpe = run.rpe
     if run.notes is not None:
         existing.notes = run.notes
-    existing.hr_zones = run.hr_zones
-    existing.splits_km = run.splits_km
-    existing.temperature_c = run.temperature_c
-    existing.humidity_pct = run.humidity_pct
-    existing.elevation_loss_m = run.elevation_loss_m
-    # Garmin rich metrics: only overwrite when the new payload actually carries
-    # the value, so a transient details fetch failure does not erase good data
-    # from a previous successful sync.
+    # Semi-structured + Garmin rich metrics: only overwrite when the new
+    # payload actually carries the value, so a transient details-fetch failure
+    # does not erase good data from a previous successful sync.
+    if run.hr_zones is not None:
+        existing.hr_zones = run.hr_zones
+    if run.splits_km is not None:
+        existing.splits_km = run.splits_km
+    if run.temperature_c is not None:
+        existing.temperature_c = run.temperature_c
+    if run.humidity_pct is not None:
+        existing.humidity_pct = run.humidity_pct
+    if run.elevation_loss_m is not None:
+        existing.elevation_loss_m = run.elevation_loss_m
     if run.garmin_training_load is not None:
         existing.garmin_training_load = run.garmin_training_load
     if run.vigorous_minutes is not None:
@@ -117,6 +122,10 @@ def upsert_activity(session: Session, run: RunSummary) -> Activity:
         existing.fastest_split_5k = run.fastest_split_5k
     if run.vo2max is not None:
         existing.vo2max = run.vo2max
+    if run.aerobic_training_effect is not None:
+        existing.aerobic_training_effect = run.aerobic_training_effect
+    if run.anaerobic_training_effect is not None:
+        existing.anaerobic_training_effect = run.anaerobic_training_effect
     if run.aerobic_te_message is not None:
         existing.aerobic_te_message = run.aerobic_te_message
     if run.anaerobic_te_message is not None:

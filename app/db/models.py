@@ -54,6 +54,8 @@ class Activity(Base):
     fastest_split_1k: Mapped[str | None] = mapped_column(String(16), nullable=True)
     fastest_split_5k: Mapped[str | None] = mapped_column(String(16), nullable=True)
     vo2max: Mapped[float | None] = mapped_column(Float, nullable=True)
+    aerobic_training_effect: Mapped[float | None] = mapped_column(Float, nullable=True)
+    anaerobic_training_effect: Mapped[float | None] = mapped_column(Float, nullable=True)
     aerobic_te_message: Mapped[str | None] = mapped_column(String(64), nullable=True)
     anaerobic_te_message: Mapped[str | None] = mapped_column(String(64), nullable=True)
 
