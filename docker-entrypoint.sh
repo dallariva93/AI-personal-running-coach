@@ -11,6 +11,18 @@ set -eu
 PORT="${PORT:-8000}"
 DB_PATH="${DB_PATH:-/app/data/running_coach.db}"
 FORWARDED_ALLOW_IPS="${FORWARDED_ALLOW_IPS:-*}"
+APP_USER="${APP_USER:-appuser}"
+
+# Persistent volumes (e.g. Fly.io) are mounted root-owned. When we start as
+# root, make the data dir writable by the unprivileged user and re-exec as them
+# via gosu so the actual server never runs as root. The id check prevents an
+# infinite loop after privileges are dropped.
+DATA_DIR="$(dirname "$DB_PATH")"
+mkdir -p "$DATA_DIR"
+if [ "$(id -u)" = "0" ]; then
+  chown -R "$APP_USER":"$APP_USER" "$DATA_DIR" 2>/dev/null || true
+  exec gosu "$APP_USER" "$0" "$@"
+fi
 
 LITESTREAM_CONFIG="${LITESTREAM_CONFIG:-/etc/litestream.yml}"
 

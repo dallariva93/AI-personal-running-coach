@@ -10,9 +10,9 @@ ENV PYTHONUNBUFFERED=1 \
 
 WORKDIR /app
 
-# Minimal OS deps: curl for the healthcheck.
+# Minimal OS deps: curl for the healthcheck, gosu to drop privileges at runtime.
 RUN apt-get update \
-    && apt-get install -y --no-install-recommends curl \
+    && apt-get install -y --no-install-recommends curl gosu \
     && rm -rf /var/lib/apt/lists/*
 
 # Install Python dependencies first for better layer caching.
@@ -27,18 +27,20 @@ COPY data/demo_activities.json ./data/demo_activities.json
 COPY docker-entrypoint.sh ./docker-entrypoint.sh
 RUN chmod +x ./docker-entrypoint.sh
 
-# Run as a non-root user; give it ownership of the writable data dir.
+# Create a non-root user that owns the app. The entrypoint starts as root only
+# long enough to fix ownership of the mounted volume (Fly mounts it root-owned),
+# then drops privileges to this user via gosu — so the server never runs as root.
 RUN useradd --create-home --uid 10001 appuser \
     && mkdir -p /app/data \
     && chown -R appuser:appuser /app
-USER appuser
+ENV APP_USER=appuser
 
 # Persist the SQLite database and reports in a mounted volume.
 VOLUME ["/app/data"]
 
 EXPOSE 8000
 
-HEALTHCHECK --interval=30s --timeout=5s --start-period=15s --retries=3 \
+HEALTHCHECK --interval=30s --timeout=5s --start-period=30s --retries=3 \
     CMD curl -fsS http://localhost:${PORT:-8000}/api/health || exit 1
 
 ENTRYPOINT ["./docker-entrypoint.sh"]
