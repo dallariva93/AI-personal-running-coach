@@ -151,6 +151,7 @@ API_TOKEN=$(python -c "import secrets; print(secrets.token_urlsafe(24))")
 ```
 
 Le migrazioni del database vengono applicate **automaticamente all'avvio**.
+Guida passo-passo Fly.io + app Android: [`docs/DEPLOY_FLY_ANDROID.md`](docs/DEPLOY_FLY_ANDROID.md).
 Guida completa: [`docs/DEPLOYMENT.md`](docs/DEPLOYMENT.md) · runbook operativo:
 [`docs/OPERATIONS.md`](docs/OPERATIONS.md) · checklist e dettagli:
 [`docs/PRODUCTION_READINESS.md`](docs/PRODUCTION_READINESS.md).
@@ -158,6 +159,7 @@ Guida completa: [`docs/DEPLOYMENT.md`](docs/DEPLOYMENT.md) · runbook operativo:
 ## 📚 Documentazione
 
 - [Guida utente](docs/USER_GUIDE.md) — installazione e uso quotidiano
+- [Deploy Fly.io + app Android](docs/DEPLOY_FLY_ANDROID.md) — passo-passo end-to-end
 - [Deployment](docs/DEPLOYMENT.md) — hosting gratuito e backup
 - [Runbook operativo](docs/OPERATIONS.md) — log, migrazioni, troubleshooting
 - [Production readiness](docs/PRODUCTION_READINESS.md) — cosa rende l'app pronta

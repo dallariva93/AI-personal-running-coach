@@ -63,7 +63,11 @@ fly deploy
 ```
 
 Poi, nell'app → **Impostazioni**: inserisci `https://<tuo-app>.fly.dev/` e lo
-stesso `API_TOKEN`. Guida completa: [`../docs/DEPLOYMENT.md`](../docs/DEPLOYMENT.md).
+stesso `API_TOKEN`.
+
+> 📘 **Guida passo-passo completa** (deploy Fly.io + collegamento dell'app):
+> [`../docs/DEPLOY_FLY_ANDROID.md`](../docs/DEPLOY_FLY_ANDROID.md).
+> Altre opzioni (Raspberry Pi, Render/Railway): [`../docs/DEPLOYMENT.md`](../docs/DEPLOYMENT.md).
 
 ---
 
