@@ -3,6 +3,20 @@
 Tutte le modifiche rilevanti a questo progetto sono documentate qui.
 Il formato segue [Keep a Changelog](https://keepachangelog.com/it/1.1.0/).
 
+## [Unreleased]
+
+### Aggiunto
+- **Archivio raw delle attività Garmin**: ogni attività (running e non-running)
+  viene archiviata su object storage S3-compatible (Tigris su Fly.io) come
+  payload nativi: `summary`, `details` (stream second-by-second incluse cadenza,
+  potenza, oscillazione verticale, ground contact, respiration, ecc.),
+  `splits`, `typed_splits`, `split_summaries`, `weather`, `hr_in_timezones`,
+  `power_in_timezones`, `exercise_sets`, `gear`, GPX, TCX e FIT originale (zip).
+  Nuova tabella `raw_activity_assets` per dedup idempotente per
+  `(garmin_activity_id, kind)`. Attivato automaticamente quando le credenziali
+  S3 sono configurate; vedi `.env.example` (`S3_*`) e
+  `docs/DEPLOY_FLY_ANDROID.md` per il setup Tigris.
+
 ## [0.2.0] — 2026-06-23 — Production ready
 
 ### Aggiunto

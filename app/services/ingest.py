@@ -14,11 +14,13 @@ from sqlalchemy.orm import Session
 from app.coaching import get_coach
 from app.coaching.coach import Coach
 from app.collection import get_source
-from app.collection.sources import ActivitySource
+from app.collection.garmin_raw import GarminRawFetcher
+from app.collection.sources import ActivitySource, GarminSource
 from app.config import get_settings
-from app.db.models import Activity, CoachingReport
+from app.db.models import Activity, CoachingReport, RawActivityAsset
 from app.exceptions import CollectionError
 from app.logging_config import get_logger
+from app.storage import ObjectStore, get_object_store
 from app.processing import (
     build_snapshot,
     compute_metrics,
@@ -125,7 +127,13 @@ def upsert_activity(session: Session, run: RunSummary) -> Activity:
 def ingest_runs(
     session: Session, limit: int | None = None, source: ActivitySource | None = None
 ) -> list[Activity]:
-    """Pull recent runs from the configured source and persist them."""
+    """Pull recent runs from the configured source and persist them.
+
+    Side-effect: when raw archival is configured (S3 bucket + Garmin
+    source), every recent activity (running or not) is also archived to
+    object storage in the same call. Archival errors are logged but do
+    not interrupt the summary ingest.
+    """
     settings = get_settings()
     limit = limit or settings.fetch_limit
     source = source or get_source(settings)
@@ -133,7 +141,89 @@ def ingest_runs(
     saved = [upsert_activity(session, r) for r in runs]
     session.flush()
     _refresh_physiology(session)
+
+    if settings.raw_archive_active and isinstance(source, GarminSource):
+        _try_sync_raw_assets(session, source, limit)
+
     return saved
+
+
+def sync_raw_assets(
+    session: Session,
+    source: GarminSource,
+    limit: int,
+    store: ObjectStore | None = None,
+) -> list[RawActivityAsset]:
+    """Archive every raw Garmin payload (all activity types) to object storage.
+
+    Skips ``(activity_id, kind)`` pairs already recorded in
+    ``raw_activity_assets``: re-syncs are cheap and idempotent. Returns
+    the newly created rows.
+    """
+    if store is None:
+        store = get_object_store()
+    if store is None:
+        logger.debug("Raw archive skipped: object store not configured")
+        return []
+
+    activities = source.get_recent_activities(limit)
+    if not activities:
+        return []
+
+    client = source.get_client()
+    fetcher = GarminRawFetcher(client=client, store=store)
+    new_rows: list[RawActivityAsset] = []
+
+    for activity in activities:
+        activity_id = activity.get("activityId")
+        if activity_id is None:
+            continue
+        activity_id_str = str(activity_id)
+        type_field = activity.get("activityType") or {}
+        type_key = type_field.get("typeKey") if isinstance(type_field, dict) else None
+
+        existing_kinds = set(
+            session.scalars(
+                select(RawActivityAsset.kind).where(
+                    RawActivityAsset.garmin_activity_id == activity_id_str
+                )
+            ).all()
+        )
+
+        assets = fetcher.fetch_all(
+            activity_id=activity_id_str,
+            activity_type_key=type_key,
+            already_archived_kinds=existing_kinds,
+        )
+        for asset in assets:
+            row = RawActivityAsset(
+                garmin_activity_id=asset.activity_id,
+                activity_type_key=asset.activity_type_key,
+                kind=asset.kind,
+                s3_key=asset.s3_key,
+                content_type=asset.content_type,
+                size_bytes=asset.size_bytes,
+                sha256=asset.sha256,
+            )
+            session.add(row)
+            new_rows.append(row)
+
+    if new_rows:
+        session.flush()
+        logger.info(
+            "Archived %d raw assets across %d activities",
+            len(new_rows),
+            len({r.garmin_activity_id for r in new_rows}),
+        )
+    return new_rows
+
+
+def _try_sync_raw_assets(session: Session, source: GarminSource, limit: int) -> None:
+    """Best-effort raw archive. Never raises into the summary ingest path."""
+    try:
+        sync_raw_assets(session, source, limit)
+    except Exception as exc:  # noqa: BLE001
+        logger.warning("Raw archive step failed: %s", exc)
 
 
 def sync_before_analysis(

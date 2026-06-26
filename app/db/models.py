@@ -131,6 +131,54 @@ class CoachingReport(Base):
         return f"<CoachingReport {self.scope} model={self.model}>"
 
 
+class RawActivityAsset(Base):
+    """A raw payload archived to object storage for one Garmin activity.
+
+    One row per ``(garmin_activity_id, kind)`` pair. Decoupled from
+    :class:`Activity` (no FK) on purpose: we archive every Garmin activity
+    (running and non-running) but only persist running summaries in
+    ``activities``. Stored on object storage; the row keeps the pointer
+    (``s3_key``), checksum and a copy of any tiny inline content type
+    metadata for fast listing without touching the bucket.
+
+    ``kind`` values currently emitted by :mod:`app.collection.garmin_raw`:
+
+    * ``summary``                - get_activity JSON
+    * ``details``                - get_activity_details JSON (per-second streams)
+    * ``splits``                 - get_activity_splits JSON
+    * ``typed_splits``           - get_activity_typed_splits JSON
+    * ``split_summaries``        - get_activity_split_summaries JSON
+    * ``weather``                - get_activity_weather JSON
+    * ``hr_in_timezones``        - get_activity_hr_in_timezones JSON
+    * ``power_in_timezones``     - get_activity_power_in_timezones JSON
+    * ``exercise_sets``          - get_activity_exercise_sets JSON
+    * ``gear``                   - get_activity_gear JSON
+    * ``gpx``                    - download_activity GPX
+    * ``tcx``                    - download_activity TCX
+    * ``original_fit_zip``       - download_activity ORIGINAL (FIT inside zip)
+    """
+
+    __tablename__ = "raw_activity_assets"
+    __table_args__ = (
+        UniqueConstraint("garmin_activity_id", "kind", name="uq_raw_asset_activity_kind"),
+    )
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    garmin_activity_id: Mapped[str] = mapped_column(String(64), index=True)
+    # Garmin's typeKey (running, cycling, ...). Kept for listing/filtering
+    # without joining back to a heterogeneous source.
+    activity_type_key: Mapped[str | None] = mapped_column(String(64), nullable=True, index=True)
+    kind: Mapped[str] = mapped_column(String(32))
+    s3_key: Mapped[str] = mapped_column(String(512))
+    content_type: Mapped[str] = mapped_column(String(64), default="application/octet-stream")
+    size_bytes: Mapped[int] = mapped_column(Integer, default=0)
+    sha256: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    fetched_at: Mapped[datetime] = mapped_column(DateTime, default=_utcnow)
+
+    def __repr__(self) -> str:  # pragma: no cover - debug helper
+        return f"<RawActivityAsset {self.garmin_activity_id}/{self.kind}>"
+
+
 class DailyCheckinRow(Base):
     """A subjective daily wellness check-in (GAP 9). One row per date."""
 

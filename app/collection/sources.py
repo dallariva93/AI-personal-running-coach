@@ -93,20 +93,9 @@ class GarminSource:
         return client
 
     def get_recent_runs(self, limit: int = 10) -> list[RunSummary]:
-        try:
-            client = self._login()
-            activities = retry_call(
-                lambda: client.get_activities(0, max(limit * 3, limit)),
-                retries=self.settings.garmin_max_retries,
-                description="garmin.get_activities",
-            )
-        except Exception as exc:  # network, auth, library breakage
-            logger.error("Garmin fetch failed: %s", exc)
-            raise CollectionError(f"Impossibile scaricare i dati da Garmin: {exc}") from exc
-        running = [a for a in activities if _is_running(a)]
-        running.sort(key=lambda a: str(a.get("startTimeLocal", "")), reverse=True)
-        running = running[:limit]
+        running = self._fetch_running(limit)
         runs: list[RunSummary] = []
+        client = self._login()
         for activity in running:
             run = synthesize(activity)
             extras = self._fetch_enrichment(client, activity.get("activityId"))
@@ -114,6 +103,38 @@ class GarminSource:
                 run = run.model_copy(update=extras)
             runs.append(run)
         return runs
+
+    def get_recent_activities(self, limit: int = 10) -> list[dict[str, Any]]:
+        """Return the raw Garmin activity dicts, *without* filtering by type.
+
+        Used by the raw archival pipeline to back up every activity
+        (running, cycling, swimming, strength, ...) rather than the
+        running subset surfaced to the coaching layer.
+        """
+        try:
+            client = self._login()
+            activities = retry_call(
+                lambda: client.get_activities(0, limit),
+                retries=self.settings.garmin_max_retries,
+                description="garmin.get_activities",
+            )
+        except Exception as exc:  # network, auth, library breakage
+            logger.error("Garmin fetch failed: %s", exc)
+            raise CollectionError(f"Impossibile scaricare i dati da Garmin: {exc}") from exc
+        activities = [a for a in activities if isinstance(a, dict)]
+        activities.sort(key=lambda a: str(a.get("startTimeLocal", "")), reverse=True)
+        return activities[:limit]
+
+    def get_client(self) -> Any:
+        """Return the underlying logged-in client (for raw archival)."""
+        return self._login()
+
+    def _fetch_running(self, limit: int) -> list[dict[str, Any]]:
+        # Fetch a larger window so the head still has ``limit`` running
+        # entries after filtering out cycling/swim/strength/etc.
+        activities = self.get_recent_activities(max(limit * 3, limit))
+        running = [a for a in activities if _is_running(a)]
+        return running[:limit]
 
     def _fetch_enrichment(self, client: Any, activity_id: Any) -> dict[str, Any]:
         """Fetch the per-activity fields that only live on the details endpoint.

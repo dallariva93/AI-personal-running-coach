@@ -82,6 +82,25 @@ Il file [`fly.toml`](../fly.toml) monta il volume su `/app/data`, attiva HTTPS,
 gli health check su `/api/health` e l'auto-stop/start delle macchine per
 risparmiare risorse. Le migrazioni partono da sole a ogni deploy.
 
+### Automatizzare il deploy con GitHub Actions
+
+Per evitare di dover eseguire `fly deploy` manualmente a ogni commit, puoi automatizzare il deploy al push sul branch `main` usando GitHub Actions.
+
+1. **Ottieni il token Fly.io** (nel tuo terminale locale):
+   ```bash
+   fly auth token
+   ```
+
+2. **Aggiungi il secret su GitHub**:
+   - Vai su: Settings → Secrets and variables → Actions → New repository secret
+   - Name: `FLY_API_TOKEN`
+   - Secret: il token copiato sopra
+
+3. **Workflow di deploy**:
+   Il repository include già il workflow `.github/workflows/deploy-fly.yml` che esegue automaticamente `fly deploy` al push su `main`. Puoi anche lanciarlo manualmente dalla tab Actions su GitHub.
+
+Da ora in poi, ogni push su `main` attiverà automaticamente il deploy su Fly.io.
+
 ---
 
 ## 3. Render / Railway + Litestream → Cloudflare R2

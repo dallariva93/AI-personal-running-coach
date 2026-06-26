@@ -24,6 +24,9 @@ def db_env(tmp_path, monkeypatch):
 
     db_file = tmp_path / "test.db"
     monkeypatch.setenv("DATABASE_URL", f"sqlite:///{db_file}")
+    # Force demo mode by clearing Garmin credentials
+    monkeypatch.setenv("GARMIN_EMAIL", "")
+    monkeypatch.setenv("GARMIN_PASSWORD", "")
     get_settings.cache_clear()
     reset_engine()
     init_db()

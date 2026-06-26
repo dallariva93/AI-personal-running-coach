@@ -96,6 +96,45 @@ nomi) — se non l'hai salvato, rigeneralo con il comando sopra.
 
 ---
 
+## 3-bis. (Opzionale) Archivio raw delle attività su Tigris
+
+L'app può archiviare per ogni attività Garmin (running e non) **tutti i
+payload nativi** (summary, stream second-by-second con cadenza/potenza/
+oscillazione verticale/ground contact/respiration, splits, weather,
+hr_in_timezones, power_in_timezones, exercise sets, gear, GPX, TCX e FIT
+originale) su object storage S3-compatible. Su Fly conviene **Tigris**,
+che è S3-compatible e integrato nativamente (zero egress verso le app
+Fly nella stessa regione, free tier per uso personale).
+
+Crea il bucket e attacca i secrets all'app in un solo comando:
+
+```bash
+fly storage create
+# Segui il wizard: dai un nome (es. running-coach-raw) e seleziona l'app
+# corrente. Fly inietta automaticamente come secrets:
+#   AWS_ACCESS_KEY_ID, AWS_SECRET_ACCESS_KEY, AWS_REGION,
+#   AWS_ENDPOINT_URL_S3, BUCKET_NAME
+```
+
+Verifica i secrets:
+
+```bash
+fly secrets list | findstr /R "AWS_ BUCKET_"
+```
+
+Il backend rileva da solo le variabili Tigris (grazie agli alias in
+`app/config.py`) e attiva l'archivio raw al successivo ingest. Per
+disattivare temporaneamente l'archivio senza rimuovere il bucket:
+
+```bash
+fly secrets set RAW_ARCHIVE_ENABLED=false
+```
+
+> **Nota**: l'archivio è opt-in. Se non crei il bucket Tigris, l'app
+> continua a funzionare come prima (solo summary running nel DB).
+
+---
+
 ## 4. Deploy
 
 ```bash
@@ -191,6 +230,34 @@ fly deploy          # rebuild + redeploy; le migrazioni girano da sole
 ```
 
 Il database sul volume **non** viene toccato dal deploy.
+
+---
+
+## 10. Automatizzare il deploy con GitHub Actions
+
+Per evitare di dover eseguire `fly deploy` manualmente a ogni commit, puoi automatizzare il deploy al push sul branch `main` usando GitHub Actions.
+
+### 10a. Ottieni il token Fly.io
+
+Nel tuo terminale locale:
+
+```bash
+fly auth token
+```
+
+Copia il token generato.
+
+### 10b. Aggiungi il secret su GitHub
+
+Vai su GitHub → Settings → Secrets and variables → Actions → New repository secret:
+- **Name**: `FLY_API_TOKEN`
+- **Secret**: il token copiato sopra
+
+### 10c. Workflow di deploy
+
+Il repository include già il workflow `.github/workflows/deploy-fly.yml` che esegue automaticamente `fly deploy` al push su `main`. Puoi anche lanciarlo manualmente dalla tab Actions su GitHub.
+
+Da ora in poi, ogni push su `main` attiverà automaticamente il deploy su Fly.io.
 
 ---
 

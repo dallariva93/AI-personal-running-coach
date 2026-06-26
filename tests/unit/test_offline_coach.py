@@ -15,6 +15,7 @@ def test_split_sections():
 
 def test_get_coach_offline_without_key(monkeypatch):
     monkeypatch.delenv("ANTHROPIC_API_KEY", raising=False)
+    monkeypatch.setenv("ANTHROPIC_API_KEY", "")
     from app.config import get_settings
 
     get_settings.cache_clear()
