@@ -152,7 +152,24 @@ def ingest_runs(
     settings = get_settings()
     limit = limit or settings.fetch_limit
     source = source or get_source(settings)
-    runs = source.get_recent_runs(limit)
+
+    # For Garmin source, skip the heavy get_activity_details call for
+    # activities that already have GPS data — avoids N redundant API calls
+    # on every re-sync of existing activities.
+    skip_gps_for: set[str] | None = None
+    if isinstance(source, GarminSource):
+        skip_gps_for = {
+            a.garmin_activity_id
+            for a in session.scalars(
+                select(Activity).where(
+                    Activity.garmin_activity_id.isnot(None),
+                    Activity.route_polyline.isnot(None),
+                )
+            ).all()
+            if a.garmin_activity_id
+        }
+
+    runs = source.get_recent_runs(limit, skip_gps_for=skip_gps_for)
     saved = [upsert_activity(session, r) for r in runs]
     session.flush()
     _refresh_physiology(session)

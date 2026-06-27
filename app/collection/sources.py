@@ -38,7 +38,9 @@ _DEMO_DATA = Path(__file__).resolve().parent.parent.parent / "data" / "demo_acti
 class ActivitySource(Protocol):
     """Anything that can return a list of synthesised runs."""
 
-    def get_recent_runs(self, limit: int = 10) -> list[RunSummary]: ...
+    def get_recent_runs(
+        self, limit: int = 10, skip_gps_for: set[str] | None = None
+    ) -> list[RunSummary]: ...
 
 
 def _is_running(activity: dict[str, Any]) -> bool:
@@ -53,7 +55,9 @@ class DemoSource:
     def __init__(self, path: Path | str = _DEMO_DATA) -> None:
         self.path = Path(path)
 
-    def get_recent_runs(self, limit: int = 10) -> list[RunSummary]:
+    def get_recent_runs(
+        self, limit: int = 10, skip_gps_for: set[str] | None = None
+    ) -> list[RunSummary]:
         if not self.path.exists():
             return []
         raw = json.loads(self.path.read_text(encoding="utf-8"))
@@ -100,13 +104,19 @@ class GarminSource:
         self._client = client
         return client
 
-    def get_recent_runs(self, limit: int = 10) -> list[RunSummary]:
+    def get_recent_runs(
+        self, limit: int = 10, skip_gps_for: set[str] | None = None
+    ) -> list[RunSummary]:
         running = self._fetch_running(limit)
         runs: list[RunSummary] = []
         client = self._login()
         for activity in running:
+            activity_id = activity.get("activityId")
+            already_has_gps = (
+                skip_gps_for is not None and str(activity_id) in skip_gps_for
+            )
             run = synthesize(activity)
-            extras = self._fetch_enrichment(client, activity.get("activityId"))
+            extras = self._fetch_enrichment(client, activity_id, skip_gps=already_has_gps)
             if extras:
                 run = run.model_copy(update=extras)
             runs.append(run)
@@ -144,7 +154,9 @@ class GarminSource:
         running = [a for a in activities if _is_running(a)]
         return running[:limit]
 
-    def _fetch_enrichment(self, client: Any, activity_id: Any) -> dict[str, Any]:
+    def _fetch_enrichment(
+        self, client: Any, activity_id: Any, skip_gps: bool = False
+    ) -> dict[str, Any]:
         """Fetch the per-activity fields that only live on the detail endpoints.
 
         The list payload from ``get_activities`` is sparse; the real metrics
@@ -170,13 +182,16 @@ class GarminSource:
 
         # GPS track (route_polyline) and elevation profile from the full detail
         # stream — same source Garmin Connect uses for its map view.
-        detail_stream = self._safe_call(
-            getattr(client, "get_activity_details", None), activity_id, "activity_details"
-        )
-        if detail_stream:
-            gps = extract_gps_from_details(detail_stream)
-            for key, val in gps.items():
-                out.setdefault(key, val)
+        # Skipped when the caller knows this activity already has GPS data in
+        # the DB, avoiding a costly API call per already-synced activity.
+        if not skip_gps:
+            detail_stream = self._safe_call(
+                getattr(client, "get_activity_details", None), activity_id, "activity_details"
+            )
+            if detail_stream:
+                gps = extract_gps_from_details(detail_stream)
+                for key, val in gps.items():
+                    out.setdefault(key, val)
 
         if "hr_zones" not in out:
             zones = extract_hr_zones_from_timezones(

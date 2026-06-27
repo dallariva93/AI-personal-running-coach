@@ -97,7 +97,10 @@ fun AppScaffold(app: RunningCoachApp) {
         // Update home-screen widget whenever the overview changes.
         LaunchedEffect(state.overview) {
             state.overview?.let { ov ->
-                scope.launch { RunningWidget.updateAll(context, ov) }
+                scope.launch {
+                    try { RunningWidget.updateAll(context, ov) }
+                    catch (_: Exception) { /* widget update never crashes the app */ }
+                }
             }
         }
 

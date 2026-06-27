@@ -283,14 +283,21 @@ def get_stats(period: str = "all-time", session: Session = Depends(get_session))
     from app.db.models import Activity as ActivityModel
     from app.processing.records import _pace_sec
 
-    acts = list(session.scalars(sa_select(ActivityModel)).all())
+    _VALID_PERIODS = {"month", "year", "all-time"}
+    if period not in _VALID_PERIODS:
+        raise HTTPException(
+            status_code=422,
+            detail=f"period must be one of {sorted(_VALID_PERIODS)}",
+        )
+
+    stmt = sa_select(ActivityModel)
     today = _date.today()
     if period == "year":
-        cutoff = _date(today.year, 1, 1).isoformat()
-        acts = [a for a in acts if a.date >= cutoff]
+        stmt = stmt.where(ActivityModel.date >= f"{today.year}-01-01")
     elif period == "month":
-        cutoff = _date(today.year, today.month, 1).isoformat()
-        acts = [a for a in acts if a.date >= cutoff]
+        stmt = stmt.where(ActivityModel.date >= f"{today.year}-{today.month:02d}-01")
+
+    acts = list(session.scalars(stmt).all())
 
     total_km = sum(a.distance_km for a in acts)
     total_min = sum(a.duration_min for a in acts)

@@ -48,10 +48,11 @@ class RunningWidget : GlanceAppWidget() {
     @Composable
     private fun Content() {
         val prefs = androidx.glance.currentState<androidx.datastore.preferences.core.Preferences>()
-        val formState = prefs[KEY_FORM_STATE] ?: "—"
+        val formState = prefs[KEY_FORM_STATE]
         val weeklyKm = prefs[KEY_WEEKLY_KM] ?: 0f
         val streakDays = prefs[KEY_STREAK] ?: 0
         val tsb = prefs[KEY_TSB]
+        val hasData = formState != null
 
         GlanceTheme {
             Box(
@@ -71,44 +72,54 @@ class RunningWidget : GlanceAppWidget() {
                         ),
                     )
                     Spacer(GlanceModifier.height(6.dp))
-                    Text(
-                        formState.uppercase(),
-                        style = TextStyle(
-                            color = ColorProvider(formColor(formState)),
-                            fontSize = 20.sp,
-                            fontWeight = FontWeight.Bold,
-                        ),
-                    )
-                    Spacer(GlanceModifier.height(6.dp))
-                    Row {
+                    if (!hasData) {
                         Text(
-                            String.format("%.1f km", weeklyKm),
+                            "Apri l'app per sincronizzare",
                             style = TextStyle(
-                                color = ColorProvider(Color(0xFFE7ECF2)),
-                                fontSize = 14.sp,
-                                fontWeight = FontWeight.Medium,
+                                color = ColorProvider(Color(0xFF64748B)),
+                                fontSize = 13.sp,
                             ),
                         )
-                        if (tsb != null) {
-                            Spacer(GlanceModifier.width(12.dp))
+                    } else {
+                        Text(
+                            formState!!.uppercase(),
+                            style = TextStyle(
+                                color = ColorProvider(formColor(formState)),
+                                fontSize = 20.sp,
+                                fontWeight = FontWeight.Bold,
+                            ),
+                        )
+                        Spacer(GlanceModifier.height(6.dp))
+                        Row {
                             Text(
-                                "TSB ${if (tsb >= 0) "+" else ""}${String.format("%.0f", tsb)}",
+                                String.format("%.1f km", weeklyKm),
                                 style = TextStyle(
-                                    color = ColorProvider(Color(0xFF9AA6B4)),
-                                    fontSize = 12.sp,
+                                    color = ColorProvider(Color(0xFFE7ECF2)),
+                                    fontSize = 14.sp,
+                                    fontWeight = FontWeight.Medium,
+                                ),
+                            )
+                            if (tsb != null) {
+                                Spacer(GlanceModifier.width(12.dp))
+                                Text(
+                                    "TSB ${if (tsb >= 0) "+" else ""}${String.format("%.0f", tsb)}",
+                                    style = TextStyle(
+                                        color = ColorProvider(Color(0xFF9AA6B4)),
+                                        fontSize = 12.sp,
+                                    ),
+                                )
+                            }
+                        }
+                        if (streakDays > 0) {
+                            Spacer(GlanceModifier.height(4.dp))
+                            Text(
+                                "$streakDays giorni streak",
+                                style = TextStyle(
+                                    color = ColorProvider(Color(0xFFFF5A1F)),
+                                    fontSize = 11.sp,
                                 ),
                             )
                         }
-                    }
-                    if (streakDays > 0) {
-                        Spacer(GlanceModifier.height(4.dp))
-                        Text(
-                            "$streakDays giorni streak",
-                            style = TextStyle(
-                                color = ColorProvider(Color(0xFFFF5A1F)),
-                                fontSize = 11.sp,
-                            ),
-                        )
                     }
                 }
             }
