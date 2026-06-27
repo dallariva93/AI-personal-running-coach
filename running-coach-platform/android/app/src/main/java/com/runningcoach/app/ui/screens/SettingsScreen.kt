@@ -87,6 +87,19 @@ fun SettingsScreen(
             modifier = Modifier.fillMaxWidth(),
         )
         Spacer(Modifier.height(20.dp))
+        val isInsecureUrl = baseUrl.startsWith("http://", ignoreCase = true) &&
+            !baseUrl.contains("localhost") &&
+            !baseUrl.contains("10.0.2.2") &&
+            !baseUrl.contains("127.0.0.1")
+        if (isInsecureUrl) {
+            Spacer(Modifier.height(6.dp))
+            Text(
+                "⚠ Usa https:// — l'app correggerà automaticamente http:// in https://.",
+                style = MaterialTheme.typography.labelSmall,
+                color = MaterialTheme.colorScheme.error,
+            )
+        }
+        Spacer(Modifier.height(12.dp))
         Button(
             onClick = { onSave(baseUrl, token); saved = true },
             modifier = Modifier.fillMaxWidth(),

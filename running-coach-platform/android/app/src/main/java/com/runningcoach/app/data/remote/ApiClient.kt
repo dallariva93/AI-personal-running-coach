@@ -15,9 +15,18 @@ object ApiClient {
     private var cachedKey: String? = null
     private var cachedService: ApiService? = null
 
+    /** Upgrade http:// → https:// unless the host is a local address. */
+    private fun normalizeUrl(url: String): String {
+        if (!url.startsWith("http://", ignoreCase = true)) return url
+        val localHosts = listOf("localhost", "10.0.2.2", "127.0.0.1")
+        val host = url.removePrefix("http://").removePrefix("HTTP://").substringBefore("/").substringBefore(":")
+        return if (host in localHosts) url else url.replaceFirst("http://", "https://", ignoreCase = true)
+    }
+
     @Synchronized
     fun service(baseUrl: String, token: String): ApiService {
-        val key = "$baseUrl|$token"
+        val normalizedUrl = normalizeUrl(baseUrl)
+        val key = "$normalizedUrl|$token"
         cachedService?.let { if (key == cachedKey) return it }
 
         val logging = HttpLoggingInterceptor().apply {
@@ -38,7 +47,7 @@ object ApiClient {
             .build()
 
         val service = Retrofit.Builder()
-            .baseUrl(baseUrl)
+            .baseUrl(normalizedUrl)
             .client(client)
             .addConverterFactory(GsonConverterFactory.create())
             .build()
