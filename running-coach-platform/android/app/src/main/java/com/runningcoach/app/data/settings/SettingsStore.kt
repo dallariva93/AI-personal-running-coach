@@ -10,21 +10,24 @@ import kotlinx.coroutines.flow.map
 
 private val Context.dataStore by preferencesDataStore(name = "settings")
 
-/** Persists the backend connection settings (base URL + optional token). */
+/** Persists connection settings and UI preferences. */
 data class AppSettings(
     val baseUrl: String,
     val token: String,
+    val themeMode: String = "system", // "system" | "dark" | "light"
 )
 
 class SettingsStore(private val context: Context) {
 
     private val baseUrlKey = stringPreferencesKey("base_url")
     private val tokenKey = stringPreferencesKey("token")
+    private val themeModeKey = stringPreferencesKey("theme_mode")
 
     val settings: Flow<AppSettings> = context.dataStore.data.map { prefs ->
         AppSettings(
             baseUrl = prefs[baseUrlKey]?.takeIf { it.isNotBlank() } ?: BuildConfig.DEFAULT_BASE_URL,
             token = prefs[tokenKey].orEmpty(),
+            themeMode = prefs[themeModeKey] ?: "system",
         )
     }
 
@@ -33,6 +36,10 @@ class SettingsStore(private val context: Context) {
             prefs[baseUrlKey] = normalizeUrl(baseUrl)
             prefs[tokenKey] = token.trim()
         }
+    }
+
+    suspend fun updateTheme(themeMode: String) {
+        context.dataStore.edit { prefs -> prefs[themeModeKey] = themeMode }
     }
 
     private fun normalizeUrl(url: String): String {

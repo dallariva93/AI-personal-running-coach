@@ -37,15 +37,18 @@ fun SettingsScreen(
     onSave: (String, String) -> Unit,
     onSaveCoach: (String, String, String, String, String) -> Unit,
     onCheckin: (Double?, Int?, Int?, Int?) -> Unit,
+    onSaveTheme: (String) -> Unit = {},
 ) {
     var baseUrl by remember { mutableStateOf("") }
     var token by remember { mutableStateOf("") }
+    var themeMode by remember { mutableStateOf("system") }
     var saved by remember { mutableStateOf(false) }
 
     LaunchedEffect(settings) {
         settings?.let {
             baseUrl = it.baseUrl
             token = it.token
+            themeMode = it.themeMode
         }
     }
 
@@ -114,6 +117,11 @@ fun SettingsScreen(
         Spacer(Modifier.height(24.dp))
         Divider()
         Spacer(Modifier.height(16.dp))
+        ThemeSection(themeMode = themeMode, onSaveTheme = { themeMode = it; onSaveTheme(it) })
+
+        Spacer(Modifier.height(24.dp))
+        Divider()
+        Spacer(Modifier.height(16.dp))
         CoachSetupSection(profile = profile, onSaveCoach = onSaveCoach)
 
         Spacer(Modifier.height(24.dp))
@@ -129,6 +137,22 @@ fun SettingsScreen(
             color = MaterialTheme.colorScheme.onSurfaceVariant,
         )
     }
+}
+
+@Composable
+private fun ThemeSection(themeMode: String, onSaveTheme: (String) -> Unit) {
+    Text(
+        "Tema",
+        style = MaterialTheme.typography.titleMedium,
+        fontWeight = FontWeight.Bold,
+    )
+    Spacer(Modifier.height(8.dp))
+    ChoiceRow(
+        label = "Aspetto",
+        options = listOf("system", "dark", "light"),
+        selected = themeMode,
+        onSelect = onSaveTheme,
+    )
 }
 
 @Composable

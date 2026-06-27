@@ -5,8 +5,12 @@ Mounted under ``/api``. The dashboard (HTML/HTMX) lives separately in main.py.
 
 from __future__ import annotations
 
+import csv
+import io
+import json as _json
+
 from fastapi import APIRouter, Depends, HTTPException
-from fastapi.responses import JSONResponse
+from fastapi.responses import JSONResponse, StreamingResponse
 from sqlalchemy.orm import Session
 
 from app import __version__
@@ -34,6 +38,7 @@ from app.schemas import (
     GamificationData,
     ManualActivityIn,
     PeriodizationPlan,
+    PeriodStats,
     PersonalRecord,
     RacePrediction,
     ReportOut,
@@ -265,6 +270,89 @@ def get_gamification(session: Session = Depends(get_session)) -> GamificationDat
         streak_days_best=best,
         total_badges_earned=sum(1 for b in badges if b.earned),
         badges=badges,
+    )
+
+
+@router.get("/stats", response_model=PeriodStats)
+def get_stats(period: str = "all-time", session: Session = Depends(get_session)):
+    """Aggregate running statistics for a time window (month|year|all-time)."""
+    from datetime import date as _date
+
+    from sqlalchemy import select as sa_select
+
+    from app.db.models import Activity as ActivityModel
+    from app.processing.records import _pace_sec
+
+    acts = list(session.scalars(sa_select(ActivityModel)).all())
+    today = _date.today()
+    if period == "year":
+        cutoff = _date(today.year, 1, 1).isoformat()
+        acts = [a for a in acts if a.date >= cutoff]
+    elif period == "month":
+        cutoff = _date(today.year, today.month, 1).isoformat()
+        acts = [a for a in acts if a.date >= cutoff]
+
+    total_km = sum(a.distance_km for a in acts)
+    total_min = sum(a.duration_min for a in acts)
+    total_elev = int(sum(a.elevation_gain_m or 0 for a in acts))
+    longest = max((a.distance_km for a in acts), default=0.0)
+
+    if total_km > 0:
+        s = (total_min * 60) / total_km
+        avg_pace = f"{int(s // 60)}:{int(s % 60):02d}/km"
+    else:
+        avg_pace = None
+
+    fastest = min(
+        (a.avg_pace for a in acts if a.avg_pace and a.distance_km >= 1.0),
+        key=_pace_sec,
+        default=None,
+    )
+
+    return PeriodStats(
+        period=period,
+        total_runs=len(acts),
+        total_km=round(total_km, 1),
+        total_duration_h=round(total_min / 60, 1),
+        total_elevation_m=total_elev,
+        avg_pace=avg_pace,
+        longest_run_km=round(longest, 1),
+        fastest_pace=fastest,
+    )
+
+
+@router.get("/export")
+def export_data(format: str = "csv", session: Session = Depends(get_session)):
+    """Download all activities as CSV or JSON (attachment)."""
+    from sqlalchemy import select as sa_select
+
+    from app.db.models import Activity as ActivityModel
+
+    acts = list(
+        session.scalars(
+            sa_select(ActivityModel).order_by(ActivityModel.date.desc())
+        ).all()
+    )
+
+    if format.lower() == "json":
+        data = [ActivityOut.model_validate(a).model_dump() for a in acts]
+        content = _json.dumps(data, indent=2, default=str)
+        return StreamingResponse(
+            iter([content]),
+            media_type="application/json",
+            headers={"Content-Disposition": "attachment; filename=activities.json"},
+        )
+
+    buf = io.StringIO()
+    fields = list(ActivityOut.model_fields.keys())
+    writer = csv.DictWriter(buf, fieldnames=fields, extrasaction="ignore")
+    writer.writeheader()
+    for a in acts:
+        writer.writerow(ActivityOut.model_validate(a).model_dump())
+    return StreamingResponse(
+        iter([buf.getvalue()]),
+        media_type="text/csv",
+        headers={"Content-Disposition": "attachment; filename=activities.csv"},
     )
 
 

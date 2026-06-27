@@ -4,6 +4,7 @@ import com.runningcoach.app.data.model.Activity
 import com.runningcoach.app.data.model.AthleteProfile
 import com.runningcoach.app.data.model.DailyCheckin
 import com.runningcoach.app.data.model.Overview
+import com.runningcoach.app.data.model.PeriodStats
 import com.runningcoach.app.data.model.Report
 import retrofit2.http.Body
 import retrofit2.http.GET
@@ -40,4 +41,7 @@ interface ApiService {
 
     @POST("api/checkin")
     suspend fun postCheckin(@Body checkin: DailyCheckin): DailyCheckin
+
+    @GET("api/stats")
+    suspend fun getStats(@Query("period") period: String = "all-time"): PeriodStats
 }

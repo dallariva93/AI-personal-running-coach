@@ -409,3 +409,16 @@ class GamificationData(BaseModel):
     streak_days_best: int = 0
     total_badges_earned: int = 0
     badges: list[Badge] = Field(default_factory=list)
+
+
+class PeriodStats(BaseModel):
+    """Aggregate training statistics for a time window."""
+
+    period: str  # month | year | all-time
+    total_runs: int = 0
+    total_km: float = 0.0
+    total_duration_h: float = 0.0
+    total_elevation_m: int = 0
+    avg_pace: str | None = None
+    longest_run_km: float = 0.0
+    fastest_pace: str | None = None

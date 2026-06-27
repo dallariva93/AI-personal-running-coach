@@ -4,6 +4,7 @@ import com.runningcoach.app.data.model.Activity
 import com.runningcoach.app.data.model.AthleteProfile
 import com.runningcoach.app.data.model.DailyCheckin
 import com.runningcoach.app.data.model.Overview
+import com.runningcoach.app.data.model.PeriodStats
 import com.runningcoach.app.data.model.Report
 import com.runningcoach.app.data.remote.ApiClient
 import com.runningcoach.app.data.settings.SettingsStore
@@ -36,4 +37,6 @@ class CoachRepository(private val settings: SettingsStore) {
     suspend fun putProfile(profile: AthleteProfile): AthleteProfile = api().putProfile(profile)
 
     suspend fun postCheckin(checkin: DailyCheckin): DailyCheckin = api().postCheckin(checkin)
+
+    suspend fun stats(period: String = "all-time"): PeriodStats = api().getStats(period)
 }

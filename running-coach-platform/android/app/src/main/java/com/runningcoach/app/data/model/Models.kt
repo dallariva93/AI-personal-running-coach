@@ -190,6 +190,18 @@ data class Badge(
     @SerializedName("earned_date") val earnedDate: String? = null,
 )
 
+/** Aggregate stats for a period (month / year / all-time). */
+data class PeriodStats(
+    @SerializedName("period") val period: String = "all-time",
+    @SerializedName("total_runs") val totalRuns: Int = 0,
+    @SerializedName("total_km") val totalKm: Double = 0.0,
+    @SerializedName("total_duration_h") val totalDurationH: Double = 0.0,
+    @SerializedName("total_elevation_m") val totalElevationM: Int = 0,
+    @SerializedName("avg_pace") val avgPace: String? = null,
+    @SerializedName("longest_run_km") val longestRunKm: Double = 0.0,
+    @SerializedName("fastest_pace") val fastestPace: String? = null,
+)
+
 /** Running streak and earned badges. */
 data class GamificationData(
     @SerializedName("streak_days") val streakDays: Int = 0,
