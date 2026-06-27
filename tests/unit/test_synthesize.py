@@ -2,11 +2,14 @@
 
 from __future__ import annotations
 
+import json
+
 from app.collection.synthesize import (
     _classify_by_training_effect,
     _format_pace,
     _has_walking_pauses,
     _infer_type,
+    extract_gps_from_details,
     extract_rpe_from_details,
     synthesize,
 )
@@ -311,3 +314,89 @@ def test_synthesize_hr_zones_converted_to_minutes(raw_activities):
     assert run.hr_zones is not None
     # zone2 was 1700 seconds -> ~28.3 minutes
     assert run.hr_zones["z2"] == 28.3
+
+
+# ── extract_gps_from_details ────────────────────────────────────────────────
+
+_GEO_POLY_PAYLOAD = {
+    "geoPolylineDTO": {
+        "polyline": [
+            {"lat": 45.1000, "lon": 9.2000, "altitude": 100.0},
+            {"lat": 45.1010, "lon": 9.2010, "altitude": 102.0},
+            {"lat": 45.1020, "lon": 9.2020, "altitude": 105.0},
+            {"lat": 45.1030, "lon": 9.2030, "altitude": 103.0},
+            {"lat": 45.1040, "lon": 9.2040, "altitude": 101.0},
+        ]
+    }
+}
+
+_METRIC_STREAM_PAYLOAD = {
+    "metricDescriptors": [
+        {"metricsKey": "directLatitude"},
+        {"metricsKey": "directLongitude"},
+        {"metricsKey": "directElevation"},
+    ],
+    "activityDetailMetrics": [
+        {"metrics": [45.1000, 9.2000, 100.0]},
+        {"metrics": [45.1010, 9.2010, 102.0]},
+        {"metrics": [45.1020, 9.2020, 105.0]},
+        {"metrics": [None, None, None]},  # null GPS point — should be skipped
+        {"metrics": [45.1030, 9.2030, 103.0]},
+        {"metrics": [45.1040, 9.2040, 101.0]},
+    ],
+}
+
+
+def test_extract_gps_from_geo_polyline():
+    result = extract_gps_from_details(_GEO_POLY_PAYLOAD)
+    assert "route_polyline" in result
+    pts = json.loads(result["route_polyline"])
+    assert len(pts) == 5
+    assert pts[0] == [45.1, 9.2]
+    assert pts[-1] == [45.104, 9.204]
+
+
+def test_extract_gps_elevation_from_polyline():
+    result = extract_gps_from_details(_GEO_POLY_PAYLOAD)
+    assert "altitude_profile" in result
+    assert result["altitude_profile"][0] == 100.0
+    assert 105.0 in result["altitude_profile"]
+
+
+def test_extract_gps_from_metric_stream_fallback():
+    result = extract_gps_from_details(_METRIC_STREAM_PAYLOAD)
+    assert "route_polyline" in result
+    pts = json.loads(result["route_polyline"])
+    assert len(pts) >= 4
+    # null GPS point must be excluded
+    null_like = [p for p in pts if p[0] == 0.0 and p[1] == 0.0]
+    assert null_like == []
+
+
+def test_extract_gps_prefers_polyline_dto_over_stream():
+    payload = {**_GEO_POLY_PAYLOAD, **_METRIC_STREAM_PAYLOAD}
+    result = extract_gps_from_details(payload)
+    pts = json.loads(result["route_polyline"])
+    # geoPolylineDTO has 5 points; metric stream also 5 (minus null = 4+).
+    # The DTO is preferred so we should get exactly 5 points.
+    assert len(pts) == 5
+
+
+def test_extract_gps_returns_empty_on_no_data():
+    assert extract_gps_from_details({}) == {}
+    assert extract_gps_from_details(None) == {}
+
+
+def test_extract_gps_skips_zero_coordinates():
+    payload = {
+        "geoPolylineDTO": {
+            "polyline": [
+                {"lat": 0.0, "lon": 0.0, "altitude": 0.0},
+                {"lat": 45.1, "lon": 9.2, "altitude": 100.0},
+                {"lat": 45.2, "lon": 9.3, "altitude": 110.0},
+            ]
+        }
+    }
+    result = extract_gps_from_details(payload)
+    pts = json.loads(result["route_polyline"])
+    assert all(p != [0.0, 0.0] for p in pts)

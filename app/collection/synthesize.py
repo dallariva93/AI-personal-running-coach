@@ -7,6 +7,7 @@ is defensive because the unofficial API changes shape over time.
 
 from __future__ import annotations
 
+import json as _json
 from typing import Any
 
 from app.schemas import RunSummary
@@ -336,8 +337,8 @@ def extract_splits(payload: Any) -> list[str] | None:
 def extract_altitude_profile(payload: Any) -> list[float] | None:
     """Extract average altitude per km from ``lapDTOs`` in the splits payload.
 
-    Returns a list of altitude values (metres) — one per usable lap — that the
-    app can render as an elevation profile chart.
+    Used as a fallback when the full GPS detail stream is unavailable. Returns
+    one altitude value per usable lap (typically one per km).
     """
     laps = payload.get("lapDTOs") if isinstance(payload, dict) else None
     if not isinstance(laps, list):
@@ -355,29 +356,128 @@ def extract_altitude_profile(payload: Any) -> list[float] | None:
     return out if len(out) >= 2 else None
 
 
-def extract_route_polyline(payload: Any) -> str | None:
-    """Build a simplified GPS route from lap start positions in ``lapDTOs``.
+def extract_gps_from_details(details: Any) -> dict[str, Any]:
+    """Extract GPS route and elevation profile from ``get_activity_details`` payload.
 
-    Returns a JSON-encoded list of ``[lat, lon]`` pairs (one per km lap), or
-    ``None`` if the payload carries no position data.
+    Garmin's ``get_activity_details`` endpoint returns two GPS representations:
+
+    1. ``geoPolylineDTO.polyline`` — a pre-simplified list of lat/lon/altitude
+       points (up to ``maxPolylineSize``, default 4000) that Garmin Connect
+       itself uses for the map view.  This is the primary source.
+
+    2. ``activityDetailMetrics`` — the per-second metric stream, used as a
+       fallback when the polyline DTO is absent.
+
+    Returns a dict with zero or more of: ``route_polyline`` (JSON list of
+    ``[lat, lon]`` pairs) and ``altitude_profile`` (list of altitude values in
+    metres, resampled to ≤ 100 points for the chart).
     """
-    import json as _json
+    out: dict[str, Any] = {}
+    if not isinstance(details, dict):
+        return out
 
-    laps = payload.get("lapDTOs") if isinstance(payload, dict) else None
-    if not isinstance(laps, list):
-        return None
-    points: list[list[float]] = []
-    for lap in laps:
-        if not isinstance(lap, dict):
+    # ── primary: geoPolylineDTO ────────────────────────────────────────────
+    polyline_dto = details.get("geoPolylineDTO")
+    if isinstance(polyline_dto, dict):
+        raw_poly = polyline_dto.get("polyline")
+        if isinstance(raw_poly, list) and len(raw_poly) >= 2:
+            pts: list[list[float]] = []
+            alts: list[float] = []
+            for pt in raw_poly:
+                if not isinstance(pt, dict):
+                    continue
+                lat = _num(pt.get("lat"))
+                lon = _num(pt.get("lon"))
+                if lat is None or lon is None or (lat == 0.0 and lon == 0.0):
+                    continue
+                pts.append([round(lat, 6), round(lon, 6)])
+                alt = _num(pt.get("altitude"))
+                if alt is not None:
+                    alts.append(round(alt, 1))
+            if len(pts) >= 2:
+                out["route_polyline"] = _json.dumps(pts)
+            if len(alts) >= 2:
+                step = max(1, len(alts) // 100)
+                out["altitude_profile"] = alts[::step]
+
+    # ── fallback: per-second metric stream ────────────────────────────────
+    if "route_polyline" not in out:
+        out.update(_extract_gps_from_metric_stream(details))
+
+    return out
+
+
+def _extract_gps_from_metric_stream(details: dict[str, Any]) -> dict[str, Any]:
+    """GPS extraction from the ``activityDetailMetrics`` stream.
+
+    Each row in ``activityDetailMetrics`` is one sample (typically one second).
+    The descriptor list maps column indices to metric keys; we locate
+    ``directLatitude``, ``directLongitude`` and optionally ``directElevation``
+    then downsample to ≤ 300 track points so the JSON payload stays compact.
+    """
+    out: dict[str, Any] = {}
+    descriptors = details.get("metricDescriptors")
+    metric_rows = details.get("activityDetailMetrics")
+    if not isinstance(descriptors, list) or not isinstance(metric_rows, list):
+        return out
+
+    lat_idx = lon_idx = alt_idx = None
+    for i, desc in enumerate(descriptors):
+        if not isinstance(desc, dict):
             continue
-        distance = _num(lap.get("distance"))
-        if distance is None or distance < 300:
+        key = str(desc.get("metricsKey", "")).lower()
+        if key == "directlatitude":
+            lat_idx = i
+        elif key == "directlongitude":
+            lon_idx = i
+        elif key in ("directelevation", "directaltitude"):
+            alt_idx = i
+
+    if lat_idx is None or lon_idx is None:
+        return out
+
+    all_lats: list[float] = []
+    all_lons: list[float] = []
+    all_alts: list[float] = []
+
+    for row in metric_rows:
+        if not isinstance(row, dict):
             continue
-        lat = _num(lap.get("startLatitude"))
-        lon = _num(lap.get("startLongitude"))
-        if lat is not None and lon is not None:
-            points.append([round(lat, 6), round(lon, 6)])
-    return _json.dumps(points) if len(points) >= 2 else None
+        vals = row.get("metrics")
+        if not isinstance(vals, list):
+            continue
+        try:
+            lat_raw = vals[lat_idx] if lat_idx < len(vals) else None
+            lon_raw = vals[lon_idx] if lon_idx < len(vals) else None
+            lat = float(lat_raw) if lat_raw is not None else None
+            lon = float(lon_raw) if lon_raw is not None else None
+        except (TypeError, ValueError):
+            continue
+        if lat is None or lon is None or (lat == 0.0 and lon == 0.0):
+            continue
+        all_lats.append(lat)
+        all_lons.append(lon)
+        if alt_idx is not None and alt_idx < len(vals) and vals[alt_idx] is not None:
+            try:
+                all_alts.append(float(vals[alt_idx]))
+            except (TypeError, ValueError):
+                pass
+
+    if len(all_lats) < 2:
+        return out
+
+    step = max(1, len(all_lats) // 300)
+    pts = [[round(all_lats[i], 6), round(all_lons[i], 6)] for i in range(0, len(all_lats), step)]
+    last = [round(all_lats[-1], 6), round(all_lons[-1], 6)]
+    if pts[-1] != last:
+        pts.append(last)
+    out["route_polyline"] = _json.dumps(pts)
+
+    if len(all_alts) >= 10:
+        step_alt = max(1, len(all_alts) // 100)
+        out["altitude_profile"] = [round(a, 1) for a in all_alts[::step_alt]]
+
+    return out
 
 
 def extract_weather(payload: Any) -> dict[str, Any]:
