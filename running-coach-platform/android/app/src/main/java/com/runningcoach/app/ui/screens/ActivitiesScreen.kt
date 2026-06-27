@@ -39,12 +39,17 @@ fun ActivitiesScreen(state: OverviewUiState, onOpenActivity: (Int) -> Unit = {})
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
         } else {
+            val prIds = state.overview?.prActivityIds?.toSet() ?: emptySet()
             LazyColumn(
                 Modifier.fillMaxSize(),
                 contentPadding = PaddingValues(bottom = 16.dp),
             ) {
                 items(activities) { act ->
-                    ActivityRow(act, onClick = { onOpenActivity(act.id) })
+                    ActivityRow(
+                        activity = act,
+                        isPr = act.id in prIds,
+                        onClick = { onOpenActivity(act.id) },
+                    )
                 }
                 item { Spacer(Modifier.height(8.dp)) }
             }

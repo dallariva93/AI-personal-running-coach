@@ -20,10 +20,14 @@ from app.processing import (
     aerobic_efficiency,
     build_periodization,
     build_snapshot,
+    compute_badges,
     compute_metrics,
+    compute_personal_records,
+    compute_streak,
     predict_race_time,
     weekly_buckets,
 )
+from app.db.models import Activity as ActivityModel
 from app.schemas import ActivityOut, ReportOut, TrainingMetrics, WeeklyBucket
 from app.services import get_profile, latest_checkin, list_activities
 from app.services.ingest import _all_summaries
@@ -61,14 +65,29 @@ def overview(session: Session = Depends(get_session)) -> dict:
     athlete profile, the 6-month snapshot, the goal-race prediction and the
     periodization plan so the app can render the coaching screens natively.
     """
+    from sqlalchemy import select as sa_select
+
     settings = get_settings()
     summaries = _all_summaries(session)
+    all_activities_orm = list(session.scalars(sa_select(ActivityModel)).all())
     profile = get_profile(session)
     checkin = latest_checkin(session)
     metrics: TrainingMetrics = compute_metrics(summaries, profile=profile, checkin=checkin)
     weekly: list[WeeklyBucket] = weekly_buckets(summaries, weeks=8)
     activities = [ActivityOut.model_validate(a) for a in list_activities(session, limit=30)]
     snapshot = build_snapshot(summaries)
+
+    # Personal records + gamification (streak / badges).
+    prs = compute_personal_records(all_activities_orm)
+    pr_activity_ids = [r["activity_id"] for r in prs if r.get("activity_id")]
+    streak_days, streak_best = compute_streak(all_activities_orm)
+    raw_badges = compute_badges(all_activities_orm, streak_days, streak_best)
+    gamification = {
+        "streak_days": streak_days,
+        "streak_days_best": streak_best,
+        "total_badges_earned": sum(1 for b in raw_badges if b["earned"]),
+        "badges": raw_badges,
+    }
 
     goal = profile.goal if profile else None
     prediction = plan = None
@@ -92,4 +111,7 @@ def overview(session: Session = Depends(get_session)) -> dict:
         "prediction": prediction.model_dump() if prediction else None,
         "plan": plan.model_dump() if plan else None,
         "checkin": checkin.model_dump() if checkin else None,
+        "personal_records": prs,
+        "pr_activity_ids": pr_activity_ids,
+        "gamification": gamification,
     }

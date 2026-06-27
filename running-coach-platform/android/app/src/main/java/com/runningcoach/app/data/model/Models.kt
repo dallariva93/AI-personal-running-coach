@@ -174,6 +174,30 @@ data class DailyCheckin(
     @SerializedName("motivation") val motivation: Int? = null,
 )
 
+/** Best-ever performance at a canonical distance. */
+data class PersonalRecord(
+    @SerializedName("distance") val distance: String,
+    @SerializedName("pace") val pace: String,
+    @SerializedName("date") val date: String,
+    @SerializedName("activity_id") val activityId: Int? = null,
+)
+
+/** A gamification achievement (badge). */
+data class Badge(
+    @SerializedName("id") val id: String,
+    @SerializedName("label") val label: String,
+    @SerializedName("earned") val earned: Boolean = false,
+    @SerializedName("earned_date") val earnedDate: String? = null,
+)
+
+/** Running streak and earned badges. */
+data class GamificationData(
+    @SerializedName("streak_days") val streakDays: Int = 0,
+    @SerializedName("streak_days_best") val streakDaysBest: Int = 0,
+    @SerializedName("total_badges_earned") val totalBadgesEarned: Int = 0,
+    @SerializedName("badges") val badges: List<Badge> = emptyList(),
+)
+
 /** Everything the app needs to render its main screens, in one response. */
 data class Overview(
     @SerializedName("version") val version: String = "",
@@ -189,4 +213,7 @@ data class Overview(
     @SerializedName("prediction") val prediction: RacePrediction? = null,
     @SerializedName("plan") val plan: PeriodizationPlan? = null,
     @SerializedName("checkin") val checkin: DailyCheckin? = null,
+    @SerializedName("personal_records") val personalRecords: List<PersonalRecord> = emptyList(),
+    @SerializedName("pr_activity_ids") val prActivityIds: List<Int> = emptyList(),
+    @SerializedName("gamification") val gamification: GamificationData? = null,
 )

@@ -17,7 +17,10 @@ from app.processing import (
     aerobic_efficiency,
     build_periodization,
     build_snapshot,
+    compute_badges,
     compute_metrics,
+    compute_personal_records,
+    compute_streak,
     predict_race_time,
     trail_metrics,
     weekly_buckets,
@@ -26,9 +29,12 @@ from app.schemas import (
     ActivityOut,
     AthleteProfile,
     AthleteSnapshot,
+    Badge,
     DailyCheckin,
+    GamificationData,
     ManualActivityIn,
     PeriodizationPlan,
+    PersonalRecord,
     RacePrediction,
     ReportOut,
     RunSummary,
@@ -231,6 +237,35 @@ def post_weekly_plan(session: Session = Depends(get_session)):
     _commit(session)
     session.refresh(report)
     return _report_to_out(report)
+
+
+@router.get("/personal-records", response_model=list[PersonalRecord])
+def get_personal_records(session: Session = Depends(get_session)) -> list[PersonalRecord]:
+    """Best-ever performances per canonical distance, derived from stored activities."""
+    from sqlalchemy import select as sa_select
+
+    from app.db.models import Activity as ActivityModel
+
+    activities = session.scalars(sa_select(ActivityModel)).all()
+    return [PersonalRecord(**r) for r in compute_personal_records(list(activities))]
+
+
+@router.get("/gamification", response_model=GamificationData)
+def get_gamification(session: Session = Depends(get_session)) -> GamificationData:
+    """Current running streak and earned badges."""
+    from sqlalchemy import select as sa_select
+
+    from app.db.models import Activity as ActivityModel
+
+    activities = list(session.scalars(sa_select(ActivityModel)).all())
+    current, best = compute_streak(activities)
+    badges = [Badge(**b) for b in compute_badges(activities, current, best)]
+    return GamificationData(
+        streak_days=current,
+        streak_days_best=best,
+        total_badges_earned=sum(1 for b in badges if b.earned),
+        badges=badges,
+    )
 
 
 def _report_to_out(report) -> ReportOut:

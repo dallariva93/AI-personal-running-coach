@@ -86,3 +86,22 @@ fun riskColor(level: String?): Color = when (level?.lowercase()) {
     "high", "red" -> RiskHigh
     else -> FormUnknown
 }
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Activity-type intensity colors for list row badges.
+// Ordered easy → hard so the user reads effort at a glance.
+// ─────────────────────────────────────────────────────────────────────────────
+val ActivityEasy = Color(0xFF22C55E)          // green  — easy / recupero
+val ActivityModerate = Color(0xFF38BDF8)       // sky    — medio / lungo
+val ActivityTempo = Color(0xFFFB923C)          // orange — tempo
+val ActivityHard = Color(0xFFF43F5E)           // red    — intervalli / gara
+val ActivityTrail = Color(0xFF10B981)          // emerald — trail
+
+fun activityColor(type: String): Color = when (type.lowercase()) {
+    "easy", "recupero" -> ActivityEasy
+    "medio", "lungo" -> ActivityModerate
+    "tempo" -> ActivityTempo
+    "intervalli", "gara" -> ActivityHard
+    "trail" -> ActivityTrail
+    else -> FormUnknown
+}

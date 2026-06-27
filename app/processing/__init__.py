@@ -27,6 +27,8 @@ from app.processing.periodization import (
     current_phase,
     phase_for,
 )
+from app.processing.gamification import compute_badges, compute_streak
+from app.processing.records import compute_personal_records
 from app.processing.snapshot import build_snapshot
 from app.processing.trail import is_trail, trail_metrics
 
@@ -53,4 +55,7 @@ __all__ = [
     "adapt_plan",
     "trail_metrics",
     "is_trail",
+    "compute_personal_records",
+    "compute_streak",
+    "compute_badges",
 ]

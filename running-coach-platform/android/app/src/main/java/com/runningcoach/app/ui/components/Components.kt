@@ -28,11 +28,16 @@ import com.runningcoach.app.data.model.RacePrediction
 import com.runningcoach.app.data.model.Report
 import com.runningcoach.app.data.model.TrainingMetrics
 import com.runningcoach.app.data.model.WeeklyBucket
+import com.runningcoach.app.data.model.GamificationData
+import com.runningcoach.app.data.model.PersonalRecord
+import com.runningcoach.app.ui.theme.ActivityHard
 import com.runningcoach.app.ui.theme.BrandGreen
 import com.runningcoach.app.ui.theme.BrandGreenDeep
+import com.runningcoach.app.ui.theme.Coral
 import com.runningcoach.app.ui.theme.IntensityEasy
 import com.runningcoach.app.ui.theme.IntensityHard
 import com.runningcoach.app.ui.theme.IntensityModerate
+import com.runningcoach.app.ui.theme.activityColor
 import com.runningcoach.app.ui.theme.formColor
 import kotlin.math.roundToInt
 
@@ -271,36 +276,61 @@ fun WeeklyChart(weekly: List<WeeklyBucket>, modifier: Modifier = Modifier) {
 }
 
 private val activityGlyphs = mapOf(
-    "easy" to "🟢", "recupero" to "🟢", "medio" to "🟡", "lungo" to "🔵",
-    "tempo" to "🔴", "intervalli" to "🔴", "trail" to "⛰", "gara" to "🏁",
+    "easy" to "🏃", "recupero" to "🚶", "medio" to "⚡", "lungo" to "🛣️",
+    "tempo" to "🔥", "intervalli" to "💥", "trail" to "⛰️", "gara" to "🏁",
 )
 
-/** Activity list row with a colored type badge and key stats. */
+/** Activity list row with intensity color coding, type badge and key stats. */
 @Composable
 fun ActivityRow(
     activity: Activity,
     modifier: Modifier = Modifier,
+    isPr: Boolean = false,
     onClick: (() -> Unit)? = null,
 ) {
     val clickable = if (onClick != null) Modifier.clickable(onClick = onClick) else Modifier
+    val typeColor = activityColor(activity.activityType)
     SurfaceCard(modifier.padding(vertical = 5.dp).then(clickable)) {
         Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+            // Intensity-colored icon box.
             Box(
                 Modifier
-                    .size(42.dp)
+                    .size(44.dp)
                     .clip(RoundedCornerShape(12.dp))
-                    .background(MaterialTheme.colorScheme.surfaceVariant),
+                    .background(typeColor.copy(alpha = 0.18f)),
                 contentAlignment = Alignment.Center,
             ) {
-                Text(activityGlyphs[activity.activityType.lowercase()] ?: "🏃", style = MaterialTheme.typography.titleMedium)
+                Text(
+                    activityGlyphs[activity.activityType.lowercase()] ?: "🏃",
+                    style = MaterialTheme.typography.titleMedium,
+                )
             }
             Spacer(Modifier.width(12.dp))
-            Column(Modifier.width(78.dp)) {
-                Text(
-                    activity.activityType.replaceFirstChar { it.uppercase() },
-                    style = MaterialTheme.typography.labelLarge,
-                    fontWeight = FontWeight.Bold,
-                )
+            Column(Modifier.width(80.dp)) {
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Text(
+                        activity.activityType.replaceFirstChar { it.uppercase() },
+                        style = MaterialTheme.typography.labelLarge,
+                        fontWeight = FontWeight.Bold,
+                        color = typeColor,
+                    )
+                    if (isPr) {
+                        Spacer(Modifier.width(5.dp))
+                        Box(
+                            Modifier
+                                .clip(RoundedCornerShape(4.dp))
+                                .background(ActivityHard.copy(alpha = 0.15f))
+                                .padding(horizontal = 4.dp, vertical = 1.dp),
+                        ) {
+                            Text(
+                                "PR",
+                                style = MaterialTheme.typography.labelSmall,
+                                fontWeight = FontWeight.ExtraBold,
+                                color = ActivityHard,
+                            )
+                        }
+                    }
+                }
                 Text(
                     activity.date,
                     style = MaterialTheme.typography.labelSmall,
@@ -314,6 +344,139 @@ fun ActivityRow(
                 StatItem("passo", activity.avgPace ?: "–")
                 StatItem("FC", activity.avgHr?.toString() ?: "–")
             }
+        }
+    }
+}
+
+/** Compact streak banner: current streak + badge count. */
+@Composable
+fun StreakCard(gamification: GamificationData, modifier: Modifier = Modifier) {
+    SurfaceCard(modifier) {
+        Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+            // Streak flame.
+            Column(horizontalAlignment = Alignment.CenterHorizontally, modifier = Modifier.weight(1f)) {
+                Text(
+                    if (gamification.streakDays > 0) "${gamification.streakDays}" else "–",
+                    style = MaterialTheme.typography.headlineMedium,
+                    fontWeight = FontWeight.ExtraBold,
+                    color = if (gamification.streakDays >= 7) Coral else BrandGreen,
+                )
+                Text(
+                    "giorni di fila",
+                    style = MaterialTheme.typography.labelSmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+            }
+            // Divider.
+            Box(Modifier.size(width = 1.dp, height = 40.dp).background(MaterialTheme.colorScheme.outlineVariant))
+            // Best streak.
+            Column(horizontalAlignment = Alignment.CenterHorizontally, modifier = Modifier.weight(1f)) {
+                Text(
+                    if (gamification.streakDaysBest > 0) "${gamification.streakDaysBest}" else "–",
+                    style = MaterialTheme.typography.headlineMedium,
+                    fontWeight = FontWeight.ExtraBold,
+                    color = MaterialTheme.colorScheme.onSurface,
+                )
+                Text(
+                    "record streak",
+                    style = MaterialTheme.typography.labelSmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+            }
+            // Divider.
+            Box(Modifier.size(width = 1.dp, height = 40.dp).background(MaterialTheme.colorScheme.outlineVariant))
+            // Badge count.
+            Column(horizontalAlignment = Alignment.CenterHorizontally, modifier = Modifier.weight(1f)) {
+                Text(
+                    "${gamification.totalBadgesEarned}",
+                    style = MaterialTheme.typography.headlineMedium,
+                    fontWeight = FontWeight.ExtraBold,
+                    color = MaterialTheme.colorScheme.primary,
+                )
+                Text(
+                    "badge",
+                    style = MaterialTheme.typography.labelSmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+            }
+        }
+        // Earned badges row.
+        val earned = gamification.badges.filter { it.earned }
+        if (earned.isNotEmpty()) {
+            Spacer(Modifier.height(12.dp))
+            ThinDivider()
+            Spacer(Modifier.height(10.dp))
+            Text(
+                "Badge sbloccati",
+                style = MaterialTheme.typography.labelMedium,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+            Spacer(Modifier.height(6.dp))
+            earned.chunked(2).forEach { pair ->
+                Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    pair.forEach { badge ->
+                        Box(
+                            Modifier
+                                .weight(1f)
+                                .clip(RoundedCornerShape(8.dp))
+                                .background(MaterialTheme.colorScheme.primary.copy(alpha = 0.12f))
+                                .padding(horizontal = 10.dp, vertical = 6.dp),
+                        ) {
+                            Text(
+                                badge.label,
+                                style = MaterialTheme.typography.labelSmall,
+                                fontWeight = FontWeight.SemiBold,
+                                color = MaterialTheme.colorScheme.primary,
+                            )
+                        }
+                    }
+                    // Fill last row if odd count.
+                    if (pair.size == 1) Spacer(Modifier.weight(1f))
+                }
+                Spacer(Modifier.height(6.dp))
+            }
+        }
+    }
+}
+
+/** Grid of personal records with distance and best pace. */
+@Composable
+fun PersonalRecordsCard(records: List<PersonalRecord>, modifier: Modifier = Modifier) {
+    if (records.isEmpty()) return
+    SurfaceCard(modifier) {
+        SectionTitle("Record personali")
+        Spacer(Modifier.height(10.dp))
+        records.chunked(2).forEach { pair ->
+            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                pair.forEach { pr ->
+                    Column(
+                        Modifier
+                            .weight(1f)
+                            .clip(RoundedCornerShape(10.dp))
+                            .background(ActivityHard.copy(alpha = 0.08f))
+                            .padding(10.dp),
+                    ) {
+                        Text(
+                            pr.distance,
+                            style = MaterialTheme.typography.labelSmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        )
+                        Text(
+                            pr.pace,
+                            style = MaterialTheme.typography.titleMedium,
+                            fontWeight = FontWeight.ExtraBold,
+                            color = ActivityHard,
+                        )
+                        Text(
+                            pr.date,
+                            style = MaterialTheme.typography.labelSmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        )
+                    }
+                }
+                if (pair.size == 1) Spacer(Modifier.weight(1f))
+            }
+            Spacer(Modifier.height(8.dp))
         }
     }
 }

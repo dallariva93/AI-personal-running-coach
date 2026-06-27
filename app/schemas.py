@@ -382,3 +382,30 @@ class ManualActivityIn(BaseModel):
     avg_hr: int | None = None
     rpe: int | None = None
     notes: str | None = None
+
+
+class PersonalRecord(BaseModel):
+    """Best-ever performance at a canonical distance."""
+
+    distance: str  # "1K", "5K split", "5K", "10K", "21K", "42K"
+    pace: str  # "M:SS/km"
+    date: str  # ISO date the PR was set
+    activity_id: int | None = None
+
+
+class Badge(BaseModel):
+    """A gamification achievement."""
+
+    id: str
+    label: str
+    earned: bool = False
+    earned_date: str | None = None  # ISO date earned, if available
+
+
+class GamificationData(BaseModel):
+    """Streak and badge summary for the gamification layer."""
+
+    streak_days: int = 0
+    streak_days_best: int = 0
+    total_badges_earned: int = 0
+    badges: list[Badge] = Field(default_factory=list)
