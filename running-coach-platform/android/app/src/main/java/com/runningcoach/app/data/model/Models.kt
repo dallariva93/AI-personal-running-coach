@@ -59,6 +59,7 @@ data class WeeklyBucket(
 /** A single stored running activity. */
 data class Activity(
     @SerializedName("id") val id: Int,
+    @SerializedName("garmin_activity_id") val garminActivityId: String? = null,
     @SerializedName("date") val date: String,
     @SerializedName("activity_type") val activityType: String,
     @SerializedName("duration_min") val durationMin: Double,
@@ -89,6 +90,8 @@ data class Activity(
     @SerializedName("anaerobic_training_effect") val anaerobicTrainingEffect: Double? = null,
     @SerializedName("aerobic_te_message") val aerobicTeMessage: String? = null,
     @SerializedName("anaerobic_te_message") val anaerobicTeMessage: String? = null,
+    @SerializedName("altitude_profile") val altitudeProfile: List<Double>? = null,
+    @SerializedName("route_polyline") val routePolyline: String? = null,
 )
 
 /** A coaching report (single-run analysis or weekly plan). */

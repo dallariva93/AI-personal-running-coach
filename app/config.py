@@ -32,8 +32,8 @@ class Settings(BaseSettings):
 
     # -- Anthropic / Claude --------------------------------------------------
     anthropic_api_key: str = ""
-    coach_model: str = "claude-sonnet-4-6"
-    planner_model: str = "claude-opus-4-8"
+    coach_model: str = "claude-haiku-4-5-20251001"
+    planner_model: str = "claude-haiku-4-5-20251001"
     ai_max_retries: int = 2
     ai_timeout_seconds: int = 60
     # When the AI call fails, fall back to the offline rule-based coach.

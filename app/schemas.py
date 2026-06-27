@@ -63,6 +63,8 @@ class RunSummary(BaseModel):
     anaerobic_training_effect: float | None = None  # Garmin anaerobic TE, 0.0-5.0
     aerobic_te_message: str | None = None  # e.g. "IMPROVING_LACTATE_THRESHOLD_12"
     anaerobic_te_message: str | None = None  # e.g. "NO_ANAEROBIC_BENEFIT_0"
+    altitude_profile: list[float] | None = None  # per-km average altitude (m)
+    route_polyline: str | None = None  # JSON list of [lat, lon] pairs
 
 
 class DailyCheckin(BaseModel):
@@ -355,6 +357,8 @@ class ActivityOut(BaseModel):
     anaerobic_training_effect: float | None = None
     aerobic_te_message: str | None = None
     anaerobic_te_message: str | None = None
+    altitude_profile: list[float] | None = None
+    route_polyline: str | None = None
 
 
 class ReportOut(BaseModel):

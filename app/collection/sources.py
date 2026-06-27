@@ -16,8 +16,10 @@ from pathlib import Path
 from typing import Any, Protocol
 
 from app.collection.synthesize import (
+    extract_altitude_profile,
     extract_details_enrichment,
     extract_hr_zones_from_timezones,
+    extract_route_polyline,
     extract_splits,
     extract_weather,
     synthesize,
@@ -177,14 +179,23 @@ class GarminSource:
             if zones:
                 out["hr_zones"] = zones
 
-        if "splits_km" not in out:
-            splits = extract_splits(
-                self._safe_call(
-                    getattr(client, "get_activity_splits", None), activity_id, "splits"
-                )
+        if "splits_km" not in out or "altitude_profile" not in out:
+            splits_payload = self._safe_call(
+                getattr(client, "get_activity_splits", None), activity_id, "splits"
             )
-            if splits:
-                out["splits_km"] = splits
+            if splits_payload:
+                if "splits_km" not in out:
+                    splits = extract_splits(splits_payload)
+                    if splits:
+                        out["splits_km"] = splits
+                if "altitude_profile" not in out:
+                    alt_profile = extract_altitude_profile(splits_payload)
+                    if alt_profile:
+                        out["altitude_profile"] = alt_profile
+                if "route_polyline" not in out:
+                    polyline = extract_route_polyline(splits_payload)
+                    if polyline:
+                        out["route_polyline"] = polyline
 
         if "humidity_pct" not in out:
             weather = extract_weather(

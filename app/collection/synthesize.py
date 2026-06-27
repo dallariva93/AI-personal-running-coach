@@ -333,6 +333,53 @@ def extract_splits(payload: Any) -> list[str] | None:
     return out or None
 
 
+def extract_altitude_profile(payload: Any) -> list[float] | None:
+    """Extract average altitude per km from ``lapDTOs`` in the splits payload.
+
+    Returns a list of altitude values (metres) — one per usable lap — that the
+    app can render as an elevation profile chart.
+    """
+    laps = payload.get("lapDTOs") if isinstance(payload, dict) else None
+    if not isinstance(laps, list):
+        return None
+    out: list[float] = []
+    for lap in laps:
+        if not isinstance(lap, dict):
+            continue
+        distance = _num(lap.get("distance"))
+        if distance is None or distance < 300:
+            continue
+        alt = _num(lap.get("averageElevation") or lap.get("avgElevation") or lap.get("elevation"))
+        if alt is not None:
+            out.append(round(alt, 0))
+    return out if len(out) >= 2 else None
+
+
+def extract_route_polyline(payload: Any) -> str | None:
+    """Build a simplified GPS route from lap start positions in ``lapDTOs``.
+
+    Returns a JSON-encoded list of ``[lat, lon]`` pairs (one per km lap), or
+    ``None`` if the payload carries no position data.
+    """
+    import json as _json
+
+    laps = payload.get("lapDTOs") if isinstance(payload, dict) else None
+    if not isinstance(laps, list):
+        return None
+    points: list[list[float]] = []
+    for lap in laps:
+        if not isinstance(lap, dict):
+            continue
+        distance = _num(lap.get("distance"))
+        if distance is None or distance < 300:
+            continue
+        lat = _num(lap.get("startLatitude"))
+        lon = _num(lap.get("startLongitude"))
+        if lat is not None and lon is not None:
+            points.append([round(lat, 6), round(lon, 6)])
+    return _json.dumps(points) if len(points) >= 2 else None
+
+
 def extract_weather(payload: Any) -> dict[str, Any]:
     """Parse ``get_activity_weather`` for humidity (unit-safe fields only).
 

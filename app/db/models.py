@@ -58,6 +58,9 @@ class Activity(Base):
     anaerobic_training_effect: Mapped[float | None] = mapped_column(Float, nullable=True)
     aerobic_te_message: Mapped[str | None] = mapped_column(String(64), nullable=True)
     anaerobic_te_message: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    # GPS / elevation profile (populated when Garmin split data is available).
+    altitude_profile: Mapped[list | None] = mapped_column(JSON, nullable=True)
+    route_polyline: Mapped[str | None] = mapped_column(Text, nullable=True)
 
     created_at: Mapped[datetime] = mapped_column(DateTime, default=_utcnow)
 

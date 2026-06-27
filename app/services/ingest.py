@@ -64,6 +64,8 @@ def _activity_to_summary(a: Activity) -> RunSummary:
         vo2max=a.vo2max,
         aerobic_te_message=a.aerobic_te_message,
         anaerobic_te_message=a.anaerobic_te_message,
+        altitude_profile=a.altitude_profile,
+        route_polyline=a.route_polyline,
     )
 
 
@@ -130,6 +132,10 @@ def upsert_activity(session: Session, run: RunSummary) -> Activity:
         existing.aerobic_te_message = run.aerobic_te_message
     if run.anaerobic_te_message is not None:
         existing.anaerobic_te_message = run.anaerobic_te_message
+    if run.altitude_profile is not None:
+        existing.altitude_profile = run.altitude_profile
+    if run.route_polyline is not None:
+        existing.route_polyline = run.route_polyline
     return existing
 
 

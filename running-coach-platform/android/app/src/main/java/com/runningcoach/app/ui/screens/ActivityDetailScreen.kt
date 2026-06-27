@@ -1,5 +1,8 @@
 package com.runningcoach.app.ui.screens
 
+import android.content.Intent
+import android.net.Uri
+import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -16,17 +19,23 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
+import androidx.compose.material.icons.filled.OpenInBrowser
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.Path
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
+import com.google.gson.JsonParser
 import com.runningcoach.app.data.model.Activity
 import com.runningcoach.app.ui.components.BarChart
 import com.runningcoach.app.ui.components.GradientCard
@@ -119,6 +128,25 @@ fun ActivityDetailScreen(activity: Activity?, onBack: () -> Unit) {
                 Text(it, style = MaterialTheme.typography.bodyMedium)
             }
         }
+
+        activity.altitudeProfile?.takeIf { it.size >= 2 }?.let {
+            Spacer(Modifier.height(14.dp))
+            ElevationProfileSection(it)
+        }
+
+        if (activity.routePolyline != null || activity.garminActivityId != null) {
+            Spacer(Modifier.height(14.dp))
+            GpsMapSection(
+                routePolyline = activity.routePolyline,
+                garminActivityId = activity.garminActivityId,
+            )
+        }
+
+        activity.garminActivityId?.let { gid ->
+            Spacer(Modifier.height(14.dp))
+            GarminLinkSection(gid)
+        }
+
         Spacer(Modifier.height(16.dp))
     }
 }
@@ -373,6 +401,129 @@ private fun MetricGrid(items: List<Pair<String, String>>) {
                     StatItem(label, value, Modifier.weight(1f))
                 }
                 repeat(3 - row.size) { Spacer(Modifier.weight(1f)) }
+            }
+        }
+    }
+}
+
+@Composable
+private fun ElevationProfileSection(profile: List<Double>) {
+    SurfaceCard {
+        SectionTitle("Profilo altimetrico")
+        Spacer(Modifier.height(8.dp))
+        val green = BrandGreen
+        val greenFill = BrandGreen.copy(alpha = 0.2f)
+        Canvas(
+            modifier = Modifier
+                .fillMaxWidth()
+                .height(100.dp),
+        ) {
+            val minAlt = profile.min().toFloat()
+            val maxAlt = profile.max().toFloat()
+            val range = (maxAlt - minAlt).coerceAtLeast(1f)
+            val step = size.width / (profile.size - 1).coerceAtLeast(1)
+            val pts = profile.mapIndexed { i, alt ->
+                Offset(
+                    x = i * step,
+                    y = size.height - (alt.toFloat() - minAlt) / range * size.height * 0.9f,
+                )
+            }
+            val fill = Path().apply {
+                moveTo(pts.first().x, size.height)
+                pts.forEach { lineTo(it.x, it.y) }
+                lineTo(pts.last().x, size.height)
+                close()
+            }
+            drawPath(fill, color = greenFill)
+            for (i in 0 until pts.size - 1) {
+                drawLine(green, pts[i], pts[i + 1], strokeWidth = 3f)
+            }
+        }
+        Spacer(Modifier.height(6.dp))
+        Text(
+            "${profile.min().roundToInt()} m – ${profile.max().roundToInt()} m",
+            style = MaterialTheme.typography.labelSmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+        )
+    }
+}
+
+@Composable
+private fun GpsMapSection(routePolyline: String?, garminActivityId: String?) {
+    SurfaceCard {
+        SectionTitle("Mappa GPS")
+        Spacer(Modifier.height(8.dp))
+        if (routePolyline != null) {
+            val points = try {
+                val arr = JsonParser.parseString(routePolyline).asJsonArray
+                arr.mapNotNull {
+                    val pt = it.asJsonArray
+                    if (pt.size() >= 2) Pair(pt[0].asFloat, pt[1].asFloat) else null
+                }
+            } catch (_: Exception) {
+                emptyList()
+            }
+            if (points.size >= 2) {
+                val green = BrandGreen
+                Canvas(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .height(180.dp),
+                ) {
+                    val lats = points.map { it.first }
+                    val lons = points.map { it.second }
+                    val minLat = lats.min(); val maxLat = lats.max()
+                    val minLon = lons.min(); val maxLon = lons.max()
+                    val span = maxOf(maxLat - minLat, maxLon - minLon).coerceAtLeast(0.0001f)
+                    val offsets = points.map { (lat, lon) ->
+                        Offset(
+                            x = (lon - minLon) / span * size.width * 0.9f + size.width * 0.05f,
+                            y = size.height - (lat - minLat) / span * size.height * 0.9f - size.height * 0.05f,
+                        )
+                    }
+                    for (i in 0 until offsets.size - 1) {
+                        drawLine(green, offsets[i], offsets[i + 1], strokeWidth = 4f)
+                    }
+                    drawCircle(Color.Green, radius = 10f, center = offsets.first())
+                    drawCircle(Color.Red, radius = 10f, center = offsets.last())
+                }
+                return@SurfaceCard
+            }
+        }
+        Text(
+            "Traccia GPS non disponibile per questa attività.",
+            style = MaterialTheme.typography.bodySmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+        )
+    }
+}
+
+@Composable
+private fun GarminLinkSection(garminActivityId: String) {
+    val context = LocalContext.current
+    SurfaceCard {
+        Row(
+            Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.SpaceBetween,
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            Column {
+                SectionTitle("Garmin Connect")
+                Text(
+                    "Apri l'attività completa su Garmin Connect.",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+            }
+            OutlinedButton(
+                onClick = {
+                    val url = "https://connect.garmin.com/modern/activity/$garminActivityId"
+                    context.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(url)))
+                },
+            ) {
+                Icon(Icons.Filled.OpenInBrowser, contentDescription = null, Modifier.size(16.dp))
+                Spacer(Modifier.size(4.dp))
+                Text("Apri")
             }
         }
     }
