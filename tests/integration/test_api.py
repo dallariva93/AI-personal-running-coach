@@ -77,6 +77,33 @@ def test_manual_activity_creation(client):
     assert resp.json()["distance_km"] == 7.5
 
 
+def test_patch_activity_rpe_and_notes(client):
+    payload = {
+        "date": "2026-06-22",
+        "activity_type": "easy",
+        "duration_min": 35,
+        "distance_km": 6.0,
+    }
+    create_resp = client.post("/api/activities", json=payload)
+    assert create_resp.status_code == 201
+    activity_id = create_resp.json()["id"]
+
+    # Patch RPE
+    resp = client.patch(f"/api/activities/{activity_id}", json={"rpe": 7})
+    assert resp.status_code == 200
+    assert resp.json()["rpe"] == 7
+
+    # Patch notes (RPE unchanged)
+    resp = client.patch(f"/api/activities/{activity_id}", json={"notes": "Felt strong"})
+    assert resp.status_code == 200
+    assert resp.json()["notes"] == "Felt strong"
+    assert resp.json()["rpe"] == 7  # still 7
+
+    # 404 on unknown id
+    resp = client.patch("/api/activities/999999", json={"rpe": 5})
+    assert resp.status_code == 404
+
+
 def test_dashboard_renders(client):
     client.post("/api/ingest")
     resp = client.get("/")

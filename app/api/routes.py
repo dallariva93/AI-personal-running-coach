@@ -31,6 +31,7 @@ from app.processing import (
 )
 from app.schemas import (
     ActivityOut,
+    ActivityPatch,
     AthleteProfile,
     AthleteSnapshot,
     Badge,
@@ -112,6 +113,25 @@ def create_activity(
 ) -> Activity:
     run = RunSummary(**payload.model_dump())
     activity = upsert_activity(session, run)
+    _commit(session)
+    session.refresh(activity)
+    return activity
+
+
+@router.patch("/activities/{activity_id}", response_model=ActivityOut)
+def patch_activity(
+    activity_id: int,
+    payload: ActivityPatch,
+    session: Session = Depends(get_session),
+) -> Activity:
+    """Partial update: write only the fields explicitly provided (RPE, notes)."""
+    activity = session.get(Activity, activity_id)
+    if activity is None:
+        raise HTTPException(status_code=404, detail="Attività non trovata.")
+    if payload.rpe is not None:
+        activity.rpe = payload.rpe
+    if payload.notes is not None:
+        activity.notes = payload.notes
     _commit(session)
     session.refresh(activity)
     return activity

@@ -16,16 +16,29 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.text.KeyboardActions
+import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
+import androidx.compose.material.icons.filled.Edit
 import androidx.compose.material.icons.filled.OpenInBrowser
+import androidx.compose.material3.AlertDialog
+import androidx.compose.material3.Button
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
+import androidx.compose.material3.OutlinedTextField
+import androidx.compose.material3.Slider
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableFloatStateOf
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -33,7 +46,9 @@ import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.Path
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalFocusManager
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.unit.dp
 import com.google.gson.JsonParser
 import com.runningcoach.app.data.model.Activity
@@ -61,7 +76,13 @@ import kotlin.math.roundToInt
  * the data already flows through [Activity].
  */
 @Composable
-fun ActivityDetailScreen(activity: Activity?, onBack: () -> Unit) {
+fun ActivityDetailScreen(
+    activity: Activity?,
+    goalTargetPace: String? = null,
+    onBack: () -> Unit,
+    onSaveRpe: (Int) -> Unit = {},
+    onSaveNotes: (String) -> Unit = {},
+) {
     Column(
         Modifier
             .fillMaxSize()
@@ -91,7 +112,7 @@ fun ActivityDetailScreen(activity: Activity?, onBack: () -> Unit) {
             return@Column
         }
 
-        HeroHeader(activity)
+        HeroHeader(activity, onSaveRpe)
 
         Spacer(Modifier.height(14.dp))
         PerformanceSection(activity)
@@ -121,12 +142,12 @@ fun ActivityDetailScreen(activity: Activity?, onBack: () -> Unit) {
             RecoverySection(activity)
         }
 
-        activity.notes?.takeIf { it.isNotBlank() }?.let {
+        Spacer(Modifier.height(14.dp))
+        NotesSection(activity.notes, onSaveNotes)
+
+        if (goalTargetPace != null && activity.avgPace != null) {
             Spacer(Modifier.height(14.dp))
-            SurfaceCard {
-                SectionTitle("Note")
-                Text(it, style = MaterialTheme.typography.bodyMedium)
-            }
+            PaceComparisonSection(actualPace = activity.avgPace, targetPace = goalTargetPace)
         }
 
         activity.altitudeProfile?.takeIf { it.size >= 2 }?.let {
@@ -152,7 +173,9 @@ fun ActivityDetailScreen(activity: Activity?, onBack: () -> Unit) {
 }
 
 @Composable
-private fun HeroHeader(a: Activity) {
+private fun HeroHeader(a: Activity, onSaveRpe: (Int) -> Unit) {
+    var showRpeDialog by remember { mutableStateOf(false) }
+
     GradientCard(colors = listOf(BrandGreenDeep, BrandGreen)) {
         Text(
             "${a.activityType.uppercase()} · ${a.date}",
@@ -170,8 +193,45 @@ private fun HeroHeader(a: Activity) {
             HeroStat("Durata", "${a.durationMin.roundToInt()} min")
             HeroStat("Passo", a.avgPace ?: "–")
             HeroStat("FC media", a.avgHr?.let { "$it" } ?: "–")
-            HeroStat("RPE", a.rpe?.let { "$it/10" } ?: "–")
+            // RPE chip — tap to edit
+            Column(
+                horizontalAlignment = Alignment.CenterHorizontally,
+                modifier = Modifier.padding(0.dp),
+            ) {
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Text(
+                        a.rpe?.let { "$it/10" } ?: "–",
+                        style = MaterialTheme.typography.titleMedium,
+                        fontWeight = FontWeight.Bold,
+                        color = Color.White,
+                    )
+                    Spacer(Modifier.size(2.dp))
+                    IconButton(
+                        onClick = { showRpeDialog = true },
+                        modifier = Modifier.size(20.dp),
+                    ) {
+                        Icon(
+                            Icons.Filled.Edit,
+                            contentDescription = "Modifica RPE",
+                            tint = Color.White.copy(alpha = 0.8f),
+                            modifier = Modifier.size(14.dp),
+                        )
+                    }
+                }
+                Text("RPE", style = MaterialTheme.typography.labelSmall, color = Color.White.copy(alpha = 0.8f))
+            }
         }
+    }
+
+    if (showRpeDialog) {
+        RpeEditDialog(
+            current = a.rpe,
+            onConfirm = { rpe ->
+                onSaveRpe(rpe)
+                showRpeDialog = false
+            },
+            onDismiss = { showRpeDialog = false },
+        )
     }
 }
 
@@ -526,6 +586,147 @@ private fun GarminLinkSection(garminActivityId: String) {
                 Text("Apri")
             }
         }
+    }
+}
+
+// ── editable sections ────────────────────────────────────────────────────────
+
+@Composable
+private fun RpeEditDialog(current: Int?, onConfirm: (Int) -> Unit, onDismiss: () -> Unit) {
+    var sliderValue by remember { mutableFloatStateOf((current ?: 5).toFloat()) }
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text("Sforzo percepito (RPE)") },
+        text = {
+            Column {
+                Text(
+                    "RPE ${sliderValue.toInt()} / 10",
+                    style = MaterialTheme.typography.titleLarge,
+                    fontWeight = FontWeight.Bold,
+                    color = MaterialTheme.colorScheme.primary,
+                )
+                Spacer(Modifier.height(8.dp))
+                Slider(
+                    value = sliderValue,
+                    onValueChange = { sliderValue = it },
+                    valueRange = 1f..10f,
+                    steps = 8, // 9 intervals → steps = 8
+                )
+                Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
+                    Text("1 – Facilissimo", style = MaterialTheme.typography.labelSmall)
+                    Text("10 – Massimale", style = MaterialTheme.typography.labelSmall)
+                }
+            }
+        },
+        confirmButton = {
+            Button(onClick = { onConfirm(sliderValue.toInt()) }) { Text("Salva") }
+        },
+        dismissButton = {
+            TextButton(onClick = onDismiss) { Text("Annulla") }
+        },
+    )
+}
+
+@Composable
+private fun NotesSection(initialNotes: String?, onSave: (String) -> Unit) {
+    var editing by remember { mutableStateOf(false) }
+    var draft by remember(initialNotes) { mutableStateOf(initialNotes ?: "") }
+    val focusManager = LocalFocusManager.current
+
+    SurfaceCard {
+        Row(
+            Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.SpaceBetween,
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            SectionTitle("Note")
+            IconButton(onClick = { editing = !editing }, modifier = Modifier.size(24.dp)) {
+                Icon(
+                    Icons.Filled.Edit,
+                    contentDescription = "Modifica note",
+                    tint = MaterialTheme.colorScheme.primary,
+                    modifier = Modifier.size(18.dp),
+                )
+            }
+        }
+        if (editing) {
+            Spacer(Modifier.height(8.dp))
+            OutlinedTextField(
+                value = draft,
+                onValueChange = { draft = it },
+                modifier = Modifier.fillMaxWidth(),
+                placeholder = { Text("Aggiungi note sulla corsa…") },
+                minLines = 2,
+                maxLines = 6,
+                keyboardOptions = KeyboardOptions(imeAction = ImeAction.Done),
+                keyboardActions = KeyboardActions(onDone = { focusManager.clearFocus() }),
+            )
+            Spacer(Modifier.height(8.dp))
+            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.End) {
+                TextButton(onClick = {
+                    draft = initialNotes ?: ""
+                    editing = false
+                }) { Text("Annulla") }
+                Spacer(Modifier.size(8.dp))
+                Button(onClick = {
+                    onSave(draft)
+                    editing = false
+                }) { Text("Salva") }
+            }
+        } else if (draft.isNotBlank()) {
+            Spacer(Modifier.height(4.dp))
+            Text(draft, style = MaterialTheme.typography.bodyMedium)
+        } else {
+            Spacer(Modifier.height(4.dp))
+            Text(
+                "Nessuna nota. Tocca la matita per aggiungerne una.",
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+        }
+    }
+}
+
+@Composable
+private fun PaceComparisonSection(actualPace: String, targetPace: String) {
+    val actualSec = paceToSeconds(actualPace)
+    val targetSec = paceToSeconds(targetPace)
+    val diffSec = targetSec - actualSec // positive = faster than target
+    val (diffText, diffColor) = when {
+        actualSec <= 0 || targetSec <= 0 -> "–" to MaterialTheme.colorScheme.onSurfaceVariant
+        diffSec > 5 -> "+${diffSec}s/km più veloce" to BrandGreen
+        diffSec < -5 -> "${-diffSec}s/km più lento" to MaterialTheme.colorScheme.error
+        else -> "In linea con l'obiettivo" to BrandGreen
+    }
+    SurfaceCard {
+        SectionTitle("Confronto passo obiettivo")
+        Spacer(Modifier.height(8.dp))
+        Row(
+            Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.SpaceBetween,
+        ) {
+            Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                Text(
+                    actualPace,
+                    style = MaterialTheme.typography.titleLarge,
+                    fontWeight = FontWeight.Bold,
+                )
+                Text("Passo effettivo", style = MaterialTheme.typography.labelSmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant)
+            }
+            Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                Text(
+                    targetPace,
+                    style = MaterialTheme.typography.titleLarge,
+                    fontWeight = FontWeight.Bold,
+                    color = MaterialTheme.colorScheme.primary,
+                )
+                Text("Passo gara obiettivo", style = MaterialTheme.typography.labelSmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant)
+            }
+        }
+        Spacer(Modifier.height(8.dp))
+        Text(diffText, style = MaterialTheme.typography.bodyMedium, color = diffColor)
     }
 }
 

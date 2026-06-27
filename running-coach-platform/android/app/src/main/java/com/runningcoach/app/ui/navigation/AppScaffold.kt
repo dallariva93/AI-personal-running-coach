@@ -37,6 +37,7 @@ import androidx.navigation.compose.currentBackStackEntryAsState
 import androidx.navigation.compose.rememberNavController
 import androidx.navigation.navArgument
 import com.runningcoach.app.RunningCoachApp
+import com.runningcoach.app.data.model.AthleteProfile
 import com.runningcoach.app.ui.screens.ActivitiesScreen
 import com.runningcoach.app.ui.screens.ActivityDetailScreen
 import com.runningcoach.app.ui.screens.HomeScreen
@@ -189,7 +190,10 @@ fun AppScaffold(app: RunningCoachApp) {
                     val activity = state.overview?.activities?.firstOrNull { it.id == id }
                     ActivityDetailScreen(
                         activity = activity,
+                        goalTargetPace = goalTargetPace(state.overview?.profile),
                         onBack = { navController.popBackStack() },
+                        onSaveRpe = { rpe -> id?.let { overviewVm.updateActivity(it, rpe = rpe) } },
+                        onSaveNotes = { notes -> id?.let { overviewVm.updateActivity(it, notes = notes) } },
                     )
                 }
                 composable(Dest.Plan.route) {
@@ -222,4 +226,31 @@ fun AppScaffold(app: RunningCoachApp) {
             }
         }
     }
+}
+
+/**
+ * Derives a target training pace ("M:SS/km") from the athlete's goal race time
+ * and distance so ActivityDetailScreen can compare actual vs. target.
+ * Returns null when no goal with a target time is configured.
+ */
+private fun goalTargetPace(profile: AthleteProfile?): String? {
+    val goal = profile?.goal ?: return null
+    val targetTime = goal.targetTime?.takeIf { it.isNotBlank() } ?: return null
+    val distanceKm = when (goal.goalType.lowercase()) {
+        "marathon" -> 42.195
+        "half", "half_marathon" -> 21.0975
+        "10k" -> 10.0
+        "5k" -> 5.0
+        else -> return null
+    }
+    val parts = targetTime.split(":")
+    val totalSeconds = when (parts.size) {
+        3 -> parts[0].toLongOrNull()?.times(3600)?.plus(parts[1].toLongOrNull()?.times(60) ?: 0)?.plus(parts[2].toLongOrNull() ?: 0)
+        2 -> parts[0].toLongOrNull()?.times(60)?.plus(parts[1].toLongOrNull() ?: 0)
+        else -> null
+    } ?: return null
+    val secPerKm = totalSeconds / distanceKm
+    val m = (secPerKm / 60).toInt()
+    val s = (secPerKm % 60).toInt()
+    return "$m:${s.toString().padStart(2, '0')}/km"
 }

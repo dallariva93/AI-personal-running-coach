@@ -205,6 +205,12 @@ data class PeriodStats(
     @SerializedName("fastest_pace") val fastestPace: String? = null,
 )
 
+/** Partial update payload for an activity (RPE and/or notes). */
+data class ActivityPatch(
+    @SerializedName("rpe") val rpe: Int? = null,
+    @SerializedName("notes") val notes: String? = null,
+)
+
 /** Running streak and earned badges. */
 data class GamificationData(
     @SerializedName("streak_days") val streakDays: Int = 0,

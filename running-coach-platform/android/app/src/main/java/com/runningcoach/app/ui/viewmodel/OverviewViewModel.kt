@@ -71,6 +71,10 @@ class OverviewViewModel(private val repository: CoachRepository) : ViewModel() {
         repository.putProfile(profile)
     }
 
+    /** Patch RPE and/or notes on a stored activity, then refresh the overview. */
+    fun updateActivity(id: Int, rpe: Int? = null, notes: String? = null) =
+        action("Attività aggiornata") { repository.patchActivity(id, rpe = rpe, notes = notes) }
+
     /** Submit today's wellness check-in. */
     fun submitCheckin(sleepH: Double?, fatigue: Int?, soreness: Int?, motivation: Int?) =
         action("Check-in salvato") {

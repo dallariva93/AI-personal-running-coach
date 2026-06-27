@@ -388,6 +388,13 @@ class ManualActivityIn(BaseModel):
     notes: str | None = None
 
 
+class ActivityPatch(BaseModel):
+    """Partial update for an activity — only fields that are not None are written."""
+
+    rpe: int | None = None
+    notes: str | None = None
+
+
 class PersonalRecord(BaseModel):
     """Best-ever performance at a canonical distance."""
 

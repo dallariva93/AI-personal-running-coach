@@ -1,6 +1,7 @@
 package com.runningcoach.app.data.remote
 
 import com.runningcoach.app.data.model.Activity
+import com.runningcoach.app.data.model.ActivityPatch
 import com.runningcoach.app.data.model.AthleteProfile
 import com.runningcoach.app.data.model.DailyCheckin
 import com.runningcoach.app.data.model.Overview
@@ -8,8 +9,10 @@ import com.runningcoach.app.data.model.PeriodStats
 import com.runningcoach.app.data.model.Report
 import retrofit2.http.Body
 import retrofit2.http.GET
+import retrofit2.http.PATCH
 import retrofit2.http.POST
 import retrofit2.http.PUT
+import retrofit2.http.Path
 import retrofit2.http.Query
 
 /** Typed bindings to the backend REST API. */
@@ -41,6 +44,9 @@ interface ApiService {
 
     @POST("api/checkin")
     suspend fun postCheckin(@Body checkin: DailyCheckin): DailyCheckin
+
+    @PATCH("api/activities/{id}")
+    suspend fun patchActivity(@Path("id") id: Int, @Body patch: ActivityPatch): Activity
 
     @GET("api/stats")
     suspend fun getStats(@Query("period") period: String = "all-time"): PeriodStats
