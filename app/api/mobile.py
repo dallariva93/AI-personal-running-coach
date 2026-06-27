@@ -15,6 +15,7 @@ from sqlalchemy.orm import Session
 from app import __version__
 from app.config import get_settings
 from app.db.database import get_session
+from app.db.models import Activity as ActivityModel
 from app.db.models import CoachingReport
 from app.processing import (
     aerobic_efficiency,
@@ -27,7 +28,6 @@ from app.processing import (
     predict_race_time,
     weekly_buckets,
 )
-from app.db.models import Activity as ActivityModel
 from app.schemas import ActivityOut, ReportOut, TrainingMetrics, WeeklyBucket
 from app.services import get_profile, latest_checkin, list_activities
 from app.services.ingest import _all_summaries

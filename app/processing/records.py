@@ -44,12 +44,21 @@ def compute_personal_records(activities: list[Activity]) -> list[dict]:
     # 1 km segment PR
     b = _best(activities, lambda a: _pace_sec(a.fastest_split_1k))
     if b:
-        prs.append({"distance": "1K", "pace": b.fastest_split_1k, "date": b.date, "activity_id": b.id})
+        prs.append(
+            {"distance": "1K", "pace": b.fastest_split_1k, "date": b.date, "activity_id": b.id}
+        )
 
     # 5 km segment PR (from Garmin split data)
     b = _best(activities, lambda a: _pace_sec(a.fastest_split_5k))
     if b:
-        prs.append({"distance": "5K split", "pace": b.fastest_split_5k, "date": b.date, "activity_id": b.id})
+        prs.append(
+            {
+                "distance": "5K split",
+                "pace": b.fastest_split_5k,
+                "date": b.date,
+                "activity_id": b.id,
+            }
+        )
 
     # 5 km race PR
     b = _best(

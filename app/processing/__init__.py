@@ -7,6 +7,7 @@ the load trend. This is the quantitative input the coaching layer reasons over.
 
 from app.processing.adaptive import adapt_plan
 from app.processing.efficiency import aerobic_efficiency, decoupling
+from app.processing.gamification import compute_badges, compute_streak
 from app.processing.injury import injury_risk
 from app.processing.load import (
     equivalent_flat_km,
@@ -27,7 +28,6 @@ from app.processing.periodization import (
     current_phase,
     phase_for,
 )
-from app.processing.gamification import compute_badges, compute_streak
 from app.processing.records import compute_personal_records
 from app.processing.snapshot import build_snapshot
 from app.processing.trail import is_trail, trail_metrics

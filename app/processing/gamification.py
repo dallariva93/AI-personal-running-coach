@@ -78,7 +78,12 @@ def compute_badges(
 
     # First run (everyone earns this on day 1).
     badges.append(
-        {"id": "first_run", "label": "Prima corsa", "earned": True, "earned_date": sorted_asc[0].date}
+        {
+            "id": "first_run",
+            "label": "Prima corsa",
+            "earned": True,
+            "earned_date": sorted_asc[0].date,
+        }
     )
 
     # Distance milestones.
@@ -87,7 +92,10 @@ def compute_badges(
     milestone_dates: dict[int, str] = {}
     for a in sorted_asc:
         cum_km += a.distance_km
-        while milestone_idx < len(_DISTANCE_MILESTONES) and cum_km >= _DISTANCE_MILESTONES[milestone_idx][0]:
+        while (
+            milestone_idx < len(_DISTANCE_MILESTONES)
+            and cum_km >= _DISTANCE_MILESTONES[milestone_idx][0]
+        ):
             milestone_dates[_DISTANCE_MILESTONES[milestone_idx][0]] = a.date
             milestone_idx += 1
     for km, label in _DISTANCE_MILESTONES:
@@ -103,29 +111,54 @@ def compute_badges(
     # First trail run.
     trail = next((a for a in sorted_asc if a.activity_type == "trail"), None)
     badges.append(
-        {"id": "first_trail", "label": "Primo trail", "earned": trail is not None, "earned_date": trail.date if trail else None}
+        {
+            "id": "first_trail",
+            "label": "Primo trail",
+            "earned": trail is not None,
+            "earned_date": trail.date if trail else None,
+        }
     )
 
     # First race.
     race = next((a for a in sorted_asc if a.activity_type == "gara"), None)
     badges.append(
-        {"id": "first_race", "label": "Prima gara", "earned": race is not None, "earned_date": race.date if race else None}
+        {
+            "id": "first_race",
+            "label": "Prima gara",
+            "earned": race is not None,
+            "earned_date": race.date if race else None,
+        }
     )
 
     # Half marathon / marathon completion.
     half = next((a for a in sorted_asc if 20.0 <= a.distance_km <= 22.5), None)
     marathon = next((a for a in sorted_asc if 41.0 <= a.distance_km <= 43.5), None)
     badges.append(
-        {"id": "half_marathon", "label": "Mezza maratona completata", "earned": half is not None, "earned_date": half.date if half else None}
+        {
+            "id": "half_marathon",
+            "label": "Mezza maratona completata",
+            "earned": half is not None,
+            "earned_date": half.date if half else None,
+        }
     )
     badges.append(
-        {"id": "marathon", "label": "Maratona completata", "earned": marathon is not None, "earned_date": marathon.date if marathon else None}
+        {
+            "id": "marathon",
+            "label": "Maratona completata",
+            "earned": marathon is not None,
+            "earned_date": marathon.date if marathon else None,
+        }
     )
 
     # Streak milestones (based on best-ever).
     for threshold, label in _STREAK_MILESTONES:
         badges.append(
-            {"id": f"streak_{threshold}", "label": label, "earned": best_streak >= threshold, "earned_date": None}
+            {
+                "id": f"streak_{threshold}",
+                "label": label,
+                "earned": best_streak >= threshold,
+                "earned_date": None,
+            }
         )
 
     return badges
