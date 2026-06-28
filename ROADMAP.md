@@ -39,7 +39,7 @@
 ✅ **Statistiche annuali/mensili** (distanza, dislivello, ore, numero corse)  
 ✅ **Export dati CSV/JSON** (share sheet nativa Android)  
 ✅ **Piani multi-settimana strutturati** (Runna-grade: 8–20 settimane, fasi periodizzate, check-off sessioni, countdown gara)  
-🔄 **Workout builder visuale** (Feature 17, in implementazione)  
+✅ **Workout builder visuale** (tab Builder + Libreria, AI suggest, segment espandibili, stima distanza/durata)  
 
 ---
 
@@ -181,9 +181,9 @@
 
 ---
 
-### 🔄 17. Interval/Workout builder visuale
+### ✅ 17. Interval/Workout builder visuale
 **Perché:** Running coach paid (Runna, TrainingPeaks) vendono per la struttura. Un workout builder libero + AI generation = differenziazione.  
-**In implementazione:** tabelle `workout_templates`/`workout_segments`, `Coach.suggest_workout()` con AI + fallback offline, API REST (create/list/get/delete/suggest). Android: WorkoutScreen con tab Builder + Libreria, SegmentCard espandibile, AI suggest integrato, navigazione da PlanScreen.
+**Implementato:** Tabelle `workout_templates`/`workout_segments`. `Coach.suggest_workout()` genera template via Claude (JSON puro) con fallback offline deterministico (intervals/tempo/long/strides/easy, passo calibrato per livello). API REST: `POST /api/workouts`, `GET /api/workouts`, `GET /api/workouts/{id}`, `DELETE /api/workouts/{id}`, `POST /api/workouts/suggest`. Stima automatica distanza e durata per ogni template. Android: `WorkoutScreen` con tab Builder + Libreria, `SegmentCard` espandibile (ripetizioni, distanza/durata, passo, recupero), AI suggest integrato, navigazione da PlanScreen. 22 test di integrazione.
 
 ---
 
@@ -293,7 +293,7 @@
 | 14 | Confronto corse simili | 📋 | Alto | 3–4 gg | 2 |
 | 15 | Health Connect (Android) | 📋 | Altissimo | 1–2 sett | 2 |
 | 16 | HRV + readiness oggettiva | 📋 | Alto | 1–2 sett | 3 |
-| 17 | Interval/Workout builder | 🔄 | Alto | 2–3 sett | 3 |
+| 17 | Interval/Workout builder | ✅ | Alto | 2–3 sett | 3 |
 | 18 | Mappa heatmap aggregata | 📋 | Altissimo | 2–3 sett | 3 |
 | 19 | Live GPS tracking | 📋 | Altissimo | 3–4 sett | 3 |
 | 20 | Audio coaching durante corsa | 📋 | Altissimo | 3–4 sett | 3 |
@@ -304,7 +304,7 @@
 | 25 | WearOS / watchOS app | 📋 | Alto | 2–3 mesi | 4 |
 | 26 | Marketplace coach umani | 📋 | Altissimo | 4–6 mesi | 4 |
 
-**Implementate: 9/26 feature (tutte e 7 del Tier 1 + Feature 12 Tier 2 + Feature 17 Tier 3 in corso)**
+**Implementate: 10/26 feature (tutte e 7 del Tier 1 + Feature 12 Tier 2 + Feature 17 Tier 3)**
 
 ---
 
