@@ -14,6 +14,7 @@ from app.schemas import (
     PlanGenerateRequest,
     RunSummary,
     TrainingMetrics,
+    WorkoutSuggestRequest,
 )
 
 # Shared coaching philosophy. Ordered priorities make the coach pursue
@@ -406,4 +407,95 @@ def build_multiweek_plan_message(
         "Rispetta la struttura di periodizzazione Base→Build→Specifico/Peak→Taper→Gara. "
         "Calibra i passi al livello e al tempo obiettivo dell'atleta. "
         "Ricorda: rispondi SOLO con il JSON, niente altro."
+    )
+
+
+# ── Workout suggestion prompt ─────────────────────────────────────────────────
+
+WORKOUT_SUGGEST_SYSTEM_PROMPT = """\
+Sei un coach di atletica leggera elite specializzato nella progettazione di \
+sessioni di allenamento strutturate.
+
+REGOLA ASSOLUTA: Rispondi SOLO con un oggetto JSON valido, senza markdown, \
+senza commenti, senza testo aggiuntivo prima o dopo. Il tuo output inizia con \
+{ e termina con }. Qualsiasi testo fuori dal JSON invalida la risposta.
+
+Genera un workout template calibrato al livello e alla fase dell'atleta. \
+Usa passi realistici in italiano calibrati sul profilo ricevuto.
+
+TIPI DI SEGMENTO (segment_type):
+- warmup: riscaldamento (di solito 10-15 min a passo lento)
+- interval_block: blocco di ripetute (reps × distanza o durata @ passo lavoro + recupero)
+- easy: corsa facile continua
+- threshold: corsa a soglia continua
+- cooldown: defaticamento (di solito 10 min a passo lento)
+- marathon_pace: corsa a ritmo maratona
+- strides: allunghi brevi 80-100 m
+
+CALIBRAZIONE PASSI per livello intermedio (adatta al profilo ricevuto):
+- Passo facile / riscaldamento: 5:30-6:00/km
+- Passo soglia (LT2): 4:30-4:50/km
+- Passo ripetute VO2max (5K): 4:00-4:20/km
+- Passo lungo: 5:45-6:10/km
+- Passo allunghi: 3:30-3:50/km
+
+FORMATO JSON RICHIESTO:
+{
+  "name": "<nome breve della sessione in italiano>",
+  "description": "<descrizione concisa della sessione e dei suoi obiettivi>",
+  "type": "<interval|threshold|easy|long|custom>",
+  "segments": [
+    {
+      "position": 0,
+      "segment_type": "<tipo>",
+      "repetitions": <int>,
+      "work_duration_sec": <float o null>,
+      "work_distance_km": <float o null>,
+      "work_pace": "<M:SS/km o null>",
+      "rest_duration_sec": <float o null>,
+      "rest_type": "<jog|walk|null>",
+      "notes": "<nota opzionale o null>"
+    }
+  ]
+}
+
+Ogni sessione deve avere almeno un warmup (o easy iniziale) e un cooldown \
+(o easy finale), tranne per sessioni easy/strides brevi.
+"""
+
+
+def build_workout_suggest_message(
+    request: WorkoutSuggestRequest,
+    metrics: TrainingMetrics | None,
+    profile: AthleteProfile | None,
+) -> str:
+    """Assemble the user-turn payload for workout suggestion."""
+    profile_bits: list[str] = []
+    if profile:
+        if profile.level:
+            profile_bits.append(f"livello {profile.level}")
+        if profile.physiology and profile.physiology.lt2_pace:
+            profile_bits.append(f"soglia LT2 {profile.physiology.lt2_pace}/km")
+        if profile.goal and profile.goal.goal_type:
+            profile_bits.append(f"obiettivo {profile.goal.goal_type}")
+    profile_str = ", ".join(profile_bits) if profile_bits else "profilo non disponibile"
+
+    phase_str = ""
+    if metrics and metrics.phase:
+        phase_str = (
+            f"\nFase del piano: {metrics.phase}"
+            + (f" ({metrics.weeks_to_race} sett. alla gara)" if metrics.weeks_to_race else "")
+        )
+    form_str = ""
+    if metrics:
+        form_str = f"\nForma attuale: {metrics.form_state} (TSB {metrics.tsb:+.0f})" \
+            if metrics.tsb is not None else f"\nForma attuale: {metrics.form_state}"
+
+    return (
+        f"Tipo di sessione richiesta: {request.session_type}\n"
+        f"Profilo atleta: {profile_str}{phase_str}{form_str}\n"
+        + (f"Obiettivo gara: {request.goal_type}" if request.goal_type else "")
+        + (f"\nTempo obiettivo: {request.goal_time}" if request.goal_time else "")
+        + (f"\nNote aggiuntive: {request.notes}" if request.notes else "")
+        + "\n\nGenera il workout JSON. Ricorda: solo JSON valido, niente altro."
     )

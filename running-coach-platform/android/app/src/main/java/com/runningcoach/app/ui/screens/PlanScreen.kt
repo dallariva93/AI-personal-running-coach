@@ -150,6 +150,7 @@ fun PlanScreen(
     onArchivePlan: (Int) -> Unit,
     onShowGenerateDialog: () -> Unit,
     onDismissDialog: () -> Unit,
+    onOpenWorkouts: () -> Unit = {},
 ) {
     Box(
         Modifier
@@ -198,6 +199,15 @@ fun PlanScreen(
                             ),
                         ) { Text("Archivia") }
                     }
+                }
+                Spacer(Modifier.height(12.dp))
+                OutlinedButton(
+                    onClick = onOpenWorkouts,
+                    modifier = Modifier.fillMaxWidth(),
+                ) {
+                    Icon(Icons.Filled.FitnessCenter, contentDescription = null)
+                    Spacer(Modifier.width(8.dp))
+                    Text("Libreria allenamenti")
                 }
                 Spacer(Modifier.height(24.dp))
             }

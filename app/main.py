@@ -18,6 +18,7 @@ from app.api import router as api_router
 from app.api.mobile import router as mobile_router
 from app.api.plan_multiweek import router as plan_multiweek_router
 from app.api.strava import router as strava_router
+from app.api.workouts import router as workouts_router
 from app.config import get_settings
 from app.db.database import get_session, init_db
 from app.exceptions import CoachError, CollectionError
@@ -83,6 +84,7 @@ app.include_router(api_router)
 app.include_router(mobile_router)
 app.include_router(plan_multiweek_router)
 app.include_router(strava_router)
+app.include_router(workouts_router)
 
 _static_dir = BASE_DIR / "static"
 if _static_dir.exists():

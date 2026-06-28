@@ -11,6 +11,8 @@ import com.runningcoach.app.data.model.PlanSession
 import com.runningcoach.app.data.model.Report
 import com.runningcoach.app.data.model.StravaStatus
 import com.runningcoach.app.data.model.TrainingPlan
+import com.runningcoach.app.data.model.WorkoutSuggestRequest
+import com.runningcoach.app.data.model.WorkoutTemplate
 import com.runningcoach.app.data.remote.ApiClient
 import com.runningcoach.app.data.settings.SettingsStore
 import kotlinx.coroutines.flow.first
@@ -62,4 +64,27 @@ class CoachRepository(private val settings: SettingsStore) {
     suspend fun archivePlan(planId: Int) {
         api().archivePlan(planId)
     }
+
+    suspend fun createWorkout(workout: WorkoutTemplate): WorkoutTemplate =
+        api().createWorkout(workout)
+
+    suspend fun listWorkouts(): List<WorkoutTemplate> = api().listWorkouts()
+
+    suspend fun deleteWorkout(id: Int) {
+        api().deleteWorkout(id)
+    }
+
+    suspend fun suggestWorkout(
+        sessionType: String,
+        goalType: String? = null,
+        goalTime: String? = null,
+        notes: String? = null,
+    ): WorkoutTemplate = api().suggestWorkout(
+        WorkoutSuggestRequest(
+            sessionType = sessionType,
+            goalType = goalType,
+            goalTime = goalTime,
+            notes = notes,
+        )
+    )
 }

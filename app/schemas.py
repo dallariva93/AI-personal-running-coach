@@ -512,3 +512,59 @@ class PlanGenerateRequest(BaseModel):
     level: str = "intermediate"
     days_per_week: int = 4
     long_run_day: int = 6  # 0=Mon, 6=Sun (default Sunday)
+
+
+# ── Workout builder schemas ───────────────────────────────────────────────────
+
+
+class WorkoutSegmentIn(BaseModel):
+    """One segment in a workout template (input)."""
+
+    position: int
+    segment_type: str  # warmup|interval_block|easy|threshold|cooldown|marathon_pace|strides
+    repetitions: int = 1
+    work_duration_sec: float | None = None
+    work_distance_km: float | None = None
+    work_pace: str | None = None  # "M:SS/km"
+    rest_duration_sec: float | None = None
+    rest_type: str | None = None  # jog|walk
+    notes: str | None = None
+
+
+class WorkoutSegmentOut(WorkoutSegmentIn):
+    """One segment in a workout template (output)."""
+
+    id: int
+    model_config = ConfigDict(from_attributes=True)
+
+
+class WorkoutTemplateIn(BaseModel):
+    """Payload for creating a workout template."""
+
+    name: str
+    description: str | None = None
+    type: str = "custom"
+    segments: list[WorkoutSegmentIn]
+
+
+class WorkoutTemplateOut(BaseModel):
+    """API response model for a workout template."""
+
+    id: int
+    name: str
+    description: str | None = None
+    type: str
+    estimated_distance_km: float | None = None
+    estimated_duration_min: float | None = None
+    created_at: datetime
+    segments: list[WorkoutSegmentOut]
+    model_config = ConfigDict(from_attributes=True)
+
+
+class WorkoutSuggestRequest(BaseModel):
+    """Request body for AI workout suggestion."""
+
+    session_type: str = "intervals"  # intervals|tempo|long|easy|strides
+    goal_type: str | None = None  # marathon|half|10k|5k
+    goal_time: str | None = None
+    notes: str | None = None  # free-text hint from user

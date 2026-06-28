@@ -257,6 +257,40 @@ data class PlanGenerateRequest(
     @SerializedName("long_run_day") val longRunDay: Int = 6,
 )
 
+/** One segment in a workout template. */
+data class WorkoutSegment(
+    val id: Int = 0,
+    @SerializedName("position") val position: Int,
+    @SerializedName("segment_type") val segmentType: String,
+    @SerializedName("repetitions") val repetitions: Int = 1,
+    @SerializedName("work_duration_sec") val workDurationSec: Double? = null,
+    @SerializedName("work_distance_km") val workDistanceKm: Double? = null,
+    @SerializedName("work_pace") val workPace: String? = null,
+    @SerializedName("rest_duration_sec") val restDurationSec: Double? = null,
+    @SerializedName("rest_type") val restType: String? = null,
+    val notes: String? = null,
+)
+
+/** A reusable workout template with structured segments. */
+data class WorkoutTemplate(
+    val id: Int = 0,
+    val name: String = "",
+    val description: String? = null,
+    val type: String = "custom",
+    @SerializedName("estimated_distance_km") val estimatedDistanceKm: Double? = null,
+    @SerializedName("estimated_duration_min") val estimatedDurationMin: Double? = null,
+    @SerializedName("created_at") val createdAt: String? = null,
+    val segments: List<WorkoutSegment> = emptyList(),
+)
+
+/** Request body for AI workout suggestion. */
+data class WorkoutSuggestRequest(
+    @SerializedName("session_type") val sessionType: String,
+    @SerializedName("goal_type") val goalType: String? = null,
+    @SerializedName("goal_time") val goalTime: String? = null,
+    val notes: String? = null,
+)
+
 /** Strava connection + webhook status (mirrors app/schemas.py StravaStatus). */
 data class StravaStatus(
     @SerializedName("enabled") val enabled: Boolean = false,

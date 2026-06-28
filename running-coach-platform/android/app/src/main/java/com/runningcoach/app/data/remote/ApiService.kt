@@ -11,6 +11,8 @@ import com.runningcoach.app.data.model.PlanSession
 import com.runningcoach.app.data.model.Report
 import com.runningcoach.app.data.model.StravaStatus
 import com.runningcoach.app.data.model.TrainingPlan
+import com.runningcoach.app.data.model.WorkoutSuggestRequest
+import com.runningcoach.app.data.model.WorkoutTemplate
 import retrofit2.http.Body
 import retrofit2.http.DELETE
 import retrofit2.http.GET
@@ -73,4 +75,19 @@ interface ApiService {
 
     @DELETE("api/plan/{id}")
     suspend fun archivePlan(@Path("id") id: Int): Map<String, Boolean>
+
+    @POST("api/workouts")
+    suspend fun createWorkout(@Body workout: WorkoutTemplate): WorkoutTemplate
+
+    @GET("api/workouts")
+    suspend fun listWorkouts(): List<WorkoutTemplate>
+
+    @GET("api/workouts/{id}")
+    suspend fun getWorkout(@Path("id") id: Int): WorkoutTemplate
+
+    @DELETE("api/workouts/{id}")
+    suspend fun deleteWorkout(@Path("id") id: Int): Map<String, Boolean>
+
+    @POST("api/workouts/suggest")
+    suspend fun suggestWorkout(@Body request: WorkoutSuggestRequest): WorkoutTemplate
 }

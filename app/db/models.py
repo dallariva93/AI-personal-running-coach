@@ -346,3 +346,57 @@ class TrainingPlanSession(Base):
 
     def __repr__(self) -> str:  # pragma: no cover
         return f"<TrainingPlanSession day={self.day_of_week} {self.session_type}>"
+
+
+class WorkoutTemplate(Base):
+    """A reusable workout template with structured segments."""
+
+    __tablename__ = "workout_templates"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    name: Mapped[str] = mapped_column(String(128))
+    description: Mapped[str | None] = mapped_column(Text)
+    type: Mapped[str] = mapped_column(String(32), default="custom")
+    estimated_distance_km: Mapped[float | None] = mapped_column(Float)
+    estimated_duration_min: Mapped[float | None] = mapped_column(Float)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=_utcnow)
+
+    segments: Mapped[list[WorkoutSegment]] = relationship(
+        "WorkoutSegment",
+        back_populates="workout",
+        cascade="all, delete-orphan",
+        order_by="WorkoutSegment.position",
+    )
+
+    def __repr__(self) -> str:  # pragma: no cover
+        return f"<WorkoutTemplate {self.name!r} type={self.type}>"
+
+
+class WorkoutSegment(Base):
+    """One segment (warmup, interval block, cooldown, etc.) in a workout template."""
+
+    __tablename__ = "workout_segments"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    workout_id: Mapped[int] = mapped_column(
+        Integer, ForeignKey("workout_templates.id", ondelete="CASCADE")
+    )
+    position: Mapped[int] = mapped_column(Integer)
+    segment_type: Mapped[str] = mapped_column(String(32))
+    repetitions: Mapped[int] = mapped_column(Integer, default=1)
+    work_duration_sec: Mapped[float | None] = mapped_column(Float)
+    work_distance_km: Mapped[float | None] = mapped_column(Float)
+    work_pace: Mapped[str | None] = mapped_column(String(16))
+    rest_duration_sec: Mapped[float | None] = mapped_column(Float)
+    rest_type: Mapped[str | None] = mapped_column(String(16))
+    notes: Mapped[str | None] = mapped_column(Text)
+
+    workout: Mapped[WorkoutTemplate] = relationship(
+        "WorkoutTemplate", back_populates="segments"
+    )
+
+    def __repr__(self) -> str:  # pragma: no cover
+        return (
+            f"<WorkoutSegment pos={self.position} type={self.segment_type} "
+            f"reps={self.repetitions}>"
+        )

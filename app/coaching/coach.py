@@ -18,6 +18,9 @@ from app.schemas import (
     PlanGenerateRequest,
     RunSummary,
     TrainingMetrics,
+    WorkoutSegmentIn,
+    WorkoutSuggestRequest,
+    WorkoutTemplateIn,
 )
 from app.utils import retry_call
 
@@ -48,6 +51,13 @@ class Coach(Protocol):
         profile: AthleteProfile | None,
         metrics: TrainingMetrics | None,
     ) -> dict: ...
+
+    def suggest_workout(
+        self,
+        request: WorkoutSuggestRequest,
+        metrics: TrainingMetrics | None,
+        profile: AthleteProfile | None,
+    ) -> WorkoutTemplateIn: ...
 
 
 def _split_sections(text: str) -> tuple[str, str]:
@@ -170,6 +180,30 @@ class AICoach:
                 "Multiweek plan AI call failed, falling back to offline: %s", exc
             )
             return self._fallback.plan_multiweek(request, profile, metrics)
+
+    def suggest_workout(
+        self,
+        request: WorkoutSuggestRequest,
+        metrics: TrainingMetrics | None,
+        profile: AthleteProfile | None,
+    ) -> WorkoutTemplateIn:
+        """Generate a workout suggestion via Claude, fall back to offline."""
+        model = self.settings.coach_model
+        user = prompts.build_workout_suggest_message(request, metrics, profile)
+        try:
+            raw = self._call(
+                prompts.WORKOUT_SUGGEST_SYSTEM_PROMPT,
+                user,
+                model,
+                max_tokens=2000,
+            )
+            data = _parse_json_response(raw)
+            return WorkoutTemplateIn(**data)
+        except Exception as exc:
+            logger.error(
+                "Workout suggest AI call failed, falling back to offline: %s", exc
+            )
+            return self._fallback.suggest_workout(request, metrics, profile)
 
     def _profile_text(self, profile: AthleteProfile | None) -> str:
         """Render the athlete profile for the system prompt.
@@ -547,6 +581,165 @@ class OfflineCoach:
         if not m.adaptive_notes:
             return ""
         return " ⚙️ Adattamenti: " + "; ".join(m.adaptive_notes) + "."
+
+    def suggest_workout(
+        self,
+        request: WorkoutSuggestRequest,
+        metrics: TrainingMetrics | None,
+        profile: AthleteProfile | None,
+    ) -> WorkoutTemplateIn:
+        """Generate a deterministic workout template based on session_type."""
+        level = (profile.level if profile else None) or "intermediate"
+        easy_pace = _offline_easy_pace(level, metrics)
+        tempo_pace = _offline_tempo_pace(level, metrics)
+        interval_pace = _offline_interval_pace(level, metrics)
+
+        stype = request.session_type.lower()
+
+        if stype == "intervals":
+            return WorkoutTemplateIn(
+                name="Ripetute 5×1000m",
+                description=(
+                    f"Sessione di velocità: riscaldamento 10 min, "
+                    f"5×1000m @ {interval_pace} con 90s recupero trot, "
+                    "defaticamento 10 min."
+                ),
+                type="interval",
+                segments=[
+                    WorkoutSegmentIn(
+                        position=0,
+                        segment_type="warmup",
+                        repetitions=1,
+                        work_duration_sec=600.0,
+                        work_pace=easy_pace,
+                        notes="Corsa facile 10 min di riscaldamento",
+                    ),
+                    WorkoutSegmentIn(
+                        position=1,
+                        segment_type="interval_block",
+                        repetitions=5,
+                        work_distance_km=1.0,
+                        work_pace=interval_pace,
+                        rest_duration_sec=90.0,
+                        rest_type="jog",
+                        notes=f"1 km @ {interval_pace}, recupero 90s trot",
+                    ),
+                    WorkoutSegmentIn(
+                        position=2,
+                        segment_type="cooldown",
+                        repetitions=1,
+                        work_duration_sec=600.0,
+                        work_pace=easy_pace,
+                        notes="Defaticamento 10 min",
+                    ),
+                ],
+            )
+
+        if stype == "tempo":
+            return WorkoutTemplateIn(
+                name="Corsa a soglia 25 min",
+                description=(
+                    f"Seduta di soglia: riscaldamento 10 min, "
+                    f"25 min continui @ {tempo_pace}, defaticamento 10 min."
+                ),
+                type="threshold",
+                segments=[
+                    WorkoutSegmentIn(
+                        position=0,
+                        segment_type="warmup",
+                        repetitions=1,
+                        work_duration_sec=600.0,
+                        work_pace=easy_pace,
+                        notes="Corsa facile 10 min",
+                    ),
+                    WorkoutSegmentIn(
+                        position=1,
+                        segment_type="threshold",
+                        repetitions=1,
+                        work_duration_sec=1500.0,
+                        work_pace=tempo_pace,
+                        notes=f"25 min @ {tempo_pace} (Z3-Z4, ritmo soglia)",
+                    ),
+                    WorkoutSegmentIn(
+                        position=2,
+                        segment_type="cooldown",
+                        repetitions=1,
+                        work_duration_sec=600.0,
+                        work_pace=easy_pace,
+                        notes="Defaticamento 10 min",
+                    ),
+                ],
+            )
+
+        if stype == "long":
+            return WorkoutTemplateIn(
+                name="Lungo in Z2",
+                description=(
+                    f"Lungo progressivo a passo facile {easy_pace}. "
+                    "Corsa continua in Z2, costruzione aerobica."
+                ),
+                type="easy",
+                segments=[
+                    WorkoutSegmentIn(
+                        position=0,
+                        segment_type="easy",
+                        repetitions=1,
+                        work_distance_km=18.0,
+                        work_pace=easy_pace,
+                        notes=f"Lungo 18 km @ {easy_pace}, ritmo conversazione Z2",
+                    ),
+                ],
+            )
+
+        if stype == "strides":
+            return WorkoutTemplateIn(
+                name="Corsa con allunghi 6×80m",
+                description=(
+                    f"Corsa facile 20 min @ {easy_pace} + 6 allunghi da 80m "
+                    "a passo veloce con 90s recupero camminata."
+                ),
+                type="custom",
+                segments=[
+                    WorkoutSegmentIn(
+                        position=0,
+                        segment_type="easy",
+                        repetitions=1,
+                        work_duration_sec=1200.0,
+                        work_pace=easy_pace,
+                        notes="Corsa facile 20 min di attivazione",
+                    ),
+                    WorkoutSegmentIn(
+                        position=1,
+                        segment_type="strides",
+                        repetitions=6,
+                        work_distance_km=0.08,
+                        work_pace="3:30/km",
+                        rest_duration_sec=90.0,
+                        rest_type="walk",
+                        notes="80m a passo veloce, recupero 90s camminata",
+                    ),
+                ],
+            )
+
+        # Default: easy recovery
+        return WorkoutTemplateIn(
+            name="Corsa facile 35 min",
+            description=(
+                f"Corsa facile di recupero 35 min @ {easy_pace}. "
+                "Z1-Z2, ritmo conversazione, cadenza rilassata."
+            ),
+            type="easy",
+            segments=[
+                WorkoutSegmentIn(
+                    position=0,
+                    segment_type="easy",
+                    repetitions=1,
+                    work_duration_sec=2100.0,
+                    work_pace=easy_pace,
+                    notes=f"35 min @ {easy_pace}, passo molto comodo Z1-Z2",
+                ),
+            ],
+        )
 
     def plan_multiweek(
         self,
@@ -1027,6 +1220,24 @@ def _pace_to_min(pace_str: str) -> float:
         return int(parts[0]) + int(parts[1]) / 60.0
     except (IndexError, ValueError):
         return 5.5
+
+
+def _offline_easy_pace(level: str, metrics: TrainingMetrics | None) -> str:
+    """Return a sensible easy pace string for the given level."""
+    defaults = {"beginner": "6:30/km", "intermediate": "5:30/km", "advanced": "5:00/km"}
+    return defaults.get(level, "5:30/km")
+
+
+def _offline_tempo_pace(level: str, metrics: TrainingMetrics | None) -> str:
+    defaults = {"beginner": "5:50/km", "intermediate": "4:45/km", "advanced": "4:15/km"}
+    if metrics and metrics.phase:
+        pass  # could refine from LT2 when available
+    return defaults.get(level, "4:45/km")
+
+
+def _offline_interval_pace(level: str, metrics: TrainingMetrics | None) -> str:
+    defaults = {"beginner": "5:20/km", "intermediate": "4:15/km", "advanced": "3:50/km"}
+    return defaults.get(level, "4:15/km")
 
 
 def get_coach(settings: Settings | None = None) -> Coach:

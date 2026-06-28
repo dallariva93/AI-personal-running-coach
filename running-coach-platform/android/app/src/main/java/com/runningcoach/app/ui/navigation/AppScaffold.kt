@@ -45,6 +45,7 @@ import com.runningcoach.app.ui.screens.MapFullscreenScreen
 import com.runningcoach.app.ui.screens.PlanScreen
 import com.runningcoach.app.ui.screens.SettingsScreen
 import com.runningcoach.app.ui.screens.StatsScreen
+import com.runningcoach.app.ui.screens.WorkoutScreen
 import com.runningcoach.app.ui.screens.parseRoutePoints
 import com.runningcoach.app.ui.theme.RunningCoachTheme
 import com.runningcoach.app.ui.viewmodel.OverviewViewModel
@@ -52,6 +53,7 @@ import com.runningcoach.app.ui.viewmodel.PlanViewModel
 import com.runningcoach.app.ui.viewmodel.SettingsViewModel
 import com.runningcoach.app.ui.viewmodel.StatsViewModel
 import com.runningcoach.app.ui.viewmodel.ViewModelFactory
+import com.runningcoach.app.ui.viewmodel.WorkoutViewModel
 import com.runningcoach.app.widget.RunningWidget
 import kotlinx.coroutines.launch
 import java.io.File
@@ -71,6 +73,7 @@ fun AppScaffold(app: RunningCoachApp) {
     val settingsVm: SettingsViewModel = viewModel(factory = factory)
     val statsVm: StatsViewModel = viewModel(factory = factory)
     val planVm: PlanViewModel = viewModel(factory = factory)
+    val workoutVm: WorkoutViewModel = viewModel(factory = factory)
 
     val state by overviewVm.state.collectAsState()
     val settings by settingsVm.settings.collectAsState()
@@ -78,6 +81,7 @@ fun AppScaffold(app: RunningCoachApp) {
     val stravaStatus by settingsVm.stravaStatus.collectAsState()
     val statsState by statsVm.state.collectAsState()
     val planState by planVm.state.collectAsState()
+    val workoutState by workoutVm.state.collectAsState()
 
     // Resolve dark/light from the stored preference.
     val darkTheme = when (settings?.themeMode) {
@@ -107,6 +111,15 @@ fun AppScaffold(app: RunningCoachApp) {
             if (text != null) {
                 snackbar.showSnackbar(text)
                 planVm.clearMessage()
+            }
+        }
+
+        // Surface workout action results / errors as snackbars.
+        LaunchedEffect(workoutState.successMessage, workoutState.error) {
+            val text = workoutState.error ?: workoutState.successMessage
+            if (text != null) {
+                snackbar.showSnackbar(text)
+                workoutVm.clearMessage()
             }
         }
 
@@ -236,6 +249,27 @@ fun AppScaffold(app: RunningCoachApp) {
                         onArchivePlan = planVm::archivePlan,
                         onShowGenerateDialog = planVm::showGenerateDialog,
                         onDismissDialog = planVm::dismissDialog,
+                        onOpenWorkouts = {
+                            navController.navigate("workouts") { launchSingleTop = true }
+                        },
+                    )
+                }
+                composable("workouts") {
+                    WorkoutScreen(
+                        state = workoutState,
+                        onBack = { navController.popBackStack() },
+                        onAddSegment = workoutVm::addSegment,
+                        onRemoveSegment = workoutVm::removeSegment,
+                        onMoveUp = workoutVm::moveSegmentUp,
+                        onMoveDown = workoutVm::moveSegmentDown,
+                        onUpdateSegment = workoutVm::updateSegment,
+                        onSetName = workoutVm::setName,
+                        onSetType = workoutVm::setType,
+                        onSave = workoutVm::saveWorkout,
+                        onSuggest = workoutVm::suggestWorkout,
+                        onDelete = workoutVm::deleteWorkout,
+                        onLoadIntoBuilder = workoutVm::loadIntoBuilder,
+                        onClearBuilder = workoutVm::clearBuilder,
                     )
                 }
                 composable(Dest.Stats.route) {

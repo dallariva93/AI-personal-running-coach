@@ -32,6 +32,7 @@ from app.schemas import ActivityOut, ReportOut, TrainingMetrics, WeeklyBucket
 from app.services import get_profile, latest_checkin, list_activities
 from app.services.ingest import _all_summaries
 from app.services.plan_service import get_current_plan
+from app.services.workout_service import list_workouts
 
 router = APIRouter(prefix="/api/mobile", tags=["mobile"])
 
@@ -101,6 +102,10 @@ def overview(session: Session = Depends(get_session)) -> dict:
     # Active multi-week training plan
     active_plan = get_current_plan(session)
 
+    # Workout library count
+    saved_workouts = list_workouts(session)
+    saved_workout_count = len(saved_workouts)
+
     return {
         "version": __version__,
         "mode": "garmin" if settings.garmin_enabled else "demo",
@@ -119,4 +124,5 @@ def overview(session: Session = Depends(get_session)) -> dict:
         "pr_activity_ids": pr_activity_ids,
         "gamification": gamification,
         "active_plan": active_plan.model_dump() if active_plan else None,
+        "saved_workout_count": saved_workout_count,
     }
