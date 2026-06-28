@@ -43,6 +43,7 @@ def upgrade() -> None:
         sa.ForeignKeyConstraint(["plan_id"], ["training_plans.id"], ondelete="CASCADE"),
         sa.PrimaryKeyConstraint("id"),
     )
+    op.create_index("ix_training_plan_weeks_plan_id", "training_plan_weeks", ["plan_id"])
 
     op.create_table(
         "training_plan_sessions",
@@ -60,9 +61,12 @@ def upgrade() -> None:
         sa.ForeignKeyConstraint(["week_id"], ["training_plan_weeks.id"], ondelete="CASCADE"),
         sa.PrimaryKeyConstraint("id"),
     )
+    op.create_index("ix_training_plan_sessions_week_id", "training_plan_sessions", ["week_id"])
 
 
 def downgrade() -> None:
+    op.drop_index("ix_training_plan_sessions_week_id", table_name="training_plan_sessions")
     op.drop_table("training_plan_sessions")
+    op.drop_index("ix_training_plan_weeks_plan_id", table_name="training_plan_weeks")
     op.drop_table("training_plan_weeks")
     op.drop_table("training_plans")
