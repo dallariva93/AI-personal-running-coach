@@ -23,6 +23,7 @@ import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.Edit
+import androidx.compose.material.icons.filled.Fullscreen
 import androidx.compose.material.icons.filled.OpenInBrowser
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
@@ -83,6 +84,7 @@ fun ActivityDetailScreen(
     activity: Activity?,
     goalTargetPace: String? = null,
     onBack: () -> Unit,
+    onOpenMap: (() -> Unit)? = null,
     onSaveRpe: (Int) -> Unit = {},
     onSaveNotes: (String) -> Unit = {},
 ) {
@@ -122,7 +124,7 @@ fun ActivityDetailScreen(
         val routePoints = remember(activity.routePolyline) { parseRoutePoints(activity.routePolyline) }
         if (routePoints.size >= 2) {
             Spacer(Modifier.height(14.dp))
-            RouteMapSection(routePoints)
+            RouteMapSection(routePoints, onOpenMap = onOpenMap)
         }
 
         Spacer(Modifier.height(14.dp))
@@ -593,9 +595,28 @@ private fun LegendItem(text: String, color: Color) {
 
 /** Real OSM map of the route (start = green dot, finish = coral dot). */
 @Composable
-private fun RouteMapSection(points: List<Pair<Double, Double>>) {
+private fun RouteMapSection(
+    points: List<Pair<Double, Double>>,
+    onOpenMap: (() -> Unit)? = null,
+) {
     SurfaceCard {
-        SectionTitle("Mappa percorso")
+        Row(
+            Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.SpaceBetween,
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            SectionTitle("Mappa percorso")
+            if (onOpenMap != null) {
+                IconButton(onClick = onOpenMap, modifier = Modifier.size(28.dp)) {
+                    Icon(
+                        Icons.Filled.Fullscreen,
+                        contentDescription = "Apri mappa a schermo intero",
+                        modifier = Modifier.size(22.dp),
+                        tint = MaterialTheme.colorScheme.primary,
+                    )
+                }
+            }
+        }
         Spacer(Modifier.height(8.dp))
         RouteMap(
             points = points,
@@ -609,7 +630,7 @@ private fun RouteMapSection(points: List<Pair<Double, Double>>) {
 }
 
 /** Parse the stored ``[[lat, lon], ...]`` JSON into geo points. */
-private fun parseRoutePoints(routePolyline: String?): List<Pair<Double, Double>> {
+internal fun parseRoutePoints(routePolyline: String?): List<Pair<Double, Double>> {
     if (routePolyline.isNullOrBlank()) return emptyList()
     return try {
         JsonParser.parseString(routePolyline).asJsonArray.mapNotNull {

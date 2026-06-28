@@ -41,9 +41,11 @@ import com.runningcoach.app.data.model.AthleteProfile
 import com.runningcoach.app.ui.screens.ActivitiesScreen
 import com.runningcoach.app.ui.screens.ActivityDetailScreen
 import com.runningcoach.app.ui.screens.HomeScreen
+import com.runningcoach.app.ui.screens.MapFullscreenScreen
 import com.runningcoach.app.ui.screens.PlanScreen
 import com.runningcoach.app.ui.screens.SettingsScreen
 import com.runningcoach.app.ui.screens.StatsScreen
+import com.runningcoach.app.ui.screens.parseRoutePoints
 import com.runningcoach.app.ui.theme.RunningCoachTheme
 import com.runningcoach.app.ui.viewmodel.OverviewViewModel
 import com.runningcoach.app.ui.viewmodel.SettingsViewModel
@@ -193,8 +195,25 @@ fun AppScaffold(app: RunningCoachApp) {
                         activity = activity,
                         goalTargetPace = goalTargetPace(state.overview?.profile),
                         onBack = { navController.popBackStack() },
+                        onOpenMap = {
+                            id?.let { navController.navigate("map/$it") { launchSingleTop = true } }
+                        },
                         onSaveRpe = { rpe -> id?.let { overviewVm.updateActivity(it, rpe = rpe) } },
                         onSaveNotes = { notes -> id?.let { overviewVm.updateActivity(it, notes = notes) } },
+                    )
+                }
+                composable(
+                    route = "map/{id}",
+                    arguments = listOf(navArgument("id") { type = NavType.IntType }),
+                ) { entry ->
+                    val id = entry.arguments?.getInt("id")
+                    val activity = state.overview?.activities?.firstOrNull { it.id == id }
+                    val points = remember(activity?.routePolyline) {
+                        parseRoutePoints(activity?.routePolyline)
+                    }
+                    MapFullscreenScreen(
+                        points = points,
+                        onBack = { navController.popBackStack() },
                     )
                 }
                 composable(Dest.Plan.route) {
