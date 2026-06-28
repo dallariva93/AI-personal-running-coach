@@ -1,5 +1,7 @@
 package com.runningcoach.app.ui.screens
 
+import android.content.Intent
+import android.net.Uri
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
@@ -24,11 +26,16 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.unit.dp
 import com.runningcoach.app.data.model.AthleteProfile
+import com.runningcoach.app.data.model.StravaStatus
 import com.runningcoach.app.data.settings.AppSettings
+import com.runningcoach.app.ui.components.Pill
+import com.runningcoach.app.ui.theme.BrandGreen
+import com.runningcoach.app.ui.theme.Coral
 
 @Composable
 fun SettingsScreen(
@@ -38,6 +45,8 @@ fun SettingsScreen(
     onSaveCoach: (String, String, String, String, String) -> Unit,
     onCheckin: (Double?, Int?, Int?, Int?) -> Unit,
     onSaveTheme: (String) -> Unit = {},
+    stravaStatus: StravaStatus? = null,
+    onRefreshStrava: () -> Unit = {},
 ) {
     var baseUrl by remember { mutableStateOf("") }
     var token by remember { mutableStateOf("") }
@@ -117,6 +126,16 @@ fun SettingsScreen(
         Spacer(Modifier.height(24.dp))
         Divider()
         Spacer(Modifier.height(16.dp))
+        StravaSection(
+            status = stravaStatus,
+            baseUrl = baseUrl,
+            token = token,
+            onRefresh = onRefreshStrava,
+        )
+
+        Spacer(Modifier.height(24.dp))
+        Divider()
+        Spacer(Modifier.height(16.dp))
         ThemeSection(themeMode = themeMode, onSaveTheme = { themeMode = it; onSaveTheme(it) })
 
         Spacer(Modifier.height(24.dp))
@@ -133,6 +152,116 @@ fun SettingsScreen(
         Text(
             "Suggerimento: con l'emulatore Android usa http://10.0.2.2:8000/ " +
                 "per raggiungere un backend in esecuzione sul tuo PC.",
+            style = MaterialTheme.typography.labelSmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+        )
+    }
+}
+
+@Composable
+private fun StravaSection(
+    status: StravaStatus?,
+    baseUrl: String,
+    token: String,
+    onRefresh: () -> Unit,
+) {
+    val context = LocalContext.current
+
+    Row(
+        Modifier.fillMaxWidth(),
+        horizontalArrangement = Arrangement.SpaceBetween,
+        verticalAlignment = androidx.compose.ui.Alignment.CenterVertically,
+    ) {
+        Text(
+            "Strava",
+            style = MaterialTheme.typography.titleMedium,
+            fontWeight = FontWeight.Bold,
+        )
+        when {
+            status == null -> Pill("non raggiungibile", MaterialTheme.colorScheme.outline)
+            !status.enabled -> Pill("non configurato", MaterialTheme.colorScheme.outline)
+            status.connected -> Pill("collegato", BrandGreen)
+            else -> Pill("da collegare", Coral)
+        }
+    }
+    Spacer(Modifier.height(4.dp))
+    Text(
+        "Sincronizzazione automatica: appena chiudi una corsa su Strava, " +
+            "arriva qui via webhook (niente attesa, niente polling).",
+        style = MaterialTheme.typography.bodySmall,
+        color = MaterialTheme.colorScheme.onSurfaceVariant,
+    )
+
+    when {
+        status == null -> {
+            Spacer(Modifier.height(10.dp))
+            Text(
+                "Salva prima un URL backend valido per vedere lo stato Strava.",
+                style = MaterialTheme.typography.labelSmall,
+                color = MaterialTheme.colorScheme.error,
+            )
+        }
+        !status.enabled -> {
+            Spacer(Modifier.height(10.dp))
+            Text(
+                "Il backend non ha le credenziali Strava (STRAVA_CLIENT_ID/SECRET). " +
+                    "Configurale sul server per abilitare la connessione.",
+                style = MaterialTheme.typography.labelSmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+        }
+        status.connected -> {
+            Spacer(Modifier.height(12.dp))
+            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
+                StravaStat("Atleta", status.athleteName ?: status.athleteId?.toString() ?: "—")
+                StravaStat("Webhook", if (status.subscriptionActive) "attivo" else "inattivo")
+                StravaStat("In coda", status.pendingEvents.toString())
+            }
+            Spacer(Modifier.height(12.dp))
+            OutlinedButton(onClick = onRefresh, modifier = Modifier.fillMaxWidth()) {
+                Text("Aggiorna stato")
+            }
+        }
+        else -> {
+            Spacer(Modifier.height(12.dp))
+            Button(
+                onClick = {
+                    val base = baseUrl.trimEnd('/')
+                    val url = buildString {
+                        append(base)
+                        append("/api/strava/connect")
+                        if (token.isNotBlank()) append("?token=").append(Uri.encode(token))
+                    }
+                    runCatching {
+                        context.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(url)))
+                    }
+                },
+                enabled = baseUrl.isNotBlank(),
+                modifier = Modifier.fillMaxWidth(),
+            ) {
+                Text("Collega Strava")
+            }
+            Spacer(Modifier.height(6.dp))
+            Text(
+                "Si apre il browser per autorizzare l'accesso. Al termine torni " +
+                    "all'app: premi \"Aggiorna stato\".",
+                style = MaterialTheme.typography.labelSmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+            Spacer(Modifier.height(8.dp))
+            OutlinedButton(onClick = onRefresh, modifier = Modifier.fillMaxWidth()) {
+                Text("Aggiorna stato")
+            }
+        }
+    }
+}
+
+@Composable
+private fun StravaStat(label: String, value: String) {
+    Column(horizontalAlignment = androidx.compose.ui.Alignment.CenterHorizontally) {
+        Text(value, style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
+        Text(
+            label,
             style = MaterialTheme.typography.labelSmall,
             color = MaterialTheme.colorScheme.onSurfaceVariant,
         )

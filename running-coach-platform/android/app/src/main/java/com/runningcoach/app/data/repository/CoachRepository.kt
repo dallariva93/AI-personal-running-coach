@@ -7,6 +7,7 @@ import com.runningcoach.app.data.model.DailyCheckin
 import com.runningcoach.app.data.model.Overview
 import com.runningcoach.app.data.model.PeriodStats
 import com.runningcoach.app.data.model.Report
+import com.runningcoach.app.data.model.StravaStatus
 import com.runningcoach.app.data.remote.ApiClient
 import com.runningcoach.app.data.settings.SettingsStore
 import kotlinx.coroutines.flow.first
@@ -43,4 +44,6 @@ class CoachRepository(private val settings: SettingsStore) {
         api().patchActivity(id, ActivityPatch(rpe = rpe, notes = notes))
 
     suspend fun stats(period: String = "all-time"): PeriodStats = api().getStats(period)
+
+    suspend fun stravaStatus(): StravaStatus = api().stravaStatus()
 }

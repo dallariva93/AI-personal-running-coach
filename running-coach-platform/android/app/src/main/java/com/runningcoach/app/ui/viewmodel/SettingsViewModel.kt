@@ -3,6 +3,7 @@ package com.runningcoach.app.ui.viewmodel
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.runningcoach.app.data.model.Activity
+import com.runningcoach.app.data.model.StravaStatus
 import com.runningcoach.app.data.repository.CoachRepository
 import com.runningcoach.app.data.settings.AppSettings
 import com.runningcoach.app.data.settings.SettingsStore
@@ -30,6 +31,22 @@ class SettingsViewModel(
 
     private val _exportState = MutableStateFlow(ExportState())
     val exportState: StateFlow<ExportState> = _exportState.asStateFlow()
+
+    private val _stravaStatus = MutableStateFlow<StravaStatus?>(null)
+    val stravaStatus: StateFlow<StravaStatus?> = _stravaStatus.asStateFlow()
+
+    init {
+        loadStravaStatus()
+    }
+
+    /** Refresh the Strava connection status (best-effort; null when unreachable). */
+    fun loadStravaStatus() {
+        viewModelScope.launch {
+            runCatching { repository.stravaStatus() }
+                .onSuccess { _stravaStatus.value = it }
+                .onFailure { _stravaStatus.value = null }
+        }
+    }
 
     fun save(baseUrl: String, token: String, onSaved: () -> Unit = {}) {
         viewModelScope.launch {

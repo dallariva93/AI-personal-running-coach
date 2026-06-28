@@ -71,6 +71,7 @@ fun AppScaffold(app: RunningCoachApp) {
     val state by overviewVm.state.collectAsState()
     val settings by settingsVm.settings.collectAsState()
     val exportState by settingsVm.exportState.collectAsState()
+    val stravaStatus by settingsVm.stravaStatus.collectAsState()
     val statsState by statsVm.state.collectAsState()
 
     // Resolve dark/light from the stored preference.
@@ -221,6 +222,8 @@ fun AppScaffold(app: RunningCoachApp) {
                             overviewVm.submitCheckin(sleep, fatigue, soreness, motivation)
                         },
                         onSaveTheme = settingsVm::saveTheme,
+                        stravaStatus = stravaStatus,
+                        onRefreshStrava = settingsVm::loadStravaStatus,
                     )
                 }
             }

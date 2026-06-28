@@ -205,6 +205,17 @@ data class PeriodStats(
     @SerializedName("fastest_pace") val fastestPace: String? = null,
 )
 
+/** Strava connection + webhook status (mirrors app/schemas.py StravaStatus). */
+data class StravaStatus(
+    @SerializedName("enabled") val enabled: Boolean = false,
+    @SerializedName("connected") val connected: Boolean = false,
+    @SerializedName("athlete_id") val athleteId: Long? = null,
+    @SerializedName("athlete_name") val athleteName: String? = null,
+    @SerializedName("subscription_active") val subscriptionActive: Boolean = false,
+    @SerializedName("pending_events") val pendingEvents: Int = 0,
+    @SerializedName("authorize_url") val authorizeUrl: String? = null,
+)
+
 /** Partial update payload for an activity (RPE and/or notes). */
 data class ActivityPatch(
     @SerializedName("rpe") val rpe: Int? = null,

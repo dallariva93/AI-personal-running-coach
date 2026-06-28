@@ -14,6 +14,7 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.KeyboardActions
@@ -45,23 +46,25 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.Path
+import androidx.compose.ui.graphics.toArgb
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalFocusManager
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.ImeAction
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import com.google.gson.JsonParser
 import com.runningcoach.app.data.model.Activity
-import com.runningcoach.app.ui.components.BarChart
 import com.runningcoach.app.ui.components.GradientCard
 import com.runningcoach.app.ui.components.Pill
+import com.runningcoach.app.ui.components.RouteMap
 import com.runningcoach.app.ui.components.SectionTitle
 import com.runningcoach.app.ui.components.StackedBar
 import com.runningcoach.app.ui.components.StatItem
 import com.runningcoach.app.ui.components.SurfaceCard
-import com.runningcoach.app.ui.components.ThinDivider
 import com.runningcoach.app.ui.theme.BrandGreen
 import com.runningcoach.app.ui.theme.BrandGreenDeep
+import com.runningcoach.app.ui.theme.Coral
 import com.runningcoach.app.ui.theme.Zone1
 import com.runningcoach.app.ui.theme.Zone2
 import com.runningcoach.app.ui.theme.Zone3
@@ -114,8 +117,31 @@ fun ActivityDetailScreen(
 
         HeroHeader(activity, onSaveRpe)
 
+        // Real OSM route map right under the hero — the signature element of a
+        // Garmin/Strava activity screen.
+        val routePoints = remember(activity.routePolyline) { parseRoutePoints(activity.routePolyline) }
+        if (routePoints.size >= 2) {
+            Spacer(Modifier.height(14.dp))
+            RouteMapSection(routePoints)
+        }
+
         Spacer(Modifier.height(14.dp))
         PerformanceSection(activity)
+
+        // Combined elevation + pace profile over distance (Strava-style overlay).
+        val splitSeconds = remember(activity.splitsKm) {
+            activity.splitsKm?.map { paceToSeconds(it) }?.takeIf { secs -> secs.all { it > 0 } }
+        }
+        val altitude = activity.altitudeProfile?.takeIf { it.size >= 2 }
+        if (altitude != null || (splitSeconds != null && splitSeconds.size >= 2)) {
+            Spacer(Modifier.height(14.dp))
+            RouteAnalysisSection(altitude = altitude, paceSeconds = splitSeconds)
+        }
+
+        activity.splitsKm?.takeIf { it.size >= 2 }?.let {
+            Spacer(Modifier.height(14.dp))
+            SplitsSection(splits = it, altitude = altitude)
+        }
 
         Spacer(Modifier.height(14.dp))
         HeartRateSection(activity)
@@ -125,11 +151,6 @@ fun ActivityDetailScreen(
         ) {
             Spacer(Modifier.height(14.dp))
             TrainingEffectSection(activity)
-        }
-
-        activity.splitsKm?.takeIf { it.size >= 2 }?.let {
-            Spacer(Modifier.height(14.dp))
-            SplitsSection(it)
         }
 
         Spacer(Modifier.height(14.dp))
@@ -142,26 +163,13 @@ fun ActivityDetailScreen(
             RecoverySection(activity)
         }
 
-        Spacer(Modifier.height(14.dp))
-        NotesSection(activity.notes, onSaveNotes)
-
         if (goalTargetPace != null && activity.avgPace != null) {
             Spacer(Modifier.height(14.dp))
             PaceComparisonSection(actualPace = activity.avgPace, targetPace = goalTargetPace)
         }
 
-        activity.altitudeProfile?.takeIf { it.size >= 2 }?.let {
-            Spacer(Modifier.height(14.dp))
-            ElevationProfileSection(it)
-        }
-
-        if (activity.routePolyline != null || activity.garminActivityId != null) {
-            Spacer(Modifier.height(14.dp))
-            GpsMapSection(
-                routePolyline = activity.routePolyline,
-                garminActivityId = activity.garminActivityId,
-            )
-        }
+        Spacer(Modifier.height(14.dp))
+        NotesSection(activity.notes, onSaveNotes)
 
         activity.garminActivityId?.let { gid ->
             Spacer(Modifier.height(14.dp))
@@ -372,39 +380,87 @@ private fun TrainingEffectBar(label: String, value: Double, caption: String?) {
     }
 }
 
+/**
+ * Per-km splits as a Strava-style table: km index, a relative-speed bar
+ * (longer + green = faster, red = slowest), the pace, and the per-km elevation
+ * delta when an aligned altitude profile is available.
+ */
 @Composable
-private fun SplitsSection(splits: List<String>) {
+private fun SplitsSection(splits: List<String>, altitude: List<Double>?) {
     val seconds = splits.map { paceToSeconds(it) }
     val valid = seconds.all { it > 0 }
+    val fastestSec = if (valid) seconds.min() else 0
+    val slowestSec = if (valid) seconds.max() else 0
+    val showElev = altitude != null && altitude.size == splits.size
+    val track = MaterialTheme.colorScheme.surfaceVariant
+    val mid = MaterialTheme.colorScheme.primary.copy(alpha = 0.55f)
+
     SurfaceCard {
-        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
+        Row(
+            Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.SpaceBetween,
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
             SectionTitle("Parziali al km")
-            fastestPace(splits, seconds)?.let { Pill("best $it", BrandGreen) }
+            if (valid) fastestPace(splits, seconds)?.let { Pill("best $it", BrandGreen) }
         }
-        if (valid && splits.size >= 2) {
-            val slowest = seconds.max()
-            // Taller bar = faster split (slowest..fastest inverted), so the chart
-            // reads like a effort profile rather than raw time.
-            val values = seconds.map { (slowest - it + 1).toFloat() }
-            Spacer(Modifier.height(8.dp))
-            BarChart(
-                values = values,
-                labels = splits.indices.map { (it + 1).toString() },
-                barColor = BrandGreen,
-                highlightLast = false,
-                height = 120.dp,
-            )
-            Spacer(Modifier.height(8.dp))
-            ThinDivider()
-            Spacer(Modifier.height(8.dp))
-        }
+        Spacer(Modifier.height(4.dp))
         splits.forEachIndexed { i, pace ->
+            val sec = seconds[i]
+            val frac = if (valid && sec > 0) (fastestSec.toFloat() / sec).coerceIn(0.08f, 1f) else 0.5f
+            val barColor = when {
+                valid && sec == fastestSec -> BrandGreen
+                valid && sec == slowestSec -> Coral
+                else -> mid
+            }
             Row(
-                Modifier.fillMaxWidth().padding(vertical = 3.dp),
-                horizontalArrangement = Arrangement.SpaceBetween,
+                Modifier.fillMaxWidth().padding(vertical = 5.dp),
+                verticalAlignment = Alignment.CenterVertically,
             ) {
-                Text("km ${i + 1}", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                Text(pace, style = MaterialTheme.typography.bodyMedium, fontWeight = FontWeight.SemiBold)
+                Text(
+                    "${i + 1}",
+                    modifier = Modifier.width(22.dp),
+                    style = MaterialTheme.typography.labelMedium,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+                Box(
+                    Modifier
+                        .weight(1f)
+                        .height(18.dp)
+                        .clip(RoundedCornerShape(6.dp))
+                        .background(track),
+                ) {
+                    Box(
+                        Modifier
+                            .fillMaxWidth(frac)
+                            .height(18.dp)
+                            .clip(RoundedCornerShape(6.dp))
+                            .background(barColor),
+                    )
+                }
+                Spacer(Modifier.width(10.dp))
+                Text(
+                    pace,
+                    modifier = Modifier.width(62.dp),
+                    style = MaterialTheme.typography.bodyMedium,
+                    fontWeight = FontWeight.SemiBold,
+                    textAlign = TextAlign.End,
+                )
+                if (showElev) {
+                    val delta = if (i == 0) 0.0 else altitude!![i] - altitude[i - 1]
+                    Spacer(Modifier.width(8.dp))
+                    Text(
+                        elevDelta(delta),
+                        modifier = Modifier.width(48.dp),
+                        style = MaterialTheme.typography.labelSmall,
+                        color = when {
+                            delta > 0.5 -> Coral
+                            delta < -0.5 -> BrandGreen
+                            else -> MaterialTheme.colorScheme.onSurfaceVariant
+                        },
+                        textAlign = TextAlign.End,
+                    )
+                }
             }
         }
     }
@@ -466,95 +522,102 @@ private fun MetricGrid(items: List<Pair<String, String>>) {
     }
 }
 
+/**
+ * Combined elevation + pace profile over distance, overlaid on a shared x-axis
+ * (km), the way Garmin/Strava show it: elevation as a filled green area, pace as
+ * a coral line (inverted so peaks = faster). Each series is scaled to its own
+ * range and labelled in the legend.
+ */
 @Composable
-private fun ElevationProfileSection(profile: List<Double>) {
+private fun RouteAnalysisSection(altitude: List<Double>?, paceSeconds: List<Int>?) {
+    val green = BrandGreen
+    val greenFill = BrandGreen.copy(alpha = 0.22f)
+    val coral = Coral
     SurfaceCard {
-        SectionTitle("Profilo altimetrico")
-        Spacer(Modifier.height(8.dp))
-        val green = BrandGreen
-        val greenFill = BrandGreen.copy(alpha = 0.2f)
-        Canvas(
-            modifier = Modifier
-                .fillMaxWidth()
-                .height(100.dp),
-        ) {
-            val minAlt = profile.min().toFloat()
-            val maxAlt = profile.max().toFloat()
-            val range = (maxAlt - minAlt).coerceAtLeast(1f)
-            val step = size.width / (profile.size - 1).coerceAtLeast(1)
-            val pts = profile.mapIndexed { i, alt ->
-                Offset(
-                    x = i * step,
-                    y = size.height - (alt.toFloat() - minAlt) / range * size.height * 0.9f,
-                )
+        SectionTitle("Profilo: altitudine & passo")
+        Spacer(Modifier.height(10.dp))
+        Canvas(Modifier.fillMaxWidth().height(150.dp)) {
+            val h = size.height
+            val w = size.width
+            if (altitude != null && altitude.size >= 2) {
+                val minA = altitude.min().toFloat()
+                val range = (altitude.max().toFloat() - minA).coerceAtLeast(1f)
+                val step = w / (altitude.size - 1)
+                val pts = altitude.mapIndexed { i, a ->
+                    Offset(i * step, h - (a.toFloat() - minA) / range * h * 0.85f - h * 0.05f)
+                }
+                val fill = Path().apply {
+                    moveTo(pts.first().x, h)
+                    pts.forEach { lineTo(it.x, it.y) }
+                    lineTo(pts.last().x, h)
+                    close()
+                }
+                drawPath(fill, color = greenFill)
+                for (i in 0 until pts.size - 1) drawLine(green, pts[i], pts[i + 1], strokeWidth = 4f)
             }
-            val fill = Path().apply {
-                moveTo(pts.first().x, size.height)
-                pts.forEach { lineTo(it.x, it.y) }
-                lineTo(pts.last().x, size.height)
-                close()
-            }
-            drawPath(fill, color = greenFill)
-            for (i in 0 until pts.size - 1) {
-                drawLine(green, pts[i], pts[i + 1], strokeWidth = 3f)
+            if (paceSeconds != null && paceSeconds.size >= 2) {
+                val minP = paceSeconds.min().toFloat()
+                val range = (paceSeconds.max().toFloat() - minP).coerceAtLeast(1f)
+                val step = w / (paceSeconds.size - 1)
+                // Invert: faster (smaller seconds) sits higher on the chart.
+                val pts = paceSeconds.mapIndexed { i, p ->
+                    Offset(i * step, h * 0.1f + (p.toFloat() - minP) / range * h * 0.8f)
+                }
+                for (i in 0 until pts.size - 1) drawLine(coral, pts[i], pts[i + 1], strokeWidth = 4f)
             }
         }
-        Spacer(Modifier.height(6.dp))
+        Spacer(Modifier.height(10.dp))
+        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(16.dp)) {
+            altitude?.let {
+                LegendItem("Altitudine ${it.min().roundToInt()}–${it.max().roundToInt()} m", green)
+            }
+            paceSeconds?.let {
+                LegendItem("Passo ${secToPace(it.min())}–${secToPace(it.max())}", coral)
+            }
+        }
+    }
+}
+
+@Composable
+private fun LegendItem(text: String, color: Color) {
+    Row(verticalAlignment = Alignment.CenterVertically) {
+        Box(Modifier.size(8.dp).clip(RoundedCornerShape(50)).background(color))
+        Spacer(Modifier.size(6.dp))
         Text(
-            "${profile.min().roundToInt()} m – ${profile.max().roundToInt()} m",
+            text,
             style = MaterialTheme.typography.labelSmall,
             color = MaterialTheme.colorScheme.onSurfaceVariant,
         )
     }
 }
 
+/** Real OSM map of the route (start = green dot, finish = coral dot). */
 @Composable
-private fun GpsMapSection(routePolyline: String?, garminActivityId: String?) {
+private fun RouteMapSection(points: List<Pair<Double, Double>>) {
     SurfaceCard {
-        SectionTitle("Mappa GPS")
+        SectionTitle("Mappa percorso")
         Spacer(Modifier.height(8.dp))
-        if (routePolyline != null) {
-            val points = try {
-                val arr = JsonParser.parseString(routePolyline).asJsonArray
-                arr.mapNotNull {
-                    val pt = it.asJsonArray
-                    if (pt.size() >= 2) Pair(pt[0].asFloat, pt[1].asFloat) else null
-                }
-            } catch (_: Exception) {
-                emptyList()
-            }
-            if (points.size >= 2) {
-                val green = BrandGreen
-                Canvas(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .height(180.dp),
-                ) {
-                    val lats = points.map { it.first }
-                    val lons = points.map { it.second }
-                    val minLat = lats.min(); val maxLat = lats.max()
-                    val minLon = lons.min(); val maxLon = lons.max()
-                    val span = maxOf(maxLat - minLat, maxLon - minLon).coerceAtLeast(0.0001f)
-                    val offsets = points.map { (lat, lon) ->
-                        Offset(
-                            x = (lon - minLon) / span * size.width * 0.9f + size.width * 0.05f,
-                            y = size.height - (lat - minLat) / span * size.height * 0.9f - size.height * 0.05f,
-                        )
-                    }
-                    for (i in 0 until offsets.size - 1) {
-                        drawLine(green, offsets[i], offsets[i + 1], strokeWidth = 4f)
-                    }
-                    drawCircle(Color.Green, radius = 10f, center = offsets.first())
-                    drawCircle(Color.Red, radius = 10f, center = offsets.last())
-                }
-                return@SurfaceCard
-            }
-        }
-        Text(
-            "Traccia GPS non disponibile per questa attività.",
-            style = MaterialTheme.typography.bodySmall,
-            color = MaterialTheme.colorScheme.onSurfaceVariant,
+        RouteMap(
+            points = points,
+            lineColorArgb = BrandGreen.toArgb(),
+            startColorArgb = BrandGreen.toArgb(),
+            endColorArgb = Coral.toArgb(),
+            modifier = Modifier.clip(RoundedCornerShape(16.dp)),
+            height = 240.dp,
         )
+    }
+}
+
+/** Parse the stored ``[[lat, lon], ...]`` JSON into geo points. */
+private fun parseRoutePoints(routePolyline: String?): List<Pair<Double, Double>> {
+    if (routePolyline.isNullOrBlank()) return emptyList()
+    return try {
+        JsonParser.parseString(routePolyline).asJsonArray.mapNotNull {
+            val pt = it.asJsonArray
+            if (pt.size() >= 2) Pair(pt[0].asDouble, pt[1].asDouble) else null
+        }
+    } catch (_: Exception) {
+        emptyList()
     }
 }
 
@@ -783,3 +846,13 @@ private fun fmt(v: Double): String =
     if (v == v.roundToInt().toDouble()) v.roundToInt().toString() else "%.1f".format(v)
 
 private fun fmtSigned(v: Double): String = (if (v >= 0) "+" else "") + v.roundToInt().toString()
+
+/** Seconds-per-km → "M:SS". */
+private fun secToPace(sec: Int): String = "${sec / 60}:${(sec % 60).toString().padStart(2, '0')}"
+
+/** Per-km elevation delta as a signed metre string ("+4 m" / "−6 m" / "0 m"). */
+private fun elevDelta(d: Double): String = when {
+    d > 0.5 -> "+${d.roundToInt()} m"
+    d < -0.5 -> "−${(-d).roundToInt()} m"
+    else -> "0 m"
+}

@@ -74,4 +74,7 @@ dependencies {
     implementation(libs.kotlinx.coroutines.android)
     implementation(libs.androidx.glance.appwidget)
     implementation(libs.androidx.glance.material3)
+
+    // Real OpenStreetMap tiles for the activity route map (free, no API key).
+    implementation(libs.osmdroid.android)
 }

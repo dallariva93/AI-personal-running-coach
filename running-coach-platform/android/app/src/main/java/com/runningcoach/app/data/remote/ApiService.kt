@@ -7,6 +7,7 @@ import com.runningcoach.app.data.model.DailyCheckin
 import com.runningcoach.app.data.model.Overview
 import com.runningcoach.app.data.model.PeriodStats
 import com.runningcoach.app.data.model.Report
+import com.runningcoach.app.data.model.StravaStatus
 import retrofit2.http.Body
 import retrofit2.http.GET
 import retrofit2.http.PATCH
@@ -50,4 +51,7 @@ interface ApiService {
 
     @GET("api/stats")
     suspend fun getStats(@Query("period") period: String = "all-time"): PeriodStats
+
+    @GET("api/strava/status")
+    suspend fun stravaStatus(): StravaStatus
 }
