@@ -30,3 +30,4 @@ data/reports/
 .DS_Store
 .idea/
 .vscode/
+.claude/
