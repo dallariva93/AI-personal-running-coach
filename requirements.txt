@@ -19,5 +19,8 @@ anthropic==0.111.0
 # Garmin (unofficial library)
 garminconnect==0.3.2
 
+# Strava (OAuth 2.0 + webhooks) — HTTP client
+requests==2.34.2
+
 # Object storage (Tigris / S3-compatible) for raw activity archive
 boto3==1.35.49

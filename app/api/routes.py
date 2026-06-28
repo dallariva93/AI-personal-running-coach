@@ -78,6 +78,7 @@ def health() -> dict:
         "version": __version__,
         "env": s.app_env,
         "garmin_enabled": s.garmin_enabled,
+        "strava_enabled": s.strava_enabled,
         "ai_enabled": s.ai_enabled,
         "ai_fallback_offline": s.ai_fallback_offline,
         "backup_enabled": s.backup_enabled,

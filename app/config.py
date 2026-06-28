@@ -30,6 +30,20 @@ class Settings(BaseSettings):
     garmin_max_retries: int = 3
     garmin_timeout_seconds: int = 30
 
+    # -- Strava (OAuth 2.0 + webhooks) --------------------------------------
+    # Opt-in event-driven source. When an athlete connects their Strava account,
+    # Strava pushes a webhook on every new activity and we pull the details.
+    # All four core values come from the Strava API application settings
+    # (https://www.strava.com/settings/api). Leave empty to disable Strava;
+    # the rest of the app keeps working (demo/Garmin).
+    strava_client_id: str = ""
+    strava_client_secret: str = ""
+    # Public base URL of this deployment, e.g. "https://coach.fly.dev". Used to
+    # build the OAuth redirect and the webhook callback. No trailing slash.
+    strava_public_base_url: str = ""
+    # Arbitrary secret echoed back during the webhook subscription handshake.
+    strava_webhook_verify_token: str = "running-coach"
+
     # -- Anthropic / Claude --------------------------------------------------
     anthropic_api_key: str = ""
     coach_model: str = "claude-haiku-4-5-20251001"
@@ -104,6 +118,23 @@ class Settings(BaseSettings):
     def ai_enabled(self) -> bool:
         """True when a Claude API key is configured."""
         return bool(self.anthropic_api_key)
+
+    @property
+    def strava_enabled(self) -> bool:
+        """True when Strava OAuth credentials are configured."""
+        return bool(self.strava_client_id and self.strava_client_secret)
+
+    @property
+    def strava_redirect_uri(self) -> str:
+        """OAuth callback URL derived from the public base URL."""
+        base = self.strava_public_base_url.rstrip("/")
+        return f"{base}/api/strava/callback" if base else ""
+
+    @property
+    def strava_webhook_callback_url(self) -> str:
+        """Webhook callback URL derived from the public base URL."""
+        base = self.strava_public_base_url.rstrip("/")
+        return f"{base}/api/strava/webhook" if base else ""
 
     @property
     def is_production(self) -> bool:

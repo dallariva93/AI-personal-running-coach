@@ -31,6 +31,7 @@ class RunSummary(BaseModel):
     model_config = ConfigDict(extra="ignore")
 
     garmin_activity_id: str | None = None
+    strava_activity_id: str | None = None
     date: str  # ISO YYYY-MM-DD
     activity_type: str = "easy"
     duration_min: float = 0.0
@@ -325,6 +326,7 @@ class ActivityOut(BaseModel):
 
     id: int
     garmin_activity_id: str | None
+    strava_activity_id: str | None = None
     date: str
     activity_type: str
     duration_min: float
@@ -386,6 +388,18 @@ class ManualActivityIn(BaseModel):
     avg_hr: int | None = None
     rpe: int | None = None
     notes: str | None = None
+
+
+class StravaStatus(BaseModel):
+    """Connection + webhook status for the Strava integration."""
+
+    enabled: bool = False  # credentials configured
+    connected: bool = False  # an athlete has authorised the app
+    athlete_id: int | None = None
+    athlete_name: str | None = None
+    subscription_active: bool = False  # a push subscription exists at Strava
+    pending_events: int = 0  # unprocessed webhook events in the inbox
+    authorize_url: str | None = None  # where to send the user to connect
 
 
 class ActivityPatch(BaseModel):

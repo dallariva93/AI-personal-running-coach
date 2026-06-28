@@ -37,6 +37,7 @@ logger = get_logger("app.services.ingest")
 def _activity_to_summary(a: Activity) -> RunSummary:
     return RunSummary(
         garmin_activity_id=a.garmin_activity_id,
+        strava_activity_id=a.strava_activity_id,
         date=a.date,
         activity_type=a.activity_type,
         duration_min=a.duration_min,
@@ -70,15 +71,29 @@ def _activity_to_summary(a: Activity) -> RunSummary:
 
 
 def upsert_activity(session: Session, run: RunSummary) -> Activity:
-    """Insert or update an activity, keyed on the Garmin id when present."""
+    """Insert or update an activity, keyed on the Garmin or Strava id.
+
+    An activity is matched on whichever external id the payload carries
+    (Garmin first, then Strava), so the same run synced from either source
+    updates one row rather than creating duplicates.
+    """
     existing: Activity | None = None
     if run.garmin_activity_id:
         existing = session.scalar(
             select(Activity).where(Activity.garmin_activity_id == run.garmin_activity_id)
         )
+    if existing is None and run.strava_activity_id:
+        existing = session.scalar(
+            select(Activity).where(Activity.strava_activity_id == run.strava_activity_id)
+        )
     if existing is None:
-        existing = Activity(garmin_activity_id=run.garmin_activity_id)
+        existing = Activity(
+            garmin_activity_id=run.garmin_activity_id,
+            strava_activity_id=run.strava_activity_id,
+        )
         session.add(existing)
+    elif run.strava_activity_id and not existing.strava_activity_id:
+        existing.strava_activity_id = run.strava_activity_id
 
     existing.date = run.date
     existing.activity_type = run.activity_type

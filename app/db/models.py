@@ -18,11 +18,16 @@ class Activity(Base):
     """A single running activity, synthesised from Garmin into a compact form."""
 
     __tablename__ = "activities"
-    __table_args__ = (UniqueConstraint("garmin_activity_id", name="uq_activity_garmin_id"),)
+    __table_args__ = (
+        UniqueConstraint("garmin_activity_id", name="uq_activity_garmin_id"),
+        UniqueConstraint("strava_activity_id", name="uq_activity_strava_id"),
+    )
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True)
     # Garmin's own activity id (string for safety). Nullable for manual entries.
     garmin_activity_id: Mapped[str | None] = mapped_column(String(64), nullable=True, index=True)
+    # Strava's activity id, when the run arrived via the Strava webhook source.
+    strava_activity_id: Mapped[str | None] = mapped_column(String(64), nullable=True, index=True)
 
     date: Mapped[str] = mapped_column(String(10), index=True)  # ISO date YYYY-MM-DD
     activity_type: Mapped[str] = mapped_column(String(32), default="easy")  # easy/tempo/...
@@ -182,6 +187,61 @@ class RawActivityAsset(Base):
 
     def __repr__(self) -> str:  # pragma: no cover - debug helper
         return f"<RawActivityAsset {self.garmin_activity_id}/{self.kind}>"
+
+
+class StravaAccount(Base):
+    """OAuth tokens for one connected Strava athlete.
+
+    Single-athlete app → effectively one row, keyed on the Strava ``athlete_id``.
+    Strava access tokens are short-lived (6 h); ``expires_at`` (epoch seconds)
+    drives the refresh, performed lazily before each API call.
+    """
+
+    __tablename__ = "strava_accounts"
+    __table_args__ = (UniqueConstraint("athlete_id", name="uq_strava_athlete_id"),)
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    athlete_id: Mapped[int] = mapped_column(Integer, index=True)
+    access_token: Mapped[str] = mapped_column(String(128))
+    refresh_token: Mapped[str] = mapped_column(String(128))
+    expires_at: Mapped[int] = mapped_column(Integer, default=0)  # epoch seconds
+    scope: Mapped[str | None] = mapped_column(String(128), nullable=True)
+    athlete_name: Mapped[str | None] = mapped_column(String(128), nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=_utcnow)
+    updated_at: Mapped[datetime] = mapped_column(DateTime, default=_utcnow, onupdate=_utcnow)
+
+    def __repr__(self) -> str:  # pragma: no cover - debug helper
+        return f"<StravaAccount athlete={self.athlete_id}>"
+
+
+class StravaWebhookEvent(Base):
+    """Durable inbox for Strava push events — our lightweight job queue.
+
+    The webhook handler must respond within ~2 s, so it only validates and
+    persists the event here, then returns 200. A worker drains pending rows
+    out-of-band (fetch the activity, map it, upsert). Persisting first makes
+    the pipeline robust to restarts and to slow/failed downstream calls.
+    """
+
+    __tablename__ = "strava_webhook_events"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    object_type: Mapped[str] = mapped_column(String(16))  # activity | athlete
+    object_id: Mapped[int] = mapped_column(Integer, index=True)  # Strava activity id
+    aspect_type: Mapped[str] = mapped_column(String(16))  # create | update | delete
+    owner_id: Mapped[int] = mapped_column(Integer, index=True)  # athlete id
+    event_time: Mapped[int] = mapped_column(Integer, default=0)  # epoch from Strava
+    updates: Mapped[dict | None] = mapped_column(JSON, nullable=True)  # field changes
+    status: Mapped[str] = mapped_column(
+        String(16), default="pending", index=True
+    )  # pending | done | error | skipped
+    attempts: Mapped[int] = mapped_column(Integer, default=0)
+    error: Mapped[str | None] = mapped_column(Text, nullable=True)
+    received_at: Mapped[datetime] = mapped_column(DateTime, default=_utcnow)
+    processed_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+
+    def __repr__(self) -> str:  # pragma: no cover - debug helper
+        return f"<StravaWebhookEvent {self.aspect_type} {self.object_id} {self.status}>"
 
 
 class DailyCheckinRow(Base):

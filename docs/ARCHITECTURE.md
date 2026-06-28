@@ -29,6 +29,24 @@ isolamento e comunica solo tramite gli schemi Pydantic in `app/schemas.py`.
   - `get_source()` sceglie in base alla presenza di credenziali.
 - `synthesize.py`: trasforma il payload grezzo Garmin in `RunSummary` compatto
   (solo i campi informativi, niente stream secondo-per-secondo).
+- `strava.py`: sorgente **event-driven** opzionale. Invece del polling, Strava
+  invia un webhook ad ogni nuova attività; noi scarichiamo i dettagli via API
+  e li mappiamo a `RunSummary` (`synthesize_strava`, decodifica della polyline
+  inclusa). Client OAuth 2.0 + gestione delle push subscription.
+
+#### Flusso Strava (come fa Strava con Garmin)
+```
+Strava (webhook PUSH)  →  POST /api/strava/webhook  →  inbox durevole
+                                                        (strava_webhook_events)
+                                                              │
+                                          BackgroundTask / POST /api/strava/process
+                                                              ▼
+                                   fetch attività → synthesize_strava → upsert_activity
+```
+Il webhook risponde subito (<2 s) e accoda l'evento; un worker svuota la coda
+fuori banda (pattern job-queue, robusto ai riavvii). Token e tokens-refresh in
+`app/services/strava_sync.py`; tabelle `strava_accounts` e
+`strava_webhook_events`.
 
 ### `app/processing/` — elaborazione
 - `metrics.py`: funzioni pure, niente I/O. Calcola:
