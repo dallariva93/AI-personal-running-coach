@@ -15,6 +15,8 @@ class ViewModelFactory(private val app: RunningCoachApp) : ViewModelProvider.Fac
             SettingsViewModel(app.settingsStore, app.repository) as T
         modelClass.isAssignableFrom(StatsViewModel::class.java) ->
             StatsViewModel(app.repository) as T
+        modelClass.isAssignableFrom(PlanViewModel::class.java) ->
+            PlanViewModel(app.repository) as T
         else -> throw IllegalArgumentException("Unknown ViewModel: ${modelClass.name}")
     }
 }

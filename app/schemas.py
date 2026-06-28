@@ -8,7 +8,7 @@ These form the stable contract between the three independent layers:
 
 from __future__ import annotations
 
-from datetime import date
+from datetime import date, datetime
 
 from pydantic import BaseModel, ConfigDict, Field
 
@@ -447,3 +447,68 @@ class PeriodStats(BaseModel):
     avg_pace: str | None = None
     longest_run_km: float = 0.0
     fastest_pace: str | None = None
+
+
+# ── Multi-week training plan schemas ──────────────────────────────────────────
+
+
+class PlanSessionOut(BaseModel):
+    """API response model for one session in a training plan week."""
+
+    model_config = ConfigDict(from_attributes=True)
+
+    id: int
+    day_of_week: int
+    session_type: str  # easy|long|tempo|intervals|rest|race|cross|strides
+    title: str
+    description: str | None = None
+    target_distance_km: float | None = None
+    target_pace: str | None = None  # "M:SS/km"
+    target_duration_min: float | None = None
+    completed: bool
+    completed_at: datetime | None = None
+
+
+class PlanWeekOut(BaseModel):
+    """API response model for one week in a training plan."""
+
+    model_config = ConfigDict(from_attributes=True)
+
+    id: int
+    week_number: int
+    phase: str
+    target_km: float
+    description: str | None = None
+    sessions: list[PlanSessionOut]
+    completion_pct: float = 0.0  # computed: completed non-rest / total non-rest
+
+
+class TrainingPlanOut(BaseModel):
+    """API response model for a complete multi-week training plan."""
+
+    model_config = ConfigDict(from_attributes=True)
+
+    id: int
+    goal_type: str
+    goal_date: str
+    goal_time: str | None = None
+    level: str
+    weeks_total: int
+    start_date: str
+    status: str
+    current_week_number: int  # 1-based, computed from today vs start_date
+    weeks_remaining: int
+    overall_completion_pct: float
+    current_week: PlanWeekOut | None = None
+    weeks: list[PlanWeekOut]
+
+
+class PlanGenerateRequest(BaseModel):
+    """Request body for generating a new multi-week training plan."""
+
+    goal_type: str = "marathon"
+    goal_date: str
+    goal_time: str | None = None
+    level: str = "intermediate"
+    days_per_week: int = 4
+    long_run_day: int = 6  # 0=Mon, 6=Sun (default Sunday)

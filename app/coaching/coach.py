@@ -2,7 +2,9 @@
 
 from __future__ import annotations
 
+import json
 import re
+from datetime import date, timedelta
 from typing import Protocol
 
 from app.coaching import prompts
@@ -13,6 +15,7 @@ from app.schemas import (
     AthleteProfile,
     AthleteSnapshot,
     CoachingResult,
+    PlanGenerateRequest,
     RunSummary,
     TrainingMetrics,
 )
@@ -38,6 +41,13 @@ class Coach(Protocol):
         profile: AthleteProfile | None = None,
         snapshot: AthleteSnapshot | None = None,
     ) -> CoachingResult: ...
+
+    def plan_multiweek(
+        self,
+        request: PlanGenerateRequest,
+        profile: AthleteProfile | None,
+        metrics: TrainingMetrics | None,
+    ) -> dict: ...
 
 
 def _split_sections(text: str) -> tuple[str, str]:
@@ -135,6 +145,31 @@ class AICoach:
         return CoachingResult(
             scope="weekly", model=model, analysis=analysis, next_workout=next_workout,
         )
+
+    def plan_multiweek(
+        self,
+        request: PlanGenerateRequest,
+        profile: AthleteProfile | None,
+        metrics: TrainingMetrics | None,
+    ) -> dict:
+        """Generate a full multi-week training plan via Claude, fall back to offline."""
+        model = self.settings.planner_model or self.settings.coach_model
+        user = prompts.build_multiweek_plan_message(request, profile, metrics)
+        try:
+            raw = self._call(
+                prompts.MULTIWEEK_PLAN_SYSTEM_PROMPT,
+                user,
+                model,
+                max_tokens=8000,
+            )
+            plan_data = _parse_json_response(raw)
+            _validate_plan_structure(plan_data)
+            return plan_data
+        except Exception as exc:
+            logger.error(
+                "Multiweek plan AI call failed, falling back to offline: %s", exc
+            )
+            return self._fallback.plan_multiweek(request, profile, metrics)
 
     def _profile_text(self, profile: AthleteProfile | None) -> str:
         """Render the athlete profile for the system prompt.
@@ -512,6 +547,486 @@ class OfflineCoach:
         if not m.adaptive_notes:
             return ""
         return " ⚙️ Adattamenti: " + "; ".join(m.adaptive_notes) + "."
+
+    def plan_multiweek(
+        self,
+        request: PlanGenerateRequest,
+        profile: AthleteProfile | None,
+        metrics: TrainingMetrics | None,
+    ) -> dict:
+        """Generate a complete multi-week plan using deterministic templates."""
+        from datetime import datetime as _dt
+
+        try:
+            race_date = _dt.strptime(request.goal_date[:10], "%Y-%m-%d").date()
+        except (ValueError, TypeError):
+            race_date = date.today() + timedelta(weeks=16)
+
+        today = date.today()
+        start_date = today - timedelta(days=today.weekday())  # Monday of current week
+
+        days_to_race = (race_date - today).days
+        weeks_total = max(4, min(24, (days_to_race + 6) // 7))
+
+        baseline_km = 30.0
+        if metrics:
+            baseline_km = max(metrics.chronic_load_km, metrics.acute_load_km, 20.0)
+
+        long_day = request.long_run_day  # 0=Mon, 6=Sun
+        dpw = max(3, min(6, request.days_per_week))
+
+        # Build phase allocation
+        taper_weeks = {"marathon": 3, "half": 2, "10k": 1, "5k": 1}.get(
+            request.goal_type, 2
+        )
+        race_weeks = 1
+        taper_weeks = min(taper_weeks, max(0, weeks_total - race_weeks))
+        prep_weeks = max(0, weeks_total - taper_weeks - race_weeks)
+
+        base_w = max(1, round(prep_weeks * 0.35))
+        build_w = max(1, round(prep_weeks * 0.30))
+        specific_w = max(1, round(prep_weeks * 0.20))
+        peak_w = max(0, prep_weeks - base_w - build_w - specific_w)
+
+        phase_alloc = [
+            ("Base", base_w),
+            ("Build", build_w),
+            ("Specifico", specific_w),
+            ("Peak", peak_w),
+            ("Taper", taper_weeks),
+            ("Gara", race_weeks),
+        ]
+
+        paces = _compute_paces(request.level, request.goal_type, request.goal_time)
+
+        weeks_out = []
+        week_num = 1
+        for phase_name, phase_len in phase_alloc:
+            if phase_len <= 0:
+                continue
+            for _i in range(phase_len):
+                is_cutback = (week_num % 4 == 0) and phase_name not in ("Taper", "Gara")
+                vol_factor = _phase_volume_factor(phase_name, is_cutback)
+                target_km = round(baseline_km * vol_factor, 1)
+                phase_desc = _phase_description(phase_name, week_num, is_cutback)
+                sessions = _build_week_sessions(
+                    phase_name=phase_name,
+                    week_number=week_num,
+                    days_per_week=dpw,
+                    long_run_day=long_day,
+                    target_km=target_km,
+                    paces=paces,
+                    goal_type=request.goal_type,
+                    is_cutback=is_cutback,
+                )
+                weeks_out.append({
+                    "week_number": week_num,
+                    "phase": phase_name,
+                    "target_km": target_km,
+                    "description": phase_desc,
+                    "sessions": sessions,
+                })
+                week_num += 1
+
+        return {
+            "weeks_total": len(weeks_out),
+            "start_date": start_date.isoformat(),
+            "weeks": weeks_out,
+        }
+
+
+# ── JSON parsing helpers ─────────────────────────────────────────────────────
+
+def _parse_json_response(raw: str) -> dict:
+    """Extract and parse a JSON object from the raw LLM response."""
+    text = raw.strip()
+    # Strip markdown code fences if present
+    if text.startswith("```"):
+        lines = text.split("\n")
+        text = "\n".join(lines[1:])
+        if text.endswith("```"):
+            text = text[:-3]
+        text = text.strip()
+    # Find the outermost JSON object
+    start = text.find("{")
+    end = text.rfind("}")
+    if start == -1 or end == -1:
+        raise ValueError("No JSON object found in response")
+    return json.loads(text[start:end + 1])
+
+
+def _validate_plan_structure(data: dict) -> None:
+    """Validate the minimal required structure of a generated plan."""
+    if "weeks" not in data or not isinstance(data["weeks"], list):
+        raise ValueError("Plan missing 'weeks' list")
+    if not data["weeks"]:
+        raise ValueError("Plan has no weeks")
+    for week in data["weeks"]:
+        if "sessions" not in week or not isinstance(week["sessions"], list):
+            raise ValueError(f"Week {week.get('week_number')} missing sessions")
+        if len(week["sessions"]) == 0:
+            raise ValueError(f"Week {week.get('week_number')} has no sessions")
+
+
+# ── Offline plan generation helpers ─────────────────────────────────────────
+
+def _compute_paces(level: str, goal_type: str, goal_time: str | None) -> dict[str, str]:
+    """Compute pace targets for each session type based on level and goal."""
+    defaults = {
+        "beginner": {"easy": "6:30", "long": "6:45", "tempo": "5:50", "intervals": "5:20"},
+        "intermediate": {"easy": "5:30", "long": "5:45", "tempo": "4:45", "intervals": "4:15"},
+        "advanced": {"easy": "5:00", "long": "5:10", "tempo": "4:15", "intervals": "3:50"},
+    }
+    paces = defaults.get(level, defaults["intermediate"]).copy()
+
+    if goal_time:
+        try:
+            parts = goal_time.split(":")
+            if len(parts) == 3:
+                total_sec = int(parts[0]) * 3600 + int(parts[1]) * 60 + int(parts[2])
+            elif len(parts) == 2:
+                total_sec = int(parts[0]) * 60 + int(parts[1])
+            else:
+                return {k: f"{v}/km" for k, v in paces.items()}
+
+            dist_km = {
+                "marathon": 42.195, "half": 21.0975, "10k": 10.0, "5k": 5.0,
+            }.get(goal_type, 42.195)
+            race_pace_sec = total_sec / dist_km
+            easy_sec = race_pace_sec * 1.18
+            long_sec = race_pace_sec * 1.22
+            tempo_sec = race_pace_sec * 1.05
+            intervals_sec = race_pace_sec * 0.97
+
+            def _fmt(sec: float) -> str:
+                m = int(sec // 60)
+                s = int(sec % 60)
+                return f"{m}:{s:02d}"
+
+            paces = {
+                "easy": _fmt(easy_sec),
+                "long": _fmt(long_sec),
+                "tempo": _fmt(tempo_sec),
+                "intervals": _fmt(intervals_sec),
+            }
+        except (ValueError, TypeError, ZeroDivisionError):
+            pass
+
+    return {k: f"{v}/km" for k, v in paces.items()}
+
+
+def _phase_volume_factor(phase: str, is_cutback: bool) -> float:
+    factors = {
+        "Base": 0.85, "Build": 1.0, "Specifico": 1.10,
+        "Peak": 1.05, "Taper": 0.60, "Gara": 0.30,
+    }
+    f = factors.get(phase, 1.0)
+    return f * 0.80 if is_cutback else f
+
+
+def _phase_description(phase: str, week_num: int, is_cutback: bool) -> str:
+    desc = {
+        "Base": "Costruzione aerobica: volume progressivo in Z2, 80/20.",
+        "Build": "Sviluppo del volume e introduzione delle sedute di soglia.",
+        "Specifico": "Lavoro specifico: ripetute e lungo con porzioni a ritmo gara.",
+        "Peak": "Affinamento: meno volume, qualità alta vicino al ritmo gara.",
+        "Taper": "Scarico progressivo: mantieni l'intensità, riduci il volume.",
+        "Gara": "Settimana gara: riposo, attivazione leggera, gareggia!",
+    }.get(phase, "")
+    if is_cutback:
+        desc = f"Settimana di scarico (-20%). {desc}"
+    return f"Settimana {week_num}: {desc}"
+
+
+_REST_SESSION = {
+    "day_of_week": -1,  # will be overwritten
+    "session_type": "rest",
+    "title": "Riposo",
+    "description": "Recupero completo. Stretching leggero se desiderato.",
+    "target_distance_km": None,
+    "target_pace": None,
+    "target_duration_min": None,
+}
+
+# Training day patterns per phase (indices into 0=Mon..6=Sun)
+_PHASE_DAY_PATTERNS: dict[str, dict[int, tuple[str, ...]]] = {
+    3: {
+        "Base":     (1, 4, 6),   # Tue Thu Sun
+        "Build":    (1, 4, 6),
+        "Specifico":(1, 4, 6),
+        "Peak":     (1, 4, 6),
+        "Taper":    (1, 4, 6),
+        "Gara":     (2, 5, 6),
+    },
+    4: {
+        "Base":     (1, 3, 5, 6),
+        "Build":    (1, 3, 5, 6),
+        "Specifico":(1, 3, 5, 6),
+        "Peak":     (1, 3, 5, 6),
+        "Taper":    (1, 3, 5, 6),
+        "Gara":     (1, 3, 5, 6),
+    },
+    5: {
+        "Base":     (1, 2, 4, 5, 6),
+        "Build":    (1, 2, 4, 5, 6),
+        "Specifico":(1, 2, 4, 5, 6),
+        "Peak":     (1, 2, 4, 5, 6),
+        "Taper":    (1, 3, 4, 5, 6),
+        "Gara":     (1, 3, 4, 5, 6),
+    },
+    6: {
+        "Base":     (0, 1, 2, 4, 5, 6),
+        "Build":    (0, 1, 2, 4, 5, 6),
+        "Specifico":(0, 1, 2, 4, 5, 6),
+        "Peak":     (0, 1, 2, 4, 5, 6),
+        "Taper":    (0, 1, 2, 4, 5, 6),
+        "Gara":     (0, 1, 3, 4, 5, 6),
+    },
+}
+
+
+def _build_week_sessions(
+    phase_name: str,
+    week_number: int,
+    days_per_week: int,
+    long_run_day: int,
+    target_km: float,
+    paces: dict[str, str],
+    goal_type: str,
+    is_cutback: bool,
+) -> list[dict]:
+    """Build the 7 sessions for one training week."""
+    dpw = max(3, min(6, days_per_week))
+    pattern_map = _PHASE_DAY_PATTERNS.get(dpw, _PHASE_DAY_PATTERNS[4])
+    training_days = set(pattern_map.get(phase_name, pattern_map.get("Base", (1, 3, 5, 6))))
+
+    # Override: ensure long_run_day is a training day (unless Gara or Taper late)
+    if phase_name not in ("Gara",):
+        training_days.add(long_run_day)
+        # Remove one day if too many
+        while len(training_days) > dpw:
+            candidates = sorted(training_days - {long_run_day})
+            training_days.discard(candidates[0])
+
+    easy_km = round(target_km * 0.10, 1)
+    easy_km = max(easy_km, 5.0)
+    long_km_base = round(target_km * 0.30, 1)
+    long_km = max(long_km_base, 10.0)
+
+    sessions: list[dict] = []
+    sorted_training = sorted(training_days)
+
+    # Assign session types to training days
+    workout_assignments = _assign_workouts(
+        phase_name, sorted_training, long_run_day, goal_type, is_cutback
+    )
+
+    for day in range(7):
+        if day not in training_days:
+            s = dict(_REST_SESSION)
+            s["day_of_week"] = day
+            sessions.append(s)
+        else:
+            wtype = workout_assignments.get(day, "easy")
+            s = _make_session(wtype, day, easy_km, long_km, paces, phase_name, goal_type)
+            sessions.append(s)
+
+    return sorted(sessions, key=lambda x: x["day_of_week"])
+
+
+def _assign_workouts(
+    phase: str,
+    training_days: list[int],
+    long_day: int,
+    goal_type: str,
+    is_cutback: bool,
+) -> dict[int, str]:
+    """Assign session types to each training day."""
+    result: dict[int, str] = {}
+
+    if phase == "Gara":
+        for i, d in enumerate(training_days):
+            if i == len(training_days) - 1:
+                result[d] = "race"
+            elif i == len(training_days) - 2:
+                result[d] = "strides"
+            else:
+                result[d] = "easy"
+        return result
+
+    # The long run goes on long_day if it's a training day
+    long_assigned = False
+    quality_types = _quality_for_phase(phase, goal_type, is_cutback)
+    quality_idx = 0
+
+    for d in training_days:
+        if d == long_day and not long_assigned and phase not in ("Taper",):
+            result[d] = "long"
+            long_assigned = True
+        elif quality_idx < len(quality_types):
+            result[d] = quality_types[quality_idx]
+            quality_idx += 1
+        else:
+            result[d] = "easy"
+
+    # If long wasn't assigned, replace the last easy with long (Taper skip)
+    if not long_assigned and phase not in ("Taper",):
+        for d in reversed(training_days):
+            if result.get(d) == "easy":
+                result[d] = "long"
+                break
+
+    return result
+
+
+def _quality_for_phase(phase: str, goal_type: str, is_cutback: bool) -> list[str]:
+    """Return ordered list of quality sessions to schedule for a phase."""
+    if is_cutback:
+        return ["tempo"]
+    return {
+        "Base": ["strides", "easy"],
+        "Build": ["tempo", "easy"],
+        "Specifico": ["intervals", "tempo"],
+        "Peak": ["intervals", "tempo"],
+        "Taper": ["strides", "easy"],
+        "Gara": [],
+    }.get(phase, ["easy"])
+
+
+def _make_session(
+    stype: str,
+    day: int,
+    easy_km: float,
+    long_km: float,
+    paces: dict[str, str],
+    phase: str,
+    goal_type: str,
+) -> dict:
+    ep = paces.get("easy", "5:30/km")
+    lp = paces.get("long", "5:45/km")
+    tp = paces.get("tempo", "4:45/km")
+    ip = paces.get("intervals", "4:15/km")
+
+    if stype == "easy":
+        return {
+            "day_of_week": day,
+            "session_type": "easy",
+            "title": "Corsa facile",
+            "description": f"Corsa facile in Z2 a {ep}. "
+                           "Ritmo di conversazione, frequenza cardiaca controllata.",
+            "target_distance_km": easy_km,
+            "target_pace": ep,
+            "target_duration_min": round(easy_km * _pace_to_min(ep) + 0.5),
+        }
+    if stype == "long":
+        return {
+            "day_of_week": day,
+            "session_type": "long",
+            "title": "Lungo",
+            "description": f"Lungo progressivo {long_km:.0f} km in Z2 a {lp}. "
+                           "Inizia lento, ultimi 3-4 km puoi accelerare leggermente.",
+            "target_distance_km": long_km,
+            "target_pace": lp,
+            "target_duration_min": round(long_km * _pace_to_min(lp) + 0.5),
+        }
+    if stype == "tempo":
+        tempo_km = round(easy_km * 1.5, 1)
+        warmup = 2.0
+        cooldown = 2.0
+        quality_km = max(3.0, round(tempo_km - warmup - cooldown, 1))
+        total_km = warmup + quality_km + cooldown
+        return {
+            "day_of_week": day,
+            "session_type": "tempo",
+            "title": "Corsa a soglia",
+            "description": f"Riscaldamento {warmup:.0f} km easy + "
+                           f"{quality_km:.0f} km @ {tp} (Z3-Z4) + "
+                           f"defaticamento {cooldown:.0f} km easy.",
+            "target_distance_km": round(total_km, 1),
+            "target_pace": tp,
+            "target_duration_min": round(
+                warmup * _pace_to_min(ep)
+                + quality_km * _pace_to_min(tp)
+                + cooldown * _pace_to_min(ep)
+                + 0.5
+            ),
+        }
+    if stype == "intervals":
+        reps = 5 if goal_type in ("marathon", "half") else 6
+        rep_dist = 1.0 if goal_type in ("10k", "5k") else 1.5
+        rec_min = 3 if goal_type in ("marathon", "half") else 2
+        warmup = 2.5
+        cooldown = 2.0
+        quality_km = reps * rep_dist
+        total_km = warmup + quality_km + cooldown
+        return {
+            "day_of_week": day,
+            "session_type": "intervals",
+            "title": "Ripetute",
+            "description": f"Riscaldamento {warmup:.1f} km + "
+                           f"{reps}×{rep_dist:.0f} km @ {ip} con {rec_min} min recupero + "
+                           f"defaticamento {cooldown:.0f} km.",
+            "target_distance_km": round(total_km, 1),
+            "target_pace": ip,
+            "target_duration_min": round(
+                warmup * _pace_to_min(ep)
+                + quality_km * _pace_to_min(ip)
+                + reps * rec_min
+                + cooldown * _pace_to_min(ep)
+                + 0.5
+            ),
+        }
+    if stype == "strides":
+        return {
+            "day_of_week": day,
+            "session_type": "strides",
+            "title": "Corsa con allunghi",
+            "description": f"{easy_km:.0f} km facili a {ep} + 4 allunghi da 100 m "
+                           "a ritmo veloce con 2 min recupero.",
+            "target_distance_km": easy_km,
+            "target_pace": ep,
+            "target_duration_min": round(easy_km * _pace_to_min(ep) + 12 + 0.5),
+        }
+    if stype == "race":
+        return {
+            "day_of_week": day,
+            "session_type": "race",
+            "title": "GARA",
+            "description": "Giorno di gara. Attivazione 15 min + 3 allunghi, poi gareggia!",
+            "target_distance_km": None,
+            "target_pace": None,
+            "target_duration_min": None,
+        }
+    if stype == "cross":
+        return {
+            "day_of_week": day,
+            "session_type": "cross",
+            "title": "Cross training",
+            "description": "Bici, nuoto o palestra leggera. Recupero attivo, no impatto.",
+            "target_distance_km": None,
+            "target_pace": None,
+            "target_duration_min": 45.0,
+        }
+    # Default: easy
+    return {
+        "day_of_week": day,
+        "session_type": "easy",
+        "title": "Corsa facile",
+        "description": f"Corsa facile in Z2 a {ep}.",
+        "target_distance_km": easy_km,
+        "target_pace": ep,
+        "target_duration_min": round(easy_km * _pace_to_min(ep) + 0.5),
+    }
+
+
+def _pace_to_min(pace_str: str) -> float:
+    """Convert 'M:SS/km' to minutes per km."""
+    try:
+        pace = pace_str.replace("/km", "").strip()
+        parts = pace.split(":")
+        return int(parts[0]) + int(parts[1]) / 60.0
+    except (IndexError, ValueError):
+        return 5.5
 
 
 def get_coach(settings: Settings | None = None) -> Coach:

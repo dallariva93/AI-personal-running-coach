@@ -205,6 +205,58 @@ data class PeriodStats(
     @SerializedName("fastest_pace") val fastestPace: String? = null,
 )
 
+/** One session (or rest day) in a training plan week. */
+data class PlanSession(
+    @SerializedName("id") val id: Int,
+    @SerializedName("day_of_week") val dayOfWeek: Int,
+    @SerializedName("session_type") val sessionType: String,
+    @SerializedName("title") val title: String,
+    @SerializedName("description") val description: String? = null,
+    @SerializedName("target_distance_km") val targetDistanceKm: Double? = null,
+    @SerializedName("target_pace") val targetPace: String? = null,
+    @SerializedName("target_duration_min") val targetDurationMin: Double? = null,
+    @SerializedName("completed") val completed: Boolean = false,
+    @SerializedName("completed_at") val completedAt: String? = null,
+)
+
+/** One week in a multi-week training plan. */
+data class PlanWeek(
+    @SerializedName("id") val id: Int,
+    @SerializedName("week_number") val weekNumber: Int,
+    @SerializedName("phase") val phase: String,
+    @SerializedName("target_km") val targetKm: Double,
+    @SerializedName("description") val description: String? = null,
+    @SerializedName("sessions") val sessions: List<PlanSession> = emptyList(),
+    @SerializedName("completion_pct") val completionPct: Double = 0.0,
+)
+
+/** A complete multi-week structured training plan. */
+data class TrainingPlan(
+    @SerializedName("id") val id: Int,
+    @SerializedName("goal_type") val goalType: String,
+    @SerializedName("goal_date") val goalDate: String,
+    @SerializedName("goal_time") val goalTime: String? = null,
+    @SerializedName("level") val level: String,
+    @SerializedName("weeks_total") val weeksTotal: Int,
+    @SerializedName("start_date") val startDate: String,
+    @SerializedName("status") val status: String,
+    @SerializedName("current_week_number") val currentWeekNumber: Int,
+    @SerializedName("weeks_remaining") val weeksRemaining: Int,
+    @SerializedName("overall_completion_pct") val overallCompletionPct: Double,
+    @SerializedName("current_week") val currentWeek: PlanWeek? = null,
+    @SerializedName("weeks") val weeks: List<PlanWeek> = emptyList(),
+)
+
+/** Request body for generating a new multi-week training plan. */
+data class PlanGenerateRequest(
+    @SerializedName("goal_type") val goalType: String = "marathon",
+    @SerializedName("goal_date") val goalDate: String,
+    @SerializedName("goal_time") val goalTime: String? = null,
+    @SerializedName("level") val level: String = "intermediate",
+    @SerializedName("days_per_week") val daysPerWeek: Int = 4,
+    @SerializedName("long_run_day") val longRunDay: Int = 6,
+)
+
 /** Strava connection + webhook status (mirrors app/schemas.py StravaStatus). */
 data class StravaStatus(
     @SerializedName("enabled") val enabled: Boolean = false,
@@ -248,4 +300,5 @@ data class Overview(
     @SerializedName("personal_records") val personalRecords: List<PersonalRecord> = emptyList(),
     @SerializedName("pr_activity_ids") val prActivityIds: List<Int> = emptyList(),
     @SerializedName("gamification") val gamification: GamificationData? = null,
+    @SerializedName("active_plan") val activePlan: TrainingPlan? = null,
 )

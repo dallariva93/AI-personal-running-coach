@@ -6,9 +6,13 @@ import com.runningcoach.app.data.model.AthleteProfile
 import com.runningcoach.app.data.model.DailyCheckin
 import com.runningcoach.app.data.model.Overview
 import com.runningcoach.app.data.model.PeriodStats
+import com.runningcoach.app.data.model.PlanGenerateRequest
+import com.runningcoach.app.data.model.PlanSession
 import com.runningcoach.app.data.model.Report
 import com.runningcoach.app.data.model.StravaStatus
+import com.runningcoach.app.data.model.TrainingPlan
 import retrofit2.http.Body
+import retrofit2.http.DELETE
 import retrofit2.http.GET
 import retrofit2.http.PATCH
 import retrofit2.http.POST
@@ -54,4 +58,19 @@ interface ApiService {
 
     @GET("api/strava/status")
     suspend fun stravaStatus(): StravaStatus
+
+    @POST("api/plan/generate")
+    suspend fun generatePlan(@Body request: PlanGenerateRequest): TrainingPlan
+
+    @GET("api/plan/current")
+    suspend fun getCurrentPlan(): TrainingPlan
+
+    @GET("api/plan/{id}")
+    suspend fun getPlan(@Path("id") id: Int): TrainingPlan
+
+    @PATCH("api/plan/sessions/{id}/complete")
+    suspend fun toggleSessionComplete(@Path("id") id: Int): PlanSession
+
+    @DELETE("api/plan/{id}")
+    suspend fun archivePlan(@Path("id") id: Int): Map<String, Boolean>
 }

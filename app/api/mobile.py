@@ -31,6 +31,7 @@ from app.processing import (
 from app.schemas import ActivityOut, ReportOut, TrainingMetrics, WeeklyBucket
 from app.services import get_profile, latest_checkin, list_activities
 from app.services.ingest import _all_summaries
+from app.services.plan_service import get_current_plan
 
 router = APIRouter(prefix="/api/mobile", tags=["mobile"])
 
@@ -97,6 +98,9 @@ def overview(session: Session = Depends(get_session)) -> dict:
         baseline = max(metrics.chronic_load_km, metrics.acute_load_km / 1.5, 20.0)
         plan = build_periodization(goal, baseline_km=baseline)
 
+    # Active multi-week training plan
+    active_plan = get_current_plan(session)
+
     return {
         "version": __version__,
         "mode": "garmin" if settings.garmin_enabled else "demo",
@@ -114,4 +118,5 @@ def overview(session: Session = Depends(get_session)) -> dict:
         "personal_records": prs,
         "pr_activity_ids": pr_activity_ids,
         "gamification": gamification,
+        "active_plan": active_plan.model_dump() if active_plan else None,
     }

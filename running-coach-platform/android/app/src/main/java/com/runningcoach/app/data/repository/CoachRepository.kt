@@ -6,8 +6,11 @@ import com.runningcoach.app.data.model.AthleteProfile
 import com.runningcoach.app.data.model.DailyCheckin
 import com.runningcoach.app.data.model.Overview
 import com.runningcoach.app.data.model.PeriodStats
+import com.runningcoach.app.data.model.PlanGenerateRequest
+import com.runningcoach.app.data.model.PlanSession
 import com.runningcoach.app.data.model.Report
 import com.runningcoach.app.data.model.StravaStatus
+import com.runningcoach.app.data.model.TrainingPlan
 import com.runningcoach.app.data.remote.ApiClient
 import com.runningcoach.app.data.settings.SettingsStore
 import kotlinx.coroutines.flow.first
@@ -46,4 +49,17 @@ class CoachRepository(private val settings: SettingsStore) {
     suspend fun stats(period: String = "all-time"): PeriodStats = api().getStats(period)
 
     suspend fun stravaStatus(): StravaStatus = api().stravaStatus()
+
+    suspend fun generatePlan(request: PlanGenerateRequest): TrainingPlan =
+        api().generatePlan(request)
+
+    suspend fun getCurrentPlan(): TrainingPlan? = runCatching { api().getCurrentPlan() }
+        .getOrNull()
+
+    suspend fun toggleSessionComplete(sessionId: Int): PlanSession =
+        api().toggleSessionComplete(sessionId)
+
+    suspend fun archivePlan(planId: Int) {
+        api().archivePlan(planId)
+    }
 }

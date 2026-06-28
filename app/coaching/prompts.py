@@ -8,7 +8,13 @@ from __future__ import annotations
 
 import json
 
-from app.schemas import AthleteProfile, AthleteSnapshot, RunSummary, TrainingMetrics
+from app.schemas import (
+    AthleteProfile,
+    AthleteSnapshot,
+    PlanGenerateRequest,
+    RunSummary,
+    TrainingMetrics,
+)
 
 # Shared coaching philosophy. Ordered priorities make the coach pursue
 # performance first and treat injury-prevention as a guardrail, not the goal —
@@ -247,4 +253,157 @@ def build_weekly_user_message(
             f"FC{r.avg_hr or '?'}"
             for r in runs[:14]
         )
+    )
+
+
+# ── Multi-week plan prompt ────────────────────────────────────────────────────
+
+MULTIWEEK_PLAN_SYSTEM_PROMPT = """\
+Sei un coach di atletica leggera di livello olimpico specializzato nella \
+pianificazione di programmi di preparazione a lungo termine.
+
+Stai generando un piano di allenamento multi-settimana COMPLETO e DETTAGLIATO.
+
+REGOLA ASSOLUTA: Rispondi SOLO con un oggetto JSON valido, senza markdown, \
+senza commenti, senza testo aggiuntivo prima o dopo. Il tuo output inizia con \
+{ e termina con }. Qualsiasi testo fuori dal JSON invalida la risposta.
+
+PRINCIPI DI PERIODIZZAZIONE:
+- Struttura a fasi: Base → Build → Specifico/Peak → Taper → Gara
+- Regola del 10%: non aumentare il volume settimanale di più del 10%
+- Settimana di scarico ogni 4a settimana: -20% di volume
+- Taper: 2-3 settimane, riduci il volume del 40-50% mantenendo l'intensità
+- Progressione del lungo: +2 km ogni 2 settimane nella fase Base/Build
+
+TIPI DI SEDUTA:
+- easy: corsa facile Z2 (conversazione possibile), passo comodo
+- long: lungo domenicale, il cuore della settimana
+- tempo: corsa a soglia Z3-Z4, passo controllato ma sfidante
+- intervals: ripetute di qualità con recupero (es. 5x1000 m, 3x3 km)
+- rest: riposo completo o cross-training leggero (stretching, camminata)
+- race: gara obiettivo
+- cross: cross-training (bici, nuoto, palestra) — recupero attivo
+- strides: allunghi brevi 80-100 m a fine seduta facile
+
+OGNI SETTIMANA DEVE AVERE ESATTAMENTE 7 SESSIONI (una per giorno 0=Lun → 6=Dom).
+I giorni di riposo sono session_type="rest", title="Riposo", description="Recupero completo".
+
+FORMATI:
+- target_pace: "M:SS/km" (es. "5:20/km") — solo per sedute con intensità specifica
+- target_duration_min: numero float (es. 45.0) — durata totale incluso riscaldamento
+- target_distance_km: distanza totale della seduta in km (incluso riscaldamento/defaticamento)
+- Per i giorni di riposo tutti i campi numerici sono null
+
+CALIBRAZIONE PACE:
+- Beginner maratona 4h30 → easy 6:30/km, lungo 6:45/km, tempo 5:50/km
+- Intermediate maratona 3h45 → easy 5:30/km, lungo 5:45/km, tempo 4:45/km
+- Advanced maratona 3h15 → easy 5:00/km, lungo 5:10/km, tempo 4:15/km
+- Scala proporzionalmente per 5K, 10K, mezza maratona
+
+DESCRIZIONI: In italiano, specifiche e concrete. Includi la struttura esatta \
+(es. "Riscaldamento 2 km + 3×3 km @ 4:15/km con 3 min recupero + defaticamento 2 km"). \
+Per le sedute facili includi il passo target. Per le ripetute include distanza, passo \
+e recupero. Le descrizioni devono essere utili per eseguire l'allenamento senza coach.
+
+FORMATO JSON RICHIESTO:
+{
+  "weeks_total": <numero intero>,
+  "start_date": "<YYYY-MM-DD>",
+  "weeks": [
+    {
+      "week_number": 1,
+      "phase": "<Base|Build|Specifico|Peak|Taper|Gara>",
+      "target_km": <float>,
+      "description": "<descrizione focus della settimana>",
+      "sessions": [
+        {
+          "day_of_week": 0,
+          "session_type": "<tipo>",
+          "title": "<titolo breve>",
+          "description": "<descrizione dettagliata>",
+          "target_distance_km": <float o null>,
+          "target_pace": "<M:SS/km o null>",
+          "target_duration_min": <float o null>
+        },
+        ... (esattamente 7 sessioni, day_of_week da 0 a 6)
+      ]
+    },
+    ... (tutte le settimane)
+  ]
+}
+"""
+
+
+def build_multiweek_plan_message(
+    request: PlanGenerateRequest,
+    profile: AthleteProfile | None,
+    metrics: TrainingMetrics | None,
+) -> str:
+    """Assemble the user-turn payload for multiweek plan generation."""
+    from datetime import date
+
+    today = date.today().isoformat()
+    goal_dist = {
+        "marathon": "42.195 km (maratona)",
+        "half": "21.0975 km (mezza maratona)",
+        "10k": "10 km",
+        "5k": "5 km",
+        "trail": "trail",
+    }.get(request.goal_type, request.goal_type)
+
+    level_it = {
+        "beginner": "principiante",
+        "intermediate": "intermedio",
+        "advanced": "avanzato",
+    }.get(request.level, request.level)
+
+    days_avail = request.days_per_week
+
+    # Derive baseline weekly volume from metrics or profile
+    baseline_km = 0.0
+    if metrics:
+        baseline_km = max(metrics.chronic_load_km, metrics.acute_load_km, 20.0)
+    elif profile and profile.weekly_runs:
+        baseline_km = profile.weekly_runs * 8.0  # rough estimate
+    else:
+        baseline_km = 30.0
+
+    # Weeks calculation
+    try:
+        from datetime import datetime as _dt
+        race_date = _dt.strptime(request.goal_date[:10], "%Y-%m-%d").date()
+        today_d = date.fromisoformat(today)
+        weeks_available = max(4, ((race_date - today_d).days + 6) // 7)
+    except (ValueError, TypeError):
+        weeks_available = 16
+
+    profile_bits = []
+    if profile:
+        if profile.age:
+            profile_bits.append(f"età {profile.age} anni")
+        if profile.level:
+            profile_bits.append(f"livello {profile.level}")
+        if profile.physiology and profile.physiology.lt2_pace:
+            profile_bits.append(f"soglia (LT2) {profile.physiology.lt2_pace}/km")
+        if profile.weekly_runs:
+            profile_bits.append(f"{profile.weekly_runs} uscite/settimana attuali")
+    profile_str = ", ".join(profile_bits) if profile_bits else "profilo non disponibile"
+
+    return (
+        f"Data di oggi: {today}\n"
+        f"Obiettivo: {goal_dist}\n"
+        f"Data gara: {request.goal_date}\n"
+        f"Tempo obiettivo: {request.goal_time or 'non specificato'}\n"
+        f"Livello atleta: {level_it}\n"
+        f"Giorni disponibili per settimana: {days_avail}\n"
+        f"Giorno del lungo: {['Lun','Mar','Mer','Gio','Ven','Sab','Dom'][request.long_run_day]} "
+        f"(day_of_week={request.long_run_day})\n"
+        f"Profilo atleta: {profile_str}\n"
+        f"Volume settimanale attuale: ~{baseline_km:.0f} km\n"
+        f"Settimane disponibili fino alla gara: {weeks_available}\n\n"
+        "Genera il piano COMPLETO con tutte le settimane. "
+        "Ogni settimana deve avere ESATTAMENTE 7 sessioni (day_of_week 0-6). "
+        "Rispetta la struttura di periodizzazione Base→Build→Specifico/Peak→Taper→Gara. "
+        "Calibra i passi al livello e al tempo obiettivo dell'atleta. "
+        "Ricorda: rispondi SOLO con il JSON, niente altro."
     )

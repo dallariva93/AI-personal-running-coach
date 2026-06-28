@@ -48,6 +48,7 @@ import com.runningcoach.app.ui.screens.StatsScreen
 import com.runningcoach.app.ui.screens.parseRoutePoints
 import com.runningcoach.app.ui.theme.RunningCoachTheme
 import com.runningcoach.app.ui.viewmodel.OverviewViewModel
+import com.runningcoach.app.ui.viewmodel.PlanViewModel
 import com.runningcoach.app.ui.viewmodel.SettingsViewModel
 import com.runningcoach.app.ui.viewmodel.StatsViewModel
 import com.runningcoach.app.ui.viewmodel.ViewModelFactory
@@ -69,12 +70,14 @@ fun AppScaffold(app: RunningCoachApp) {
     val overviewVm: OverviewViewModel = viewModel(factory = factory)
     val settingsVm: SettingsViewModel = viewModel(factory = factory)
     val statsVm: StatsViewModel = viewModel(factory = factory)
+    val planVm: PlanViewModel = viewModel(factory = factory)
 
     val state by overviewVm.state.collectAsState()
     val settings by settingsVm.settings.collectAsState()
     val exportState by settingsVm.exportState.collectAsState()
     val stravaStatus by settingsVm.stravaStatus.collectAsState()
     val statsState by statsVm.state.collectAsState()
+    val planState by planVm.state.collectAsState()
 
     // Resolve dark/light from the stored preference.
     val darkTheme = when (settings?.themeMode) {
@@ -95,6 +98,15 @@ fun AppScaffold(app: RunningCoachApp) {
             if (text != null) {
                 snackbar.showSnackbar(text)
                 overviewVm.clearMessage()
+            }
+        }
+
+        // Surface plan action results / errors as snackbars.
+        LaunchedEffect(planState.successMessage, planState.error) {
+            val text = planState.error ?: planState.successMessage
+            if (text != null) {
+                snackbar.showSnackbar(text)
+                planVm.clearMessage()
             }
         }
 
@@ -217,7 +229,14 @@ fun AppScaffold(app: RunningCoachApp) {
                     )
                 }
                 composable(Dest.Plan.route) {
-                    PlanScreen(state = state, onGeneratePlan = overviewVm::planWeekly)
+                    PlanScreen(
+                        state = planState,
+                        onGeneratePlan = planVm::generatePlan,
+                        onToggleSession = planVm::toggleSession,
+                        onArchivePlan = planVm::archivePlan,
+                        onShowGenerateDialog = planVm::showGenerateDialog,
+                        onDismissDialog = planVm::dismissDialog,
+                    )
                 }
                 composable(Dest.Stats.route) {
                     StatsScreen(
