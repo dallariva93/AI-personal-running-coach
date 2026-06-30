@@ -310,6 +310,41 @@ data class WorkoutSuggestRequest(
     val notes: String? = null,
 )
 
+/** One message in a conversational coach session. */
+data class ChatMessage(
+    @SerializedName("id") val id: Int = 0,
+    @SerializedName("session_id") val sessionId: Int = 0,
+    @SerializedName("role") val role: String,           // "user" | "assistant"
+    @SerializedName("content") val content: String,
+    @SerializedName("model_used") val modelUsed: String? = null,
+    @SerializedName("tier") val tier: String? = null,   // "simple" | "medium" | "complex"
+    @SerializedName("created_at") val createdAt: String? = null,
+)
+
+/** A persisted conversational coach session. */
+data class ChatSession(
+    @SerializedName("id") val id: Int,
+    @SerializedName("title") val title: String,
+    @SerializedName("created_at") val createdAt: String? = null,
+    @SerializedName("updated_at") val updatedAt: String? = null,
+    @SerializedName("message_count") val messageCount: Int = 0,
+)
+
+/** Request body for sending a chat message. */
+data class ChatSendRequest(
+    @SerializedName("session_id") val sessionId: Int? = null,
+    @SerializedName("message") val message: String,
+)
+
+/** Response from the chat send endpoint. */
+data class ChatSendResponse(
+    @SerializedName("session_id") val sessionId: Int,
+    @SerializedName("session_title") val sessionTitle: String,
+    @SerializedName("reply") val reply: String,
+    @SerializedName("model_used") val modelUsed: String,
+    @SerializedName("tier") val tier: String,
+)
+
 /** Strava connection + webhook status (mirrors app/schemas.py StravaStatus). */
 data class StravaStatus(
     @SerializedName("enabled") val enabled: Boolean = false,

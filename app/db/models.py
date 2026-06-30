@@ -400,3 +400,45 @@ class WorkoutSegment(Base):
             f"<WorkoutSegment pos={self.position} type={self.segment_type} "
             f"reps={self.repetitions}>"
         )
+
+
+class ChatSession(Base):
+    """A persistent conversation session with the AI coach."""
+
+    __tablename__ = "chat_sessions"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    title: Mapped[str] = mapped_column(String(200), default="Nuova chat")
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=_utcnow)
+    updated_at: Mapped[datetime] = mapped_column(DateTime, default=_utcnow)
+
+    messages: Mapped[list[ChatMessage]] = relationship(
+        "ChatMessage",
+        back_populates="session",
+        cascade="all, delete-orphan",
+        order_by="ChatMessage.created_at",
+    )
+
+    def __repr__(self) -> str:  # pragma: no cover
+        return f"<ChatSession {self.id} {self.title!r}>"
+
+
+class ChatMessage(Base):
+    """One turn (user or assistant) in a coach chat session."""
+
+    __tablename__ = "chat_messages"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    session_id: Mapped[int] = mapped_column(
+        Integer, ForeignKey("chat_sessions.id", ondelete="CASCADE"), index=True
+    )
+    role: Mapped[str] = mapped_column(String(16))  # "user" | "assistant"
+    content: Mapped[str] = mapped_column(Text)
+    model_used: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    tier: Mapped[str | None] = mapped_column(String(16), nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=_utcnow, index=True)
+
+    session: Mapped[ChatSession] = relationship("ChatSession", back_populates="messages")
+
+    def __repr__(self) -> str:  # pragma: no cover
+        return f"<ChatMessage {self.role} session={self.session_id}>"

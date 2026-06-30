@@ -48,6 +48,11 @@ class Settings(BaseSettings):
     anthropic_api_key: str = ""
     coach_model: str = "claude-haiku-4-5-20251001"
     planner_model: str = "claude-haiku-4-5-20251001"
+    # Chat model routing — set in prod: medium→sonnet, complex→opus
+    chat_router_model: str = "claude-haiku-4-5-20251001"
+    chat_simple_model: str = "claude-haiku-4-5-20251001"
+    chat_medium_model: str = "claude-haiku-4-5-20251001"   # prod: claude-sonnet-4-6
+    chat_complex_model: str = "claude-haiku-4-5-20251001"  # prod: claude-opus-4-8
     ai_max_retries: int = 2
     ai_timeout_seconds: int = 60
     # When the AI call fails, fall back to the offline rule-based coach.

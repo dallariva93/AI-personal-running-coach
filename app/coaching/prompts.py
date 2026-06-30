@@ -545,3 +545,98 @@ def build_workout_suggest_message(
         + (f"\nNote aggiuntive: {request.notes}" if request.notes else "")
         + "\n\nGenera il workout JSON. Ricorda: solo JSON valido, niente altro."
     )
+
+
+# ── Conversational coach prompts ─────────────────────────────────────────────
+
+CHAT_ROUTING_SYSTEM_PROMPT = """\
+Classifica la complessità della domanda dell'utente. \
+Rispondi SOLO con JSON valido: {"tier": "simple"} oppure {"tier": "medium"} \
+oppure {"tier": "complex"}. Nient'altro.
+
+simple: domande fattuali brevi, lookup di dati (km fatti, ultima corsa, prossima \
+sessione, definizioni, conferme semplici).
+medium: analisi settimanale, consigli allenamento, pianificazione giornaliera, \
+confronto periodi, ritmo da tenere, recupero.
+complex: analisi mensile approfondita, valutazione infortuni, strategia gara, \
+modifiche al piano, periodizzazione, combinazione di più fattori.
+"""
+
+
+def build_chat_system(
+    profile: "AthleteProfile | None",
+    metrics: "TrainingMetrics | None",
+    recent_runs: "list[RunSummary]",
+    active_plan_week: "str | None" = None,
+) -> str:
+    """Build the system prompt for the conversational coach with injected athlete context."""
+    from datetime import date
+
+    today = date.today().isoformat()
+
+    # Profile section
+    profile_lines: list[str] = []
+    if profile:
+        if profile.age:
+            profile_lines.append(f"Età: {profile.age} anni")
+        if profile.sex:
+            profile_lines.append(f"Sesso: {profile.sex}")
+        if profile.level:
+            profile_lines.append(f"Livello: {profile.level}")
+        if profile.experience_years:
+            profile_lines.append(f"Anni di corsa: {profile.experience_years}")
+        if profile.max_hr:
+            profile_lines.append(f"FC max: {profile.max_hr}")
+        if profile.goal:
+            g = profile.goal
+            profile_lines.append(
+                f"Obiettivo: {g.goalType} entro {g.goalDate}"
+                + (f" in {g.targetTime}" if g.targetTime else "")
+            )
+    profile_str = "\n".join(profile_lines) if profile_lines else "Profilo non disponibile."
+
+    # Metrics section
+    metrics_str = "Metriche non disponibili."
+    if metrics:
+        parts = [
+            f"CTL (fitness): {metrics.chronic_load_km:.1f} km",
+            f"ATL (fatica): {metrics.acute_load_km:.1f} km",
+            f"TSB (forma): {metrics.tsb:.1f}",
+            f"ACWR: {metrics.acwr:.2f}",
+        ]
+        if metrics.phase:
+            parts.append(f"Fase: {metrics.phase}")
+        if metrics.injury_risk:
+            parts.append(f"Rischio infortuni: {metrics.injury_risk}")
+        metrics_str = " · ".join(parts)
+
+    # Recent runs (last 10)
+    runs_lines: list[str] = []
+    for r in recent_runs[:10]:
+        line = f"  {r.date}: {r.activity_type} {r.distance_km:.1f} km"
+        if r.avg_pace:
+            line += f" @ {r.avg_pace}"
+        if r.avg_hr:
+            line += f" FC {r.avg_hr}"
+        runs_lines.append(line)
+    runs_str = "\n".join(runs_lines) if runs_lines else "  Nessuna corsa recente."
+
+    plan_section = (
+        f"\n[SETTIMANA CORRENTE DEL PIANO]\n{active_plan_week}"
+        if active_plan_week
+        else ""
+    )
+
+    return (
+        f"Sei un coach di corsa AI. Parli in italiano, tono diretto e professionale "
+        f"ma amichevole. Dai per scontato che l'atleta conosca le basi del running.\n\n"
+        f"Data di oggi: {today}\n\n"
+        f"[PROFILO ATLETA]\n{profile_str}\n\n"
+        f"[METRICHE ATTUALI]\n{metrics_str}\n\n"
+        f"[ULTIMI ALLENAMENTI]\n{runs_str}"
+        f"{plan_section}\n\n"
+        "Rispondi in modo conciso (max 3-4 frasi salvo analisi richieste). "
+        "Usa dati reali dall'atleta per personalizzare. "
+        "Non inventare dati non presenti. "
+        "Non dare diagnosi mediche (dolori persistenti → medico/fisio)."
+    )

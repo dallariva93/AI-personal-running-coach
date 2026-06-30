@@ -64,6 +64,12 @@ class Coach(Protocol):
         messages: list[dict],
     ) -> tuple[str, bool, str | None]: ...
 
+    def chat_message(
+        self,
+        messages: list[dict],
+        system: str,
+    ) -> tuple[str, str, str]: ...
+
 
 def _split_sections(text: str) -> tuple[str, str]:
     """Split a markdown response into (analysis, next_workout) by the headings."""
@@ -115,14 +121,15 @@ class AICoach:
         )
 
     def _call_chat(
-        self, system: str, messages: list[dict], max_tokens: int = 600
+        self, system: str, messages: list[dict], max_tokens: int = 600,
+        model: str | None = None,
     ) -> str:
-        """Multi-turn chat call — always uses Haiku for cost efficiency."""
-        haiku = "claude-haiku-4-5-20251001"
+        """Multi-turn chat call. Defaults to Haiku; pass model to override."""
+        _model = model or "claude-haiku-4-5-20251001"
 
         def _do() -> str:
             resp = self._get_client().messages.create(
-                model=haiku,
+                model=_model,
                 max_tokens=max_tokens,
                 system=system,
                 messages=messages,
@@ -131,7 +138,22 @@ class AICoach:
                 block.text for block in resp.content if getattr(block, "type", "") == "text"
             )
 
-        return retry_call(_do, retries=2, base_delay=1.0, description="haiku.chat")
+        return retry_call(_do, retries=2, base_delay=1.0, description=f"chat.{_model}")
+
+    def _route_message(self, message: str) -> str:
+        """Classify message complexity with Haiku. Returns 'simple'|'medium'|'complex'."""
+        try:
+            raw = self._call(
+                prompts.CHAT_ROUTING_SYSTEM_PROMPT,
+                message,
+                self.settings.chat_router_model,
+                max_tokens=20,
+            )
+            data = json.loads(raw.strip())
+            tier = data.get("tier", "simple")
+            return tier if tier in ("simple", "medium", "complex") else "simple"
+        except Exception:
+            return "simple"
 
     def analyze_run(
         self,
@@ -256,6 +278,30 @@ class AICoach:
         message = re.sub(r"§CTX§.*?§/CTX§", "", raw, flags=re.DOTALL)
         message = message.replace("§READY§", "").strip()
         return message, is_complete, runner_context
+
+    def chat_message(
+        self,
+        messages: list[dict],
+        system: str,
+    ) -> tuple[str, str, str]:
+        """Route a conversational message and return (reply, model_used, tier)."""
+        last_user = next(
+            (m["content"] for m in reversed(messages) if m["role"] == "user"),
+            "",
+        )
+        tier = self._route_message(last_user)
+        model = {
+            "simple": self.settings.chat_simple_model,
+            "medium": self.settings.chat_medium_model,
+            "complex": self.settings.chat_complex_model,
+        }[tier]
+        try:
+            reply = self._call_chat(system, messages, max_tokens=1000, model=model)
+        except Exception as exc:
+            logger.error("Chat message AI call failed: %s", exc)
+            reply, _, _ = self._fallback.chat_message(messages, system)
+            return reply, self._fallback.MODEL, tier
+        return reply, model, tier
 
     def _profile_text(self, profile: AthleteProfile | None) -> str:
         """Render the athlete profile for the system prompt.
@@ -803,6 +849,19 @@ class OfflineCoach:
             "Puoi comunque generare il piano: sarà calibrato sui tuoi allenamenti salvati.",
             True,
             None,
+        )
+
+    def chat_message(
+        self,
+        messages: list[dict],
+        system: str,
+    ) -> tuple[str, str, str]:
+        """Offline fallback: coaching chat not available without credentials."""
+        return (
+            "Modalità offline — il coaching conversazionale non è disponibile senza "
+            "credenziali Anthropic. Configura ANTHROPIC_API_KEY per usare questa funzione.",
+            self.MODEL,
+            "simple",
         )
 
     def plan_multiweek(

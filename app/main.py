@@ -15,6 +15,7 @@ from starlette.middleware.cors import CORSMiddleware
 
 from app import __version__
 from app.api import router as api_router
+from app.api.chat import router as chat_router
 from app.api.mobile import router as mobile_router
 from app.api.plan_multiweek import router as plan_multiweek_router
 from app.api.strava import router as strava_router
@@ -81,6 +82,7 @@ if _settings.cors_origin_list:
     )
 
 app.include_router(api_router)
+app.include_router(chat_router)
 app.include_router(mobile_router)
 app.include_router(plan_multiweek_router)
 app.include_router(strava_router)

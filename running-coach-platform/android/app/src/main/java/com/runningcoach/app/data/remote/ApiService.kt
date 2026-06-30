@@ -3,6 +3,10 @@ package com.runningcoach.app.data.remote
 import com.runningcoach.app.data.model.Activity
 import com.runningcoach.app.data.model.ActivityPatch
 import com.runningcoach.app.data.model.AthleteProfile
+import com.runningcoach.app.data.model.ChatMessage
+import com.runningcoach.app.data.model.ChatSendRequest
+import com.runningcoach.app.data.model.ChatSendResponse
+import com.runningcoach.app.data.model.ChatSession
 import com.runningcoach.app.data.model.DailyCheckin
 import com.runningcoach.app.data.model.Overview
 import com.runningcoach.app.data.model.PeriodStats
@@ -95,4 +99,16 @@ interface ApiService {
 
     @POST("api/workouts/suggest")
     suspend fun suggestWorkout(@Body request: WorkoutSuggestRequest): WorkoutTemplate
+
+    @POST("api/chat/send")
+    suspend fun sendChatMessage(@Body request: ChatSendRequest): ChatSendResponse
+
+    @GET("api/chat/sessions")
+    suspend fun getChatSessions(): List<ChatSession>
+
+    @GET("api/chat/{sessionId}/messages")
+    suspend fun getChatMessages(@Path("sessionId") sessionId: Int): List<ChatMessage>
+
+    @DELETE("api/chat/{sessionId}")
+    suspend fun deleteChatSession(@Path("sessionId") sessionId: Int)
 }

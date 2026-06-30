@@ -242,13 +242,14 @@
 ## TIER 4 — Grandi feature (3+ mesi)
 *Feature trasformative che cambiano la categoria. Alta complessità, altissimo impatto.*
 
-### 📋 23. Coach AI conversazionale (chat con memoria)
+### ✅ 23. Coach AI conversazionale (chat con memoria)
 **Perché:** Chatbot coaching 24/7 = differenziazione massima vs Strava/Garmin. Claude è perfetto per questo.  
-**Cosa manca:** L'AI genera analisi one-shot; nessuna sessione conversazionale con contesto persistente.  
-**Implementazione:**
-- Backend: tabella `chat_sessions`; `POST /api/chat` → Claude API con history + tool use (accesso metriche in real-time)
-- Android: ChatScreen con bubble UI
-- **Effort:** 3–4 settimane (solo chat) / 2–3 mesi (con tool use + memory completa)
+**Implementato:**
+- Backend: `chat_sessions` + `chat_messages` (SQLite, migrazione `c5d6e7f8`); `POST /api/chat/send`, `GET /api/chat/sessions`, `GET /api/chat/{id}/messages`, `DELETE /api/chat/{id}`
+- Routing intelligente: Haiku classifica la complessità → `simple` (Haiku) / `medium` (Sonnet) / `complex` (Opus); in dev tutti Haiku
+- System prompt contestuale: metriche CTL/ATL/TSB, ultime 10 corse, piano attivo
+- Sessioni persistenti con titolo auto-generato dal primo messaggio
+- Android: `ChatScreen` (bubble UI, tier chip), `ChatViewModel`, tab "Coach" nella NavigationBar
 
 ---
 
@@ -299,7 +300,7 @@
 | 20 | Audio coaching durante corsa | 📋 | Altissimo | 3–4 sett | 3 |
 | 21 | Feature sociali + condivisione | 📋 | Altissimo | 4–6 sett | 3 |
 | 22 | iOS app | 📋 | Altissimo | 4–8 sett | 3 |
-| 23 | Chat AI conversazionale | 📋 | Altissimo | 3–4 sett | 4 |
+| 23 | Chat AI conversazionale | ✅ | Altissimo | 3–4 sett | 4 |
 | 24 | Multi-sport | 📋 | Alto | 2–3 mesi | 4 |
 | 25 | WearOS / watchOS app | 📋 | Alto | 2–3 mesi | 4 |
 | 26 | Marketplace coach umani | 📋 | Altissimo | 4–6 mesi | 4 |

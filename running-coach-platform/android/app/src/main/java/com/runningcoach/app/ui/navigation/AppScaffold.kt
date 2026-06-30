@@ -5,6 +5,7 @@ import android.net.Uri
 import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.foundation.layout.padding
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.AutoAwesome
 import androidx.compose.material.icons.filled.BarChart
 import androidx.compose.material.icons.filled.CalendarMonth
 import androidx.compose.material.icons.filled.DirectionsRun
@@ -40,6 +41,7 @@ import com.runningcoach.app.RunningCoachApp
 import com.runningcoach.app.data.model.AthleteProfile
 import com.runningcoach.app.ui.screens.ActivitiesScreen
 import com.runningcoach.app.ui.screens.ActivityDetailScreen
+import com.runningcoach.app.ui.screens.ChatScreen
 import com.runningcoach.app.ui.screens.HomeScreen
 import com.runningcoach.app.ui.screens.MapFullscreenScreen
 import com.runningcoach.app.ui.screens.PlanScreen
@@ -48,6 +50,7 @@ import com.runningcoach.app.ui.screens.StatsScreen
 import com.runningcoach.app.ui.screens.WorkoutScreen
 import com.runningcoach.app.ui.screens.parseRoutePoints
 import com.runningcoach.app.ui.theme.RunningCoachTheme
+import com.runningcoach.app.ui.viewmodel.ChatViewModel
 import com.runningcoach.app.ui.viewmodel.OverviewViewModel
 import com.runningcoach.app.ui.viewmodel.PlanViewModel
 import com.runningcoach.app.ui.viewmodel.SettingsViewModel
@@ -62,6 +65,7 @@ private enum class Dest(val route: String, val label: String, val icon: ImageVec
     Home("home", "Oggi", Icons.Filled.Today),
     Activities("activities", "Allenamenti", Icons.Filled.DirectionsRun),
     Plan("plan", "Piano", Icons.Filled.CalendarMonth),
+    Chat("chat", "Coach", Icons.Filled.AutoAwesome),
     Stats("stats", "Statistiche", Icons.Filled.BarChart),
     Settings("settings", "Impostazioni", Icons.Filled.Settings),
 }
@@ -74,6 +78,7 @@ fun AppScaffold(app: RunningCoachApp) {
     val statsVm: StatsViewModel = viewModel(factory = factory)
     val planVm: PlanViewModel = viewModel(factory = factory)
     val workoutVm: WorkoutViewModel = viewModel(factory = factory)
+    val chatVm: ChatViewModel = viewModel(factory = factory)
 
     val state by overviewVm.state.collectAsState()
     val settings by settingsVm.settings.collectAsState()
@@ -82,6 +87,7 @@ fun AppScaffold(app: RunningCoachApp) {
     val statsState by statsVm.state.collectAsState()
     val planState by planVm.state.collectAsState()
     val workoutState by workoutVm.state.collectAsState()
+    val chatState by chatVm.state.collectAsState()
 
     // Resolve dark/light from the stored preference.
     val darkTheme = when (settings?.themeMode) {
@@ -271,6 +277,13 @@ fun AppScaffold(app: RunningCoachApp) {
                         onDelete = workoutVm::deleteWorkout,
                         onLoadIntoBuilder = workoutVm::loadIntoBuilder,
                         onClearBuilder = workoutVm::clearBuilder,
+                    )
+                }
+                composable(Dest.Chat.route) {
+                    ChatScreen(
+                        state = chatState,
+                        onSend = chatVm::sendMessage,
+                        onNewSession = chatVm::newSession,
                     )
                 }
                 composable(Dest.Stats.route) {

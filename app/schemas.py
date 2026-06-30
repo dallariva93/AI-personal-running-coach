@@ -536,6 +536,51 @@ class PlanGenerateRequest(BaseModel):
     runner_context: str | None = None  # JSON summary from pre-plan chat
 
 
+# ── Coach chat schemas ───────────────────────────────────────────────────────
+
+class ChatMessageOut(BaseModel):
+    """One turn in a coach chat session."""
+
+    model_config = ConfigDict(from_attributes=True)
+
+    id: int
+    session_id: int
+    role: str
+    content: str
+    model_used: str | None = None
+    tier: str | None = None
+    created_at: datetime
+
+
+class ChatSessionOut(BaseModel):
+    """A coach chat session with its message count."""
+
+    model_config = ConfigDict(from_attributes=True)
+
+    id: int
+    title: str
+    created_at: datetime
+    updated_at: datetime
+    message_count: int = 0
+
+
+class ChatSendRequest(BaseModel):
+    """Request body for sending a chat message to the coach."""
+
+    session_id: int | None = None
+    message: str
+
+
+class ChatSendResponse(BaseModel):
+    """Response after sending a chat message."""
+
+    session_id: int
+    session_title: str
+    reply: str
+    model_used: str
+    tier: str
+
+
 # ── Workout builder schemas ───────────────────────────────────────────────────
 
 

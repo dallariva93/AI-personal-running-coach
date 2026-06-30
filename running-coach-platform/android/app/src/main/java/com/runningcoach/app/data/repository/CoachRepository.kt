@@ -3,6 +3,10 @@ package com.runningcoach.app.data.repository
 import com.runningcoach.app.data.model.Activity
 import com.runningcoach.app.data.model.ActivityPatch
 import com.runningcoach.app.data.model.AthleteProfile
+import com.runningcoach.app.data.model.ChatMessage
+import com.runningcoach.app.data.model.ChatSendRequest
+import com.runningcoach.app.data.model.ChatSendResponse
+import com.runningcoach.app.data.model.ChatSession
 import com.runningcoach.app.data.model.DailyCheckin
 import com.runningcoach.app.data.model.Overview
 import com.runningcoach.app.data.model.PeriodStats
@@ -93,4 +97,16 @@ class CoachRepository(private val settings: SettingsStore) {
             notes = notes,
         )
     )
+
+    suspend fun sendChatMessage(message: String, sessionId: Int? = null): ChatSendResponse =
+        api().sendChatMessage(ChatSendRequest(sessionId = sessionId, message = message))
+
+    suspend fun getChatSessions(): List<ChatSession> = api().getChatSessions()
+
+    suspend fun getChatMessages(sessionId: Int): List<ChatMessage> =
+        api().getChatMessages(sessionId)
+
+    suspend fun deleteChatSession(sessionId: Int) {
+        api().deleteChatSession(sessionId)
+    }
 }
