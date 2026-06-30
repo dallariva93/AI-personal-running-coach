@@ -144,7 +144,11 @@ def backfill(limit: int = 30, session: Session = Depends(get_session)) -> dict:
     account = strava_sync.get_account(session)
     if account is None:
         raise HTTPException(status_code=400, detail="Strava non collegato.")
-    from app.collection.strava import synthesize_strava
+    from app.collection.strava import (
+        strava_sport,
+        synthesize_cross_training_strava,
+        synthesize_strava,
+    )
     from app.services.ingest import upsert_activity
 
     client = StravaClient(get_settings())
@@ -152,12 +156,15 @@ def backfill(limit: int = 30, session: Session = Depends(get_session)) -> dict:
     activities = client.list_activities(token, per_page=limit)
     imported = 0
     for activity in activities:
-        sport = str(activity.get("sport_type") or activity.get("type") or "").lower()
-        if "run" not in sport:
+        sport = strava_sport(activity)
+        if sport is None:
             continue
         # The list endpoint returns summary activities; that's enough for the
         # core fields. Detailed splits/description fill in on the next webhook.
-        upsert_activity(session, synthesize_strava(activity))
+        if sport == "run":
+            upsert_activity(session, synthesize_strava(activity))
+        else:
+            upsert_activity(session, synthesize_cross_training_strava(activity, sport))
         imported += 1
     session.commit()
     return {"imported": imported, "scanned": len(activities)}

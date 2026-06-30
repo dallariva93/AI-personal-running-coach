@@ -20,7 +20,12 @@ from typing import Any
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
-from app.collection.strava import StravaClient, synthesize_strava
+from app.collection.strava import (
+    StravaClient,
+    strava_sport,
+    synthesize_cross_training_strava,
+    synthesize_strava,
+)
 from app.config import Settings, get_settings
 from app.db.models import Activity, StravaAccount, StravaWebhookEvent
 from app.exceptions import CollectionError
@@ -134,11 +139,6 @@ def count_pending(session: Session) -> int:
     )
 
 
-def _is_run(activity: dict[str, Any]) -> bool:
-    sport = str(activity.get("sport_type") or activity.get("type") or "").lower()
-    return "run" in sport
-
-
 def process_event(
     session: Session,
     event: StravaWebhookEvent,
@@ -146,7 +146,9 @@ def process_event(
 ) -> str:
     """Process a single webhook event. Returns the resulting status.
 
-    * ``activity``/``create``|``update`` → fetch + map + upsert (running only).
+    * ``activity``/``create``|``update`` → fetch + map + upsert. Running maps
+      via the full run pipeline; bike/swim/strength map as cross-training
+      (Feature 24). Unsupported sports are ``skipped``.
     * ``activity``/``delete`` → remove the stored activity if present.
     * anything else (athlete updates, deauthorizations) → ``skipped``.
     """
@@ -174,11 +176,15 @@ def process_event(
         status = "pending" if event.attempts < _MAX_ATTEMPTS else "error"
         return _finish(session, event, status, str(exc))
 
-    if not _is_run(activity):
+    sport = strava_sport(activity)
+    if sport is None:
         return _finish(session, event, "skipped")
 
-    run = synthesize_strava(activity)
-    upsert_activity(session, run)
+    if sport == "run":
+        summary = synthesize_strava(activity)
+    else:
+        summary = synthesize_cross_training_strava(activity, sport)
+    upsert_activity(session, summary)
     return _finish(session, event, "done")
 
 

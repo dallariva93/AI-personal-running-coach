@@ -40,6 +40,10 @@ class Activity(Base):
     strava_activity_id: Mapped[str | None] = mapped_column(String(64), nullable=True, index=True)
 
     date: Mapped[str] = mapped_column(String(10), index=True)  # ISO date YYYY-MM-DD
+    # Sport discipline. "run" (default) feeds the running coaching pipeline;
+    # "bike"/"swim"/"strength" are cross-training, tracked but excluded from
+    # running load/form/PR/streak metrics. See Feature 24 (multi-sport).
+    sport: Mapped[str] = mapped_column(String(16), default="run", index=True)
     activity_type: Mapped[str] = mapped_column(String(32), default="easy")  # easy/tempo/...
     duration_min: Mapped[float] = mapped_column(Float, default=0.0)
     distance_km: Mapped[float] = mapped_column(Float, default=0.0)

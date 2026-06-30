@@ -39,6 +39,7 @@ def _activity_to_summary(a: Activity) -> RunSummary:
         garmin_activity_id=a.garmin_activity_id,
         strava_activity_id=a.strava_activity_id,
         date=a.date,
+        sport=a.sport,
         activity_type=a.activity_type,
         duration_min=a.duration_min,
         distance_km=a.distance_km,
@@ -96,6 +97,7 @@ def upsert_activity(session: Session, run: RunSummary) -> Activity:
         existing.strava_activity_id = run.strava_activity_id
 
     existing.date = run.date
+    existing.sport = run.sport
     existing.activity_type = run.activity_type
     existing.duration_min = run.duration_min
     existing.distance_km = run.distance_km
@@ -313,9 +315,51 @@ def _refresh_physiology(session: Session) -> None:
 
 
 def list_activities(session: Session, limit: int = 50) -> list[Activity]:
+    """List running activities only (cross-training has its own listing)."""
     return list(
-        session.scalars(select(Activity).order_by(Activity.date.desc()).limit(limit)).all()
+        session.scalars(
+            select(Activity)
+            .where(Activity.sport == "run")
+            .order_by(Activity.date.desc())
+            .limit(limit)
+        ).all()
     )
+
+
+def list_cross_training(session: Session, limit: int = 50) -> list[Activity]:
+    """List bike/swim/strength activities (Feature 24), newest first."""
+    return list(
+        session.scalars(
+            select(Activity)
+            .where(Activity.sport != "run")
+            .order_by(Activity.date.desc())
+            .limit(limit)
+        ).all()
+    )
+
+
+def ingest_cross_training(
+    session: Session, limit: int | None = None, source: ActivitySource | None = None
+) -> list[Activity]:
+    """Pull recent bike/swim/strength activities from the source and persist.
+
+    Garmin's manual-sync counterpart to :func:`ingest_runs`. Cross-training is
+    stored in the same table but tagged with ``sport`` so it never enters the
+    running load/form pipeline. Sources without cross-training support (e.g.
+    minimal test doubles) are handled gracefully.
+    """
+    settings = get_settings()
+    limit = limit or settings.fetch_limit
+    source = source or get_source(settings)
+
+    fetch = getattr(source, "get_recent_cross_training", None)
+    if not callable(fetch):
+        return []
+
+    activities = fetch(limit)
+    saved = [upsert_activity(session, a) for a in activities]
+    session.flush()
+    return saved
 
 
 def list_reports(session: Session, limit: int = 20) -> list[CoachingReport]:
@@ -327,7 +371,14 @@ def list_reports(session: Session, limit: int = 20) -> list[CoachingReport]:
 
 
 def _all_summaries(session: Session) -> list[RunSummary]:
-    rows = session.scalars(select(Activity).order_by(Activity.date.desc())).all()
+    """Running activities only — the running coaching pipeline must stay pure.
+
+    Cross-training (bike/swim/strength) is deliberately excluded so it never
+    pollutes CTL/ATL/TSB, ACWR, intensity distribution, PRs or streaks.
+    """
+    rows = session.scalars(
+        select(Activity).where(Activity.sport == "run").order_by(Activity.date.desc())
+    ).all()
     return [_activity_to_summary(a) for a in rows]
 
 

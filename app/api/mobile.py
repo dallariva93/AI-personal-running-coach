@@ -71,7 +71,11 @@ def overview(session: Session = Depends(get_session)) -> dict:
 
     settings = get_settings()
     summaries = _all_summaries(session)
-    all_activities_orm = list(session.scalars(sa_select(ActivityModel)).all())
+    # Running only: PRs, streaks and badges are running achievements and must
+    # not count cross-training (Feature 24).
+    all_activities_orm = list(
+        session.scalars(sa_select(ActivityModel).where(ActivityModel.sport == "run")).all()
+    )
     profile = get_profile(session)
     checkin = latest_checkin(session)
     metrics: TrainingMetrics = compute_metrics(summaries, profile=profile, checkin=checkin)

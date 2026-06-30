@@ -4,7 +4,12 @@ from __future__ import annotations
 
 import json
 
-from app.collection.strava import build_authorize_url, decode_polyline, synthesize_strava
+from app.collection.strava import (
+    build_authorize_url,
+    decode_polyline,
+    synthesize_cross_training_strava,
+    synthesize_strava,
+)
 
 
 def test_decode_polyline_google_reference_vector():
@@ -85,8 +90,112 @@ def test_synthesize_strava_handles_missing_optional_fields():
     assert run.splits_km is None
 
 
+def test_synthesize_strava_classifies_race_and_intervals_by_workout_type():
+    race = synthesize_strava(
+        {"id": 10, "type": "Run", "distance": 21000.0, "moving_time": 5400, "workout_type": 1}
+    )
+    assert race.activity_type == "gara"
+    intervals = synthesize_strava(
+        {"id": 11, "type": "Run", "distance": 8000.0, "moving_time": 2400, "workout_type": 3}
+    )
+    assert intervals.activity_type == "intervalli"
+
+
+def test_synthesize_cross_training_strava_bike_with_polyline():
+    summary = synthesize_cross_training_strava(
+        {
+            "id": 88,
+            "type": "Ride",
+            "distance": 30000.0,
+            "moving_time": 3600,
+            "start_date_local": "2026-06-21T09:00:00Z",
+            "total_elevation_gain": 350.0,
+            "map": {"summary_polyline": "_p~iF~ps|U_ulLnnqC_mqNvxq`@"},
+        },
+        "bike",
+    )
+    assert summary.sport == "bike"
+    assert summary.distance_km == 30.0
+    assert summary.elevation_gain_m == 350.0
+    assert summary.avg_pace is None  # bike → no pace
+    coords = json.loads(summary.route_polyline)
+    assert len(coords) == 3
+
+
 def test_build_authorize_url_contains_params():
-    url = build_authorize_url("999", "https://x.dev/api/strava/callback")
+    url = build_authorize_url("999", "https://x.dev/api/strava/callback", state="xyz")
     assert url.startswith("https://www.strava.com/oauth/authorize?")
     assert "client_id=999" in url
     assert "activity%3Aread_all" in url  # scope url-encoded
+    assert "state=xyz" in url
+
+
+# ── StravaClient REST surface (fake HTTP) ────────────────────────────────────
+
+
+class _FakeResponse:
+    def __init__(self, payload, status=200):
+        self._payload = payload
+        self.status_code = status
+
+    def json(self):
+        return self._payload
+
+    def raise_for_status(self):
+        if self.status_code >= 400:
+            raise RuntimeError(f"HTTP {self.status_code}")
+
+
+class _FakeHTTP:
+    def __init__(self, payload):
+        self._payload = payload
+        self.calls = []
+
+    def post(self, url, **kwargs):
+        self.calls.append(("POST", url))
+        return _FakeResponse(self._payload)
+
+    def get(self, url, **kwargs):
+        self.calls.append(("GET", url))
+        return _FakeResponse(self._payload)
+
+    def delete(self, url, **kwargs):
+        self.calls.append(("DELETE", url))
+        return _FakeResponse({})
+
+
+def test_strava_client_token_and_activity_calls():
+    from app.collection.strava import StravaClient
+    from app.config import get_settings
+
+    http = _FakeHTTP({"access_token": "a", "refresh_token": "r", "expires_at": 123})
+    client = StravaClient(get_settings(), session=http)
+
+    tokens = client.exchange_code("code123")
+    assert tokens["access_token"] == "a"
+    assert client.refresh_token("r")["refresh_token"] == "r"
+
+    http_act = _FakeHTTP({"id": 1, "type": "Run"})
+    client2 = StravaClient(get_settings(), session=http_act)
+    assert client2.get_activity("tok", 1)["id"] == 1
+
+    http_list = _FakeHTTP([{"id": 1}, {"id": 2}])
+    client3 = StravaClient(get_settings(), session=http_list)
+    assert len(client3.list_activities("tok")) == 2
+
+
+def test_strava_client_subscription_calls():
+    from app.collection.strava import StravaClient
+    from app.config import get_settings
+
+    http = _FakeHTTP([{"id": 7}])
+    client = StravaClient(get_settings(), session=http)
+    assert client.view_subscriptions() == [{"id": 7}]
+
+    http_create = _FakeHTTP({"id": 8})
+    client2 = StravaClient(get_settings(), session=http_create)
+    assert client2.create_subscription("https://cb", "verify")["id"] == 8
+
+    # delete returns None and issues a DELETE.
+    assert client.delete_subscription(7) is None
+    assert any(c[0] == "DELETE" for c in http.calls)

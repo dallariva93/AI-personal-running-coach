@@ -22,7 +22,9 @@ from app.collection.synthesize import (
     extract_hr_zones_from_timezones,
     extract_splits,
     extract_weather,
+    garmin_sport,
     synthesize,
+    synthesize_cross_training,
 )
 from app.config import Settings, get_settings
 from app.exceptions import CollectionError
@@ -33,6 +35,7 @@ from app.utils import retry_call
 logger = get_logger("app.collection")
 
 _DEMO_DATA = Path(__file__).resolve().parent.parent.parent / "data" / "demo_activities.json"
+_DEMO_CROSS = Path(__file__).resolve().parent.parent.parent / "data" / "demo_cross_training.json"
 
 
 class ActivitySource(Protocol):
@@ -41,6 +44,10 @@ class ActivitySource(Protocol):
     def get_recent_runs(
         self, limit: int = 10, skip_gps_for: set[str] | None = None
     ) -> list[RunSummary]: ...
+
+    def get_recent_cross_training(self, limit: int = 20) -> list[RunSummary]:
+        """Return recent cross-training (bike/swim/strength) activities."""
+        ...
 
 
 def _is_running(activity: dict[str, Any]) -> bool:
@@ -52,8 +59,11 @@ def _is_running(activity: dict[str, Any]) -> bool:
 class DemoSource:
     """Returns bundled sample runs. Always available, no network, no cost."""
 
-    def __init__(self, path: Path | str = _DEMO_DATA) -> None:
+    def __init__(
+        self, path: Path | str = _DEMO_DATA, cross_path: Path | str = _DEMO_CROSS
+    ) -> None:
         self.path = Path(path)
+        self.cross_path = Path(cross_path)
 
     def get_recent_runs(
         self, limit: int = 10, skip_gps_for: set[str] | None = None
@@ -64,6 +74,19 @@ class DemoSource:
         runs = [synthesize(a) for a in raw if _is_running(a)]
         runs.sort(key=lambda r: r.date, reverse=True)
         return runs[:limit]
+
+    def get_recent_cross_training(self, limit: int = 20) -> list[RunSummary]:
+        if not self.cross_path.exists():
+            return []
+        raw = json.loads(self.cross_path.read_text(encoding="utf-8"))
+        out: list[RunSummary] = []
+        for activity in raw:
+            sport = garmin_sport(activity)
+            if sport is None:
+                continue
+            out.append(synthesize_cross_training(activity, sport))
+        out.sort(key=lambda r: r.date, reverse=True)
+        return out[:limit]
 
 
 class GarminSource:
@@ -121,6 +144,25 @@ class GarminSource:
                 run = run.model_copy(update=extras)
             runs.append(run)
         return runs
+
+    def get_recent_cross_training(self, limit: int = 20) -> list[RunSummary]:
+        """Fetch recent bike/swim/strength activities from Garmin (manual sync).
+
+        Pulls a wider activity window (cross-training is interleaved with runs)
+        and keeps only the tracked cross-training disciplines. Kept deliberately
+        light — just the summary fields, no per-activity detail enrichment — so
+        a manual multi-sport sync stays cheap on the Garmin API.
+        """
+        activities = self.get_recent_activities(max(limit * 3, limit))
+        out: list[RunSummary] = []
+        for activity in activities:
+            sport = garmin_sport(activity)
+            if sport is None:
+                continue
+            out.append(synthesize_cross_training(activity, sport))
+            if len(out) >= limit:
+                break
+        return out
 
     def get_recent_activities(self, limit: int = 10) -> list[dict[str, Any]]:
         """Return the raw Garmin activity dicts, *without* filtering by type.

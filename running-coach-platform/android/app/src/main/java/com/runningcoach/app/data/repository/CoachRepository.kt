@@ -47,6 +47,10 @@ class CoachRepository(private val settings: SettingsStore) {
     suspend fun ingestWellness(): Int =
         runCatching { api().ingestWellness()["days_upserted"] ?: 0 }.getOrDefault(0)
 
+    suspend fun ingestCrossTraining(): List<Activity> = api().ingestCrossTraining()
+
+    suspend fun crossTraining(limit: Int = 50): List<Activity> = api().crossTraining(limit)
+
     suspend fun analyze(activityId: Int? = null): Report = api().analyze(activityId)
 
     suspend fun planWeekly(): Report = api().planWeekly()

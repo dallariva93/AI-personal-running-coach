@@ -1,0 +1,54 @@
+[
+  {
+    "activityId": 9000001,
+    "activityName": "Giro in bici mattutino",
+    "startTimeLocal": "2026-06-28 08:15:00",
+    "activityType": {"typeKey": "road_biking"},
+    "distance": 42300.0,
+    "duration": 5400.0,
+    "averageHR": 132,
+    "maxHR": 161,
+    "elevationGain": 480.0
+  },
+  {
+    "activityId": 9000002,
+    "activityName": "Nuoto in piscina",
+    "startTimeLocal": "2026-06-26 19:00:00",
+    "activityType": {"typeKey": "lap_swimming"},
+    "distance": 2000.0,
+    "duration": 2700.0,
+    "averageHR": 128,
+    "maxHR": 148
+  },
+  {
+    "activityId": 9000003,
+    "activityName": "Sessione forza gambe",
+    "startTimeLocal": "2026-06-25 18:30:00",
+    "activityType": {"typeKey": "strength_training"},
+    "distance": 0.0,
+    "duration": 3300.0,
+    "averageHR": 110,
+    "maxHR": 142
+  },
+  {
+    "activityId": 9000004,
+    "activityName": "MTB collina",
+    "startTimeLocal": "2026-06-22 09:40:00",
+    "activityType": {"typeKey": "mountain_biking"},
+    "distance": 28700.0,
+    "duration": 6000.0,
+    "averageHR": 138,
+    "maxHR": 172,
+    "elevationGain": 720.0
+  },
+  {
+    "activityId": 9000005,
+    "activityName": "Nuoto acque libere",
+    "startTimeLocal": "2026-06-20 07:30:00",
+    "activityType": {"typeKey": "open_water_swimming"},
+    "distance": 1500.0,
+    "duration": 2100.0,
+    "averageHR": 134,
+    "maxHR": 152
+  }
+]

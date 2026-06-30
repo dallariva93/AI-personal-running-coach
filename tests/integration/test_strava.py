@@ -92,15 +92,33 @@ def test_process_create_event_upserts_running_activity(session):
     assert act.distance_km == 5.0
 
 
-def test_process_event_skips_non_running(session):
+def test_process_event_upserts_cross_training(session):
+    """A bike ride is now ingested as cross-training (Feature 24), not skipped."""
     _make_account(session)
     event = strava_sync.enqueue_event(
         session,
         {"object_type": "activity", "object_id": 8, "aspect_type": "create", "owner_id": 42},
     )
-    fake = FakeStravaClient(activity={"id": 8, "type": "Ride", "distance": 20000.0})
+    fake = FakeStravaClient(
+        activity={"id": 8, "type": "Ride", "distance": 20000.0, "moving_time": 3600}
+    )
+    assert strava_sync.process_event(session, event, fake) == "done"
+    act = session.scalar(select(Activity).where(Activity.strava_activity_id == "8"))
+    assert act is not None
+    assert act.sport == "bike"
+    assert act.distance_km == 20.0
+
+
+def test_process_event_skips_unsupported_sport(session):
+    """Sports we don't track (e.g. alpine ski) are still skipped."""
+    _make_account(session)
+    event = strava_sync.enqueue_event(
+        session,
+        {"object_type": "activity", "object_id": 9, "aspect_type": "create", "owner_id": 42},
+    )
+    fake = FakeStravaClient(activity={"id": 9, "type": "AlpineSki", "distance": 12000.0})
     assert strava_sync.process_event(session, event, fake) == "skipped"
-    assert session.scalar(select(Activity).where(Activity.strava_activity_id == "8")) is None
+    assert session.scalar(select(Activity).where(Activity.strava_activity_id == "9")) is None
 
 
 def test_process_delete_event_removes_activity(session):
@@ -194,3 +212,38 @@ def test_webhook_post_ignores_malformed_payload(client):
     resp = client.post("/api/strava/webhook", json={"foo": "bar"})
     assert resp.status_code == 200
     assert resp.json()["detail"] == "ignored"
+
+
+def _enable_strava(monkeypatch):
+    from app.config import get_settings
+
+    monkeypatch.setenv("STRAVA_CLIENT_ID", "123")
+    monkeypatch.setenv("STRAVA_CLIENT_SECRET", "secret")
+    monkeypatch.setenv("STRAVA_PUBLIC_BASE_URL", "https://coach.example.com")
+    get_settings.cache_clear()
+
+
+def test_strava_enabled_surface(client, monkeypatch):
+    """With credentials present, connect redirects and status reports enabled."""
+    _enable_strava(monkeypatch)
+
+    # connect → 307 redirect to Strava's consent screen.
+    resp = client.get("/api/strava/connect", follow_redirects=False)
+    assert resp.status_code in (302, 307)
+    assert "strava.com" in resp.headers["location"]
+
+    # status → enabled, not yet connected, with an authorize URL.
+    status = client.get("/api/strava/status").json()
+    assert status["enabled"] is True
+    assert status["connected"] is False
+    assert status["authorize_url"]
+
+    # process drains an empty queue without error.
+    assert client.post("/api/strava/process").json() == {"processed": {}}
+
+    # backfill with no connected account → 400.
+    assert client.post("/api/strava/backfill").status_code == 400
+
+    from app.config import get_settings
+
+    get_settings.cache_clear()

@@ -54,9 +54,11 @@ from app.schemas import (
 )
 from app.services import (
     get_profile,
+    ingest_cross_training,
     ingest_runs,
     latest_checkin,
     list_activities,
+    list_cross_training,
     list_reports,
     run_single_analysis,
     run_weekly_plan,
@@ -159,6 +161,26 @@ def post_ingest_wellness(session: Session = Depends(get_session)) -> dict:
     count = ingest_wellness(session)
     _commit(session)
     return {"days_upserted": count}
+
+
+@router.post("/ingest/cross-training", response_model=list[ActivityOut])
+def post_ingest_cross_training(
+    limit: int | None = None, session: Session = Depends(get_session)
+):
+    """Manually sync bike/swim/strength activities from Garmin (Feature 24)."""
+    saved = ingest_cross_training(session, limit=limit)
+    _commit(session)
+    for a in saved:
+        session.refresh(a)
+    return saved
+
+
+@router.get("/activities/cross-training", response_model=list[ActivityOut])
+def get_cross_training(
+    limit: int = 50, session: Session = Depends(get_session)
+) -> list[Activity]:
+    """List stored bike/swim/strength activities, newest first (Feature 24)."""
+    return list_cross_training(session, limit=limit)
 
 
 @router.get("/profile", response_model=AthleteProfile)
@@ -286,7 +308,9 @@ def get_personal_records(session: Session = Depends(get_session)) -> list[Person
 
     from app.db.models import Activity as ActivityModel
 
-    activities = session.scalars(sa_select(ActivityModel)).all()
+    activities = session.scalars(
+        sa_select(ActivityModel).where(ActivityModel.sport == "run")
+    ).all()
     return [PersonalRecord(**r) for r in compute_personal_records(list(activities))]
 
 
@@ -297,7 +321,9 @@ def get_gamification(session: Session = Depends(get_session)) -> GamificationDat
 
     from app.db.models import Activity as ActivityModel
 
-    activities = list(session.scalars(sa_select(ActivityModel)).all())
+    activities = list(
+        session.scalars(sa_select(ActivityModel).where(ActivityModel.sport == "run")).all()
+    )
     current, best = compute_streak(activities)
     badges = [Badge(**b) for b in compute_badges(activities, current, best)]
     return GamificationData(
@@ -325,7 +351,7 @@ def get_stats(period: str = "all-time", session: Session = Depends(get_session))
             detail=f"period must be one of {sorted(_VALID_PERIODS)}",
         )
 
-    stmt = sa_select(ActivityModel)
+    stmt = sa_select(ActivityModel).where(ActivityModel.sport == "run")
     today = _date.today()
     if period == "year":
         stmt = stmt.where(ActivityModel.date >= f"{today.year}-01-01")
@@ -372,7 +398,9 @@ def export_data(format: str = "csv", session: Session = Depends(get_session)):
 
     acts = list(
         session.scalars(
-            sa_select(ActivityModel).order_by(ActivityModel.date.desc())
+            sa_select(ActivityModel)
+            .where(ActivityModel.sport == "run")
+            .order_by(ActivityModel.date.desc())
         ).all()
     )
 
@@ -407,7 +435,7 @@ def get_vo2max_history(session: Session = Depends(get_session)) -> Vo2maxHistory
 
     rows = session.scalars(
         sa_select(ActivityModel)
-        .where(ActivityModel.vo2max.isnot(None))
+        .where(ActivityModel.vo2max.isnot(None), ActivityModel.sport == "run")
         .order_by(ActivityModel.date.asc())
     ).all()
 
@@ -433,7 +461,8 @@ def get_vo2max_history(session: Session = Depends(get_session)) -> Vo2maxHistory
 @router.get("/activities/heatmap", response_model=HeatmapResponse)
 def get_heatmap(session: Session = Depends(get_session)) -> HeatmapResponse:
     rows = session.query(Activity).filter(
-        Activity.route_polyline.isnot(None)
+        Activity.route_polyline.isnot(None),
+        Activity.sport == "run",
     ).order_by(Activity.date.desc()).limit(500).all()
     routes = []
     for row in rows:
@@ -448,7 +477,7 @@ def get_heatmap(session: Session = Depends(get_session)) -> HeatmapResponse:
                 ))
         except Exception:
             continue
-    total_activities = session.query(Activity).count()
+    total_activities = session.query(Activity).filter(Activity.sport == "run").count()
     return HeatmapResponse(
         routes=routes,
         total_with_gps=len(routes),

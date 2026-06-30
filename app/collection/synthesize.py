@@ -556,6 +556,91 @@ def _speed_to_pace(speed_mps: float | None) -> str | None:
     return _format_pace(1000.0, 1000.0 / speed_mps)
 
 
+# ── multi-sport (Feature 24): bike / swim / strength ─────────────────────────
+#
+# Garmin's ``activityType.typeKey`` is fine-grained (road_biking, lap_swimming,
+# indoor_cardio, ...). We collapse it into the three cross-training disciplines
+# the app tracks. Anything not matched here is not cross-training (it's running
+# or an activity type we don't surface).
+_GARMIN_SPORT_MAP = {
+    # cycling family
+    "cycling": "bike",
+    "road_biking": "bike",
+    "mountain_biking": "bike",
+    "gravel_cycling": "bike",
+    "indoor_cycling": "bike",
+    "virtual_ride": "bike",
+    "e_bike_fitness": "bike",
+    "cyclocross": "bike",
+    # swimming family
+    "lap_swimming": "swim",
+    "open_water_swimming": "swim",
+    "swimming": "swim",
+    # strength / gym family
+    "strength_training": "strength",
+    "indoor_cardio": "strength",
+    "fitness_equipment": "strength",
+    "elliptical": "strength",
+    "pilates": "strength",
+    "yoga": "strength",
+}
+
+# Cross-training disciplines the app supports. Used to validate inbound values.
+CROSS_TRAINING_SPORTS = ("bike", "swim", "strength")
+
+
+def garmin_sport(activity: dict[str, Any]) -> str | None:
+    """Return the cross-training sport for a Garmin activity, or ``None``.
+
+    ``None`` means the activity is not one of the tracked cross-training
+    disciplines (it may be running, or a type we don't surface).
+    """
+    type_field = activity.get("activityType")
+    type_key = ""
+    if isinstance(type_field, dict):
+        type_key = str(type_field.get("typeKey", "")).lower()
+    else:
+        type_key = str(type_field or "").lower()
+    return _GARMIN_SPORT_MAP.get(type_key)
+
+
+def synthesize_cross_training(activity: dict[str, Any], sport: str) -> RunSummary:
+    """Map a raw Garmin cross-training activity onto the compact schema.
+
+    Unlike :func:`synthesize`, this does not run the running-specific workout
+    classifier (intervals/tempo/long): for cross-training the ``activity_type``
+    simply mirrors the sport. Distance is meaningless for strength work, so it
+    degrades to 0 gracefully. Heart-rate, duration and elevation are kept when
+    present since they're sport-agnostic.
+    """
+    distance_m = float(activity.get("distance") or 0.0)
+    duration_s = float(activity.get("duration") or activity.get("movingDuration") or 0.0)
+    duration_min = round(duration_s / 60.0, 1)
+
+    return RunSummary(
+        garmin_activity_id=(
+            str(activity["activityId"]) if activity.get("activityId") is not None else None
+        ),
+        date=str(activity.get("startTimeLocal", ""))[:10],
+        sport=sport,
+        activity_type=sport,
+        duration_min=duration_min,
+        # Pace is only meaningful for distance sports; bike/swim keep distance,
+        # strength has none.
+        distance_km=round(distance_m / 1000.0, 2),
+        avg_pace=_format_pace(distance_m, duration_s) if sport == "swim" else None,
+        avg_hr=int(activity["averageHR"]) if activity.get("averageHR") else None,
+        max_hr=int(activity["maxHR"]) if activity.get("maxHR") else None,
+        elevation_gain_m=(
+            round(float(activity["elevationGain"]), 0) if activity.get("elevationGain") else None
+        ),
+        avg_cadence=None,
+        hr_zones=_extract_hr_zones(activity),
+        rpe=None,
+        notes=activity.get("activityName") or None,
+    )
+
+
 def synthesize(activity: dict[str, Any]) -> RunSummary:
     """Map a raw Garmin activity dict onto the compact schema."""
     distance_m = float(activity.get("distance") or 0.0)

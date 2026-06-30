@@ -33,6 +33,7 @@ class RunSummary(BaseModel):
     garmin_activity_id: str | None = None
     strava_activity_id: str | None = None
     date: str  # ISO YYYY-MM-DD
+    sport: str = "run"  # run | bike | swim | strength (Feature 24)
     activity_type: str = "easy"
     duration_min: float = 0.0
     distance_km: float = 0.0
@@ -331,6 +332,7 @@ class ActivityOut(BaseModel):
     garmin_activity_id: str | None
     strava_activity_id: str | None = None
     date: str
+    sport: str = "run"
     activity_type: str
     duration_min: float
     distance_km: float

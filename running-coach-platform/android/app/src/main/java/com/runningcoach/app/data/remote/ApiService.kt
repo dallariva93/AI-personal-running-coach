@@ -48,6 +48,12 @@ interface ApiService {
     @POST("api/ingest/wellness")
     suspend fun ingestWellness(): Map<String, Int>
 
+    @POST("api/ingest/cross-training")
+    suspend fun ingestCrossTraining(): List<Activity>
+
+    @GET("api/activities/cross-training")
+    suspend fun crossTraining(@Query("limit") limit: Int = 50): List<Activity>
+
     @POST("api/analyze")
     suspend fun analyze(@Query("activity_id") activityId: Int? = null): Report
 

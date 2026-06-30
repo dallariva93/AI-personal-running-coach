@@ -43,6 +43,7 @@ import com.runningcoach.app.ui.screens.ActivitiesScreen
 import com.runningcoach.app.ui.screens.ActivityDetailScreen
 import com.runningcoach.app.ui.screens.CalendarScreen
 import com.runningcoach.app.ui.screens.ChatScreen
+import com.runningcoach.app.ui.screens.CrossTrainingScreen
 import com.runningcoach.app.ui.screens.HeatmapScreen
 import com.runningcoach.app.ui.screens.HomeScreen
 import com.runningcoach.app.ui.screens.MapFullscreenScreen
@@ -221,6 +222,9 @@ fun AppScaffold(app: RunningCoachApp) {
                         onOpenActivity = openActivity,
                         onOpenHeatmap = { navController.navigate("heatmap") { launchSingleTop = true } },
                         onOpenCalendar = { navController.navigate("calendar") { launchSingleTop = true } },
+                        onOpenCrossTraining = {
+                            navController.navigate("cross-training") { launchSingleTop = true }
+                        },
                     )
                 }
                 composable("calendar") {
@@ -228,6 +232,12 @@ fun AppScaffold(app: RunningCoachApp) {
                         activities = state.overview?.activities.orEmpty(),
                         prActivityIds = state.overview?.prActivityIds?.toSet() ?: emptySet(),
                         onOpenActivity = openActivity,
+                        onBack = { navController.popBackStack() },
+                    )
+                }
+                composable("cross-training") {
+                    CrossTrainingScreen(
+                        repository = app.repository,
                         onBack = { navController.popBackStack() },
                     )
                 }

@@ -133,6 +133,85 @@ def _infer_strava_type(activity: dict[str, Any]) -> str:
     return "easy"
 
 
+# ── multi-sport (Feature 24) ─────────────────────────────────────────────────
+#
+# Strava's ``sport_type`` (preferred) / ``type`` (legacy) collapsed into our
+# disciplines. Running maps to ``run`` (handled by the standard run pipeline);
+# the three cross-training disciplines are tracked but kept out of running load.
+_STRAVA_SPORT_MAP = {
+    "ride": "bike",
+    "mountainbikeride": "bike",
+    "gravelride": "bike",
+    "virtualride": "bike",
+    "ebikeride": "bike",
+    "velomobile": "bike",
+    "handcycle": "bike",
+    "swim": "swim",
+    "weighttraining": "strength",
+    "workout": "strength",
+    "crossfit": "strength",
+    "elliptical": "strength",
+    "yoga": "strength",
+    "pilates": "strength",
+    "stairstepper": "strength",
+}
+
+
+def strava_sport(activity: dict[str, Any]) -> str | None:
+    """Return our sport label for a Strava activity.
+
+    Returns ``"run"`` for any running activity, one of the cross-training
+    disciplines for bike/swim/strength, or ``None`` for unsupported types.
+    """
+    sport = str(activity.get("sport_type") or activity.get("type") or "").lower()
+    if "run" in sport:
+        return "run"
+    return _STRAVA_SPORT_MAP.get(sport)
+
+
+def synthesize_cross_training_strava(activity: dict[str, Any], sport: str) -> RunSummary:
+    """Map a Strava cross-training activity to a :class:`RunSummary`.
+
+    Like :func:`synthesize_cross_training` for Garmin: no running workout
+    classification, ``activity_type`` mirrors the sport, distance degrades to 0
+    for strength work, sport-agnostic fields (HR, duration, elevation) kept.
+    """
+    distance_m = _num(activity.get("distance")) or 0.0
+    moving_s = _num(activity.get("moving_time")) or 0.0
+    elapsed_s = _num(activity.get("elapsed_time")) or moving_s
+    duration_min = round((moving_s or elapsed_s) / 60.0, 1)
+
+    start_local = str(activity.get("start_date_local") or activity.get("start_date") or "")
+    date = start_local[:10] if start_local else ""
+
+    avg_hr = _num(activity.get("average_heartrate"))
+    max_hr = _num(activity.get("max_heartrate"))
+
+    route_polyline = None
+    map_field = activity.get("map")
+    if isinstance(map_field, dict):
+        encoded = map_field.get("polyline") or map_field.get("summary_polyline")
+        if encoded:
+            pts = decode_polyline(str(encoded))
+            if len(pts) >= 2:
+                route_polyline = _json.dumps(pts)
+
+    return RunSummary(
+        strava_activity_id=str(activity.get("id")) if activity.get("id") else None,
+        date=date,
+        sport=sport,
+        activity_type=sport,
+        duration_min=duration_min,
+        distance_km=round(distance_m / 1000.0, 2),
+        avg_pace=_format_pace(distance_m, moving_s or elapsed_s) if sport == "swim" else None,
+        avg_hr=round(avg_hr) if avg_hr else None,
+        max_hr=round(max_hr) if max_hr else None,
+        elevation_gain_m=_num(activity.get("total_elevation_gain")),
+        notes=activity.get("description") or None,
+        route_polyline=route_polyline,
+    )
+
+
 def synthesize_strava(activity: dict[str, Any]) -> RunSummary:
     """Map a Strava detailed-activity payload to a :class:`RunSummary`.
 

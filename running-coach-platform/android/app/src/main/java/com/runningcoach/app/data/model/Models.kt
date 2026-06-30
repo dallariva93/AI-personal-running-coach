@@ -63,6 +63,7 @@ data class Activity(
     @SerializedName("id") val id: Int,
     @SerializedName("garmin_activity_id") val garminActivityId: String? = null,
     @SerializedName("date") val date: String,
+    @SerializedName("sport") val sport: String = "run",
     @SerializedName("activity_type") val activityType: String,
     @SerializedName("duration_min") val durationMin: Double,
     @SerializedName("distance_km") val distanceKm: Double,

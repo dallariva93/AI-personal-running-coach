@@ -564,10 +564,10 @@ modifiche al piano, periodizzazione, combinazione di più fattori.
 
 
 def build_chat_system(
-    profile: "AthleteProfile | None",
-    metrics: "TrainingMetrics | None",
-    recent_runs: "list[RunSummary]",
-    active_plan_week: "str | None" = None,
+    profile: AthleteProfile | None,
+    metrics: TrainingMetrics | None,
+    recent_runs: list[RunSummary],
+    active_plan_week: str | None = None,
 ) -> str:
     """Build the system prompt for the conversational coach with injected athlete context."""
     from datetime import date
