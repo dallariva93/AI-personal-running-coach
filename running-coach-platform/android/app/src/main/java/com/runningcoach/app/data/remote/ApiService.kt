@@ -44,6 +44,9 @@ interface ApiService {
     @POST("api/ingest")
     suspend fun ingest(): List<Activity>
 
+    @POST("api/ingest/wellness")
+    suspend fun ingestWellness(): Map<String, Int>
+
     @POST("api/analyze")
     suspend fun analyze(@Query("activity_id") activityId: Int? = null): Report
 

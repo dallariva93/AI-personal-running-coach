@@ -315,9 +315,6 @@ fun AppScaffold(app: RunningCoachApp) {
                         onSaveCoach = { goalType, date, time, level, risk ->
                             overviewVm.saveCoach(goalType, date, time, level, risk)
                         },
-                        onCheckin = { sleep, fatigue, soreness, motivation ->
-                            overviewVm.submitCheckin(sleep, fatigue, soreness, motivation)
-                        },
                         onSaveTheme = settingsVm::saveTheme,
                         stravaStatus = stravaStatus,
                         onRefreshStrava = settingsVm::loadStravaStatus,

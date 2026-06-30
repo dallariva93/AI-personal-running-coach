@@ -3,7 +3,6 @@ package com.runningcoach.app.ui.viewmodel
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.runningcoach.app.data.model.AthleteProfile
-import com.runningcoach.app.data.model.DailyCheckin
 import com.runningcoach.app.data.model.Goal
 import com.runningcoach.app.data.model.Overview
 import com.runningcoach.app.data.repository.CoachRepository
@@ -28,6 +27,7 @@ class OverviewViewModel(private val repository: CoachRepository) : ViewModel() {
 
     init {
         refresh()
+        ingestWellness()
     }
 
     fun refresh() {
@@ -75,21 +75,19 @@ class OverviewViewModel(private val repository: CoachRepository) : ViewModel() {
     fun updateActivity(id: Int, rpe: Int? = null, notes: String? = null) =
         action("Attività aggiornata") { repository.patchActivity(id, rpe = rpe, notes = notes) }
 
-    /** Submit today's wellness check-in. */
-    fun submitCheckin(sleepH: Double?, fatigue: Int?, soreness: Int?, motivation: Int?) =
-        action("Check-in salvato") {
-            val today = java.text.SimpleDateFormat("yyyy-MM-dd", java.util.Locale.US)
-                .format(java.util.Date())
-            repository.postCheckin(
-                DailyCheckin(
-                    date = today,
-                    sleepH = sleepH,
-                    fatigue = fatigue,
-                    soreness = soreness,
-                    motivation = motivation,
-                ),
-            )
+    /** Silently fetch Garmin wellness data for missing days (fire-and-forget). */
+    fun ingestWellness() {
+        viewModelScope.launch {
+            runCatching { repository.ingestWellness() }
+                .onSuccess { count ->
+                    if (count > 0) {
+                        runCatching { repository.overview() }.getOrNull()?.let { ov ->
+                            _state.update { it.copy(overview = ov) }
+                        }
+                    }
+                }
         }
+    }
 
     private fun action(successMsg: String, block: suspend () -> Any?) {
         viewModelScope.launch {

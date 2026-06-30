@@ -43,7 +43,6 @@ fun SettingsScreen(
     profile: AthleteProfile?,
     onSave: (String, String) -> Unit,
     onSaveCoach: (String, String, String, String, String) -> Unit,
-    onCheckin: (Double?, Int?, Int?, Int?) -> Unit,
     onSaveTheme: (String) -> Unit = {},
     stravaStatus: StravaStatus? = null,
     onRefreshStrava: () -> Unit = {},
@@ -142,11 +141,6 @@ fun SettingsScreen(
         Divider()
         Spacer(Modifier.height(16.dp))
         CoachSetupSection(profile = profile, onSaveCoach = onSaveCoach)
-
-        Spacer(Modifier.height(24.dp))
-        Divider()
-        Spacer(Modifier.height(16.dp))
-        CheckinSection(onCheckin = onCheckin)
 
         Spacer(Modifier.height(24.dp))
         Text(
@@ -355,74 +349,6 @@ private fun CoachSetupSection(
         modifier = Modifier.fillMaxWidth(),
     ) {
         Text("Salva obiettivo e calibrazione")
-    }
-}
-
-@Composable
-private fun CheckinSection(onCheckin: (Double?, Int?, Int?, Int?) -> Unit) {
-    var sleep by remember { mutableStateOf("") }
-    var fatigue by remember { mutableStateOf("") }
-    var soreness by remember { mutableStateOf("") }
-    var motivation by remember { mutableStateOf("") }
-
-    Text(
-        "Check-in di oggi",
-        style = MaterialTheme.typography.titleMedium,
-        fontWeight = FontWeight.Bold,
-    )
-    Spacer(Modifier.height(4.dp))
-    Text(
-        "Sonno in ore; fatica, dolori e motivazione da 1 a 10.",
-        style = MaterialTheme.typography.bodySmall,
-        color = MaterialTheme.colorScheme.onSurfaceVariant,
-    )
-    Spacer(Modifier.height(12.dp))
-    Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-        OutlinedTextField(
-            value = sleep,
-            onValueChange = { sleep = it },
-            label = { Text("Sonno h") },
-            singleLine = true,
-            modifier = Modifier.weight(1f),
-        )
-        OutlinedTextField(
-            value = fatigue,
-            onValueChange = { fatigue = it },
-            label = { Text("Fatica") },
-            singleLine = true,
-            modifier = Modifier.weight(1f),
-        )
-    }
-    Spacer(Modifier.height(10.dp))
-    Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-        OutlinedTextField(
-            value = soreness,
-            onValueChange = { soreness = it },
-            label = { Text("Dolori") },
-            singleLine = true,
-            modifier = Modifier.weight(1f),
-        )
-        OutlinedTextField(
-            value = motivation,
-            onValueChange = { motivation = it },
-            label = { Text("Motivazione") },
-            singleLine = true,
-            modifier = Modifier.weight(1f),
-        )
-    }
-    Spacer(Modifier.height(14.dp))
-    Button(
-        onClick = {
-            onCheckin(
-                sleep.toDoubleOrNull(),
-                fatigue.toIntOrNull(),
-                soreness.toIntOrNull(),
-                motivation.toIntOrNull(),
-            )
-        },
-        modifier = Modifier.fillMaxWidth(),
-    ) {
-        Text("Salva check-in di oggi")
     }
 }
 

@@ -149,6 +149,16 @@ def post_ingest(limit: int | None = None, session: Session = Depends(get_session
     return saved
 
 
+@router.post("/ingest/wellness")
+def post_ingest_wellness(session: Session = Depends(get_session)) -> dict:
+    """Auto-fetch Garmin wellness data (sleep, HRV, stress) for missing days."""
+    from app.services.ingest_wellness import ingest_wellness
+
+    count = ingest_wellness(session)
+    _commit(session)
+    return {"days_upserted": count}
+
+
 @router.get("/profile", response_model=AthleteProfile)
 def get_athlete_profile(session: Session = Depends(get_session)) -> AthleteProfile:
     return get_profile(session) or AthleteProfile()
