@@ -9,6 +9,7 @@ import com.runningcoach.app.data.model.ChatSendResponse
 import com.runningcoach.app.data.model.ChatSession
 import com.runningcoach.app.data.model.DailyCheckin
 import com.runningcoach.app.data.model.HeatmapResponse
+import com.runningcoach.app.data.model.Vo2maxHistory
 import com.runningcoach.app.data.model.Overview
 import com.runningcoach.app.data.model.PeriodStats
 import com.runningcoach.app.data.model.PlanChatRequest
@@ -118,4 +119,7 @@ interface ApiService {
 
     @GET("api/activities/heatmap")
     suspend fun getHeatmap(): HeatmapResponse
+
+    @GET("api/vo2max/history")
+    suspend fun getVo2maxHistory(): Vo2maxHistory
 }

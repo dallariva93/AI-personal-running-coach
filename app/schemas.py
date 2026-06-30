@@ -651,3 +651,13 @@ class HeatmapResponse(BaseModel):
     routes: list[HeatmapRoute]
     total_with_gps: int
     total_activities: int
+
+
+class Vo2maxPoint(BaseModel):
+    date: str
+    vo2max: float
+
+
+class Vo2maxHistory(BaseModel):
+    points: list[Vo2maxPoint]
+    trend: str

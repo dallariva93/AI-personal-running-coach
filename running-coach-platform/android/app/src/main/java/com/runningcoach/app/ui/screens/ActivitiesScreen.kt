@@ -13,6 +13,7 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.CalendarMonth
 import androidx.compose.material.icons.filled.Map
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
@@ -31,6 +32,7 @@ fun ActivitiesScreen(
     state: OverviewUiState,
     onOpenActivity: (Int) -> Unit = {},
     onOpenHeatmap: () -> Unit = {},
+    onOpenCalendar: () -> Unit = {},
 ) {
     val activities = state.overview?.activities.orEmpty()
     Column(
@@ -50,6 +52,12 @@ fun ActivitiesScreen(
                 "${activities.size} corse sincronizzate",
                 Modifier.weight(1f),
             )
+            OutlinedButton(onClick = onOpenCalendar) {
+                Icon(Icons.Filled.CalendarMonth, contentDescription = null, Modifier.height(18.dp))
+                Spacer(Modifier.width(6.dp))
+                Text("Calendario")
+            }
+            Spacer(Modifier.width(8.dp))
             OutlinedButton(onClick = onOpenHeatmap) {
                 Icon(Icons.Filled.Map, contentDescription = null, Modifier.height(18.dp))
                 Spacer(Modifier.width(6.dp))

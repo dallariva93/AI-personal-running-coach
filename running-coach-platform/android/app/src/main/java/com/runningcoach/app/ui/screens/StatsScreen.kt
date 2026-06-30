@@ -25,6 +25,9 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import com.runningcoach.app.data.model.PeriodStats
+import com.runningcoach.app.data.model.Vo2maxHistory
+import com.runningcoach.app.ui.components.ChartSeries
+import com.runningcoach.app.ui.components.LineChart
 import com.runningcoach.app.ui.components.ScreenTitle
 import com.runningcoach.app.ui.theme.BrandGreen
 import com.runningcoach.app.ui.viewmodel.StatsUiState
@@ -76,6 +79,13 @@ fun StatsScreen(
             state.stats != null -> StatsGrid(state.stats)
         }
 
+        state.vo2maxHistory?.let { history ->
+            if (history.points.isNotEmpty()) {
+                Spacer(Modifier.height(24.dp))
+                Vo2maxCard(history)
+            }
+        }
+
         Spacer(Modifier.height(24.dp))
 
         Text(
@@ -122,6 +132,56 @@ private fun StatsGrid(stats: PeriodStats) {
                 if (row.size == 1) Spacer(Modifier.weight(1f))
             }
         }
+    }
+}
+
+@Composable
+private fun Vo2maxCard(history: Vo2maxHistory) {
+    val trendLabel = when (history.trend) {
+        "improving" -> "In miglioramento ↑"
+        "declining" -> "In calo ↓"
+        "stable" -> "Stabile →"
+        else -> null
+    }
+    val trendColor = when (history.trend) {
+        "improving" -> BrandGreen
+        "declining" -> androidx.compose.ui.graphics.Color(0xFFE57373)
+        else -> MaterialTheme.colorScheme.onSurfaceVariant
+    }
+
+    Text("VO2max nel tempo", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
+    Spacer(Modifier.height(4.dp))
+    if (trendLabel != null) {
+        Text(trendLabel, style = MaterialTheme.typography.labelMedium, color = trendColor)
+        Spacer(Modifier.height(8.dp))
+    }
+
+    val values = history.points.map { it.vo2max.toFloat() }
+    LineChart(
+        series = listOf(ChartSeries(values = values, color = BrandGreen, fill = true)),
+        height = 140.dp,
+        minValue = (values.min() - 2f).coerceAtLeast(0f),
+        maxValue = values.max() + 2f,
+    )
+
+    Spacer(Modifier.height(6.dp))
+    Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
+        Text(
+            history.points.first().date,
+            style = MaterialTheme.typography.labelSmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+        )
+        Text(
+            "%.1f ml/kg/min".format(history.points.last().vo2max),
+            style = MaterialTheme.typography.labelSmall,
+            fontWeight = FontWeight.Bold,
+            color = BrandGreen,
+        )
+        Text(
+            history.points.last().date,
+            style = MaterialTheme.typography.labelSmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+        )
     }
 }
 

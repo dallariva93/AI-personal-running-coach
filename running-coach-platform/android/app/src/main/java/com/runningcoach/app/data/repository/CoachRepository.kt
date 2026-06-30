@@ -9,6 +9,7 @@ import com.runningcoach.app.data.model.ChatSendResponse
 import com.runningcoach.app.data.model.ChatSession
 import com.runningcoach.app.data.model.DailyCheckin
 import com.runningcoach.app.data.model.HeatmapResponse
+import com.runningcoach.app.data.model.Vo2maxHistory
 import com.runningcoach.app.data.model.Overview
 import com.runningcoach.app.data.model.PeriodStats
 import com.runningcoach.app.data.model.PlanChatMessage
@@ -115,4 +116,6 @@ class CoachRepository(private val settings: SettingsStore) {
     }
 
     suspend fun getHeatmap(): HeatmapResponse = api().getHeatmap()
+
+    suspend fun getVo2maxHistory(): Vo2maxHistory = api().getVo2maxHistory()
 }

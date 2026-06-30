@@ -388,6 +388,18 @@ data class HeatmapResponse(
     @SerializedName("total_activities") val totalActivities: Int = 0,
 )
 
+/** One VO2max reading over time. */
+data class Vo2maxPoint(
+    @SerializedName("date") val date: String,
+    @SerializedName("vo2max") val vo2max: Double,
+)
+
+/** VO2max history with trend direction. */
+data class Vo2maxHistory(
+    @SerializedName("points") val points: List<Vo2maxPoint> = emptyList(),
+    @SerializedName("trend") val trend: String = "insufficient_data",
+)
+
 /** Everything the app needs to render its main screens, in one response. */
 data class Overview(
     @SerializedName("version") val version: String = "",

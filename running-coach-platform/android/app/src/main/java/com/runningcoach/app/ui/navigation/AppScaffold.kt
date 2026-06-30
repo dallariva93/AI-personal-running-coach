@@ -41,6 +41,7 @@ import com.runningcoach.app.RunningCoachApp
 import com.runningcoach.app.data.model.AthleteProfile
 import com.runningcoach.app.ui.screens.ActivitiesScreen
 import com.runningcoach.app.ui.screens.ActivityDetailScreen
+import com.runningcoach.app.ui.screens.CalendarScreen
 import com.runningcoach.app.ui.screens.ChatScreen
 import com.runningcoach.app.ui.screens.HeatmapScreen
 import com.runningcoach.app.ui.screens.HomeScreen
@@ -219,6 +220,15 @@ fun AppScaffold(app: RunningCoachApp) {
                         state,
                         onOpenActivity = openActivity,
                         onOpenHeatmap = { navController.navigate("heatmap") { launchSingleTop = true } },
+                        onOpenCalendar = { navController.navigate("calendar") { launchSingleTop = true } },
+                    )
+                }
+                composable("calendar") {
+                    CalendarScreen(
+                        activities = state.overview?.activities.orEmpty(),
+                        prActivityIds = state.overview?.prActivityIds?.toSet() ?: emptySet(),
+                        onOpenActivity = openActivity,
+                        onBack = { navController.popBackStack() },
                     )
                 }
                 composable("heatmap") {

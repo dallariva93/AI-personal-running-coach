@@ -48,6 +48,8 @@ from app.schemas import (
     RunSummary,
     TrailMetrics,
     TrainingMetrics,
+    Vo2maxHistory,
+    Vo2maxPoint,
     WeeklyBucket,
 )
 from app.services import (
@@ -394,6 +396,38 @@ def export_data(format: str = "csv", session: Session = Depends(get_session)):
         media_type="text/csv",
         headers={"Content-Disposition": "attachment; filename=activities.csv"},
     )
+
+
+@router.get("/vo2max/history", response_model=Vo2maxHistory)
+def get_vo2max_history(session: Session = Depends(get_session)) -> Vo2maxHistory:
+    """Return the VO2max readings over time with a trend direction."""
+    from sqlalchemy import select as sa_select
+
+    from app.db.models import Activity as ActivityModel
+
+    rows = session.scalars(
+        sa_select(ActivityModel)
+        .where(ActivityModel.vo2max.isnot(None))
+        .order_by(ActivityModel.date.asc())
+    ).all()
+
+    points = [Vo2maxPoint(date=str(r.date), vo2max=r.vo2max) for r in rows]
+
+    if len(points) < 4:
+        trend = "insufficient_data"
+    else:
+        mid = len(points) // 2
+        first_avg = sum(p.vo2max for p in points[:mid]) / mid
+        second_avg = sum(p.vo2max for p in points[mid:]) / (len(points) - mid)
+        diff = second_avg - first_avg
+        if diff > 0.5:
+            trend = "improving"
+        elif diff < -0.5:
+            trend = "declining"
+        else:
+            trend = "stable"
+
+    return Vo2maxHistory(points=points, trend=trend)
 
 
 @router.get("/activities/heatmap", response_model=HeatmapResponse)
