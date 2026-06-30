@@ -20,12 +20,13 @@ from app.logging_config import get_logger
 logger = get_logger("app.http")
 
 # Paths reachable without authentication (platform probes, static assets,
-# and the Strava webhook — called by Strava's servers, which can't carry our
-# bearer token; it is protected instead by the webhook verify-token handshake).
+# and the Strava webhook/callback — called by Strava's servers, which can't carry our
+# bearer token; the webhook is protected instead by the webhook verify-token handshake).
 _PUBLIC_PREFIXES = (
     "/api/health",
     "/api/ready",
     "/api/strava/webhook",
+    "/api/strava/callback",
     "/static",
     "/favicon.ico",
 )
