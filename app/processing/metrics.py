@@ -28,6 +28,7 @@ from app.processing.injury import injury_risk
 from app.processing.load import calibrate_garmin_factor, intensity_class, internal_load
 from app.processing.performance import predict_race_time
 from app.processing.periodization import build_periodization, phase_for
+from app.processing.recovery import hrv_status as _hrv_status
 from app.processing.recovery import readiness
 from app.processing.snapshot import build_snapshot
 from app.processing.tuning import tsb_fatigue_threshold, tsb_overreach_threshold
@@ -349,6 +350,8 @@ def compute_metrics(
     m.injury_factors = risk.factors
     m.aerobic_efficiency, m.efficiency_trend = aerobic_efficiency(runs, ref=ref)
     m.readiness, m.readiness_state = readiness(checkin)
+    m.hrv_rmssd = checkin.hrv_rmssd if checkin else None
+    m.hrv_status = _hrv_status(m.hrv_rmssd)
 
     # Latest available Garmin VO2max (most recent run that carries it).
     for r in sorted(runs, key=lambda x: x.date, reverse=True):

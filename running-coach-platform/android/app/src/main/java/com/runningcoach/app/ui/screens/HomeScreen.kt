@@ -28,6 +28,7 @@ import androidx.compose.ui.unit.dp
 import com.runningcoach.app.data.model.Overview
 import com.runningcoach.app.ui.components.ActivityRow
 import com.runningcoach.app.ui.components.FormStateCard
+import com.runningcoach.app.ui.components.HrvCard
 import com.runningcoach.app.ui.components.PersonalRecordsCard
 import com.runningcoach.app.ui.components.Pill
 import com.runningcoach.app.ui.components.PredictionCard
@@ -74,6 +75,12 @@ fun HomeScreen(
             ov.prediction?.let {
                 Spacer(Modifier.height(12.dp))
                 PredictionCard(it)
+            }
+
+            // HRV readiness card
+            ov.checkin?.hrvRmssd?.let { hrv ->
+                Spacer(Modifier.height(12.dp))
+                HrvCard(hrv, ov.metrics.hrvStatus)
             }
 
             // Streak + badges (show only if at least one run exists).

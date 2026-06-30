@@ -8,6 +8,7 @@ import com.runningcoach.app.data.model.ChatSendRequest
 import com.runningcoach.app.data.model.ChatSendResponse
 import com.runningcoach.app.data.model.ChatSession
 import com.runningcoach.app.data.model.DailyCheckin
+import com.runningcoach.app.data.model.HeatmapResponse
 import com.runningcoach.app.data.model.Overview
 import com.runningcoach.app.data.model.PeriodStats
 import com.runningcoach.app.data.model.PlanChatRequest
@@ -111,4 +112,7 @@ interface ApiService {
 
     @DELETE("api/chat/{sessionId}")
     suspend fun deleteChatSession(@Path("sessionId") sessionId: Int)
+
+    @GET("api/activities/heatmap")
+    suspend fun getHeatmap(): HeatmapResponse
 }

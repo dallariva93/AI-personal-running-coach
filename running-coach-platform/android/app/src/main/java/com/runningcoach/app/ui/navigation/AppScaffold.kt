@@ -42,6 +42,7 @@ import com.runningcoach.app.data.model.AthleteProfile
 import com.runningcoach.app.ui.screens.ActivitiesScreen
 import com.runningcoach.app.ui.screens.ActivityDetailScreen
 import com.runningcoach.app.ui.screens.ChatScreen
+import com.runningcoach.app.ui.screens.HeatmapScreen
 import com.runningcoach.app.ui.screens.HomeScreen
 import com.runningcoach.app.ui.screens.MapFullscreenScreen
 import com.runningcoach.app.ui.screens.PlanScreen
@@ -214,7 +215,17 @@ fun AppScaffold(app: RunningCoachApp) {
                     )
                 }
                 composable(Dest.Activities.route) {
-                    ActivitiesScreen(state, onOpenActivity = openActivity)
+                    ActivitiesScreen(
+                        state,
+                        onOpenActivity = openActivity,
+                        onOpenHeatmap = { navController.navigate("heatmap") { launchSingleTop = true } },
+                    )
+                }
+                composable("heatmap") {
+                    HeatmapScreen(
+                        repository = app.repository,
+                        onBack = { navController.popBackStack() },
+                    )
                 }
                 composable(
                     route = "activity/{id}",

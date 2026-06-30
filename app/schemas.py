@@ -79,6 +79,7 @@ class DailyCheckin(BaseModel):
     soreness: int | None = None  # 1 (none) .. 10 (very sore)
     motivation: int | None = None  # 1 (none) .. 10 (high)
     notes: str | None = None
+    hrv_rmssd: float | None = None
 
 
 class Race(BaseModel):
@@ -289,6 +290,8 @@ class TrainingMetrics(BaseModel):
     # Daily readiness from the latest wellness check-in (GAP 9).
     readiness: float | None = None  # 0-100
     readiness_state: str | None = None  # green | amber | red | unknown
+    hrv_rmssd: float | None = None
+    hrv_status: str | None = None  # "low" | "normal" | "high" | "unknown"
     # Goal-race forecast (Fase 4): predicted finish + probability of the target.
     predicted_race_time: str | None = None
     race_probability: float | None = None  # 0-1
@@ -635,3 +638,16 @@ class WorkoutSuggestRequest(BaseModel):
     goal_type: str | None = None  # marathon|half|10k|5k
     goal_time: str | None = None
     notes: str | None = None  # free-text hint from user
+
+
+class HeatmapRoute(BaseModel):
+    activity_id: int
+    date: str
+    distance_km: float
+    points: list[list[float]]  # [[lat, lon], ...]
+
+
+class HeatmapResponse(BaseModel):
+    routes: list[HeatmapRoute]
+    total_with_gps: int
+    total_activities: int

@@ -37,6 +37,8 @@ from app.schemas import (
     Badge,
     DailyCheckin,
     GamificationData,
+    HeatmapResponse,
+    HeatmapRoute,
     ManualActivityIn,
     PeriodizationPlan,
     PeriodStats,
@@ -381,6 +383,32 @@ def export_data(format: str = "csv", session: Session = Depends(get_session)):
         iter([buf.getvalue()]),
         media_type="text/csv",
         headers={"Content-Disposition": "attachment; filename=activities.csv"},
+    )
+
+
+@router.get("/activities/heatmap", response_model=HeatmapResponse)
+def get_heatmap(session: Session = Depends(get_session)) -> HeatmapResponse:
+    rows = session.query(Activity).filter(
+        Activity.route_polyline.isnot(None)
+    ).order_by(Activity.date.desc()).limit(500).all()
+    routes = []
+    for row in rows:
+        try:
+            pts = _json.loads(row.route_polyline or "[]")
+            if isinstance(pts, list) and len(pts) >= 2:
+                routes.append(HeatmapRoute(
+                    activity_id=row.id,
+                    date=row.date if row.date else "",
+                    distance_km=row.distance_km or 0.0,
+                    points=pts,
+                ))
+        except Exception:
+            continue
+    total_activities = session.query(Activity).count()
+    return HeatmapResponse(
+        routes=routes,
+        total_with_gps=len(routes),
+        total_activities=total_activities,
     )
 
 

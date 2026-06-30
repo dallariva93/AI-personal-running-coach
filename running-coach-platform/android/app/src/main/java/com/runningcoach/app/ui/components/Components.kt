@@ -510,6 +510,36 @@ fun ReportCard(title: String, report: Report?, modifier: Modifier = Modifier) {
     }
 }
 
+/** HRV RMSSD readiness card: big value + status pill + explanation. */
+@Composable
+fun HrvCard(hrvRmssd: Double, hrvStatus: String?, modifier: Modifier = Modifier) {
+    val (color, label, explanation) = when (hrvStatus) {
+        "high" -> Triple(BrandGreen, "HRV ALTO", "Ottimo recupero: il tuo sistema nervoso è riposato, puoi spingere oggi.")
+        "low" -> Triple(Coral, "HRV BASSO", "Recupero insufficiente: allenamento leggero o riposo consigliato.")
+        else -> Triple(IntensityModerate, "HRV NORMALE", "Recupero nella norma: allenamento moderato ok.")
+    }
+    SurfaceCard(modifier) {
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            // Big HRV value
+            Column(horizontalAlignment = Alignment.CenterHorizontally, modifier = Modifier.width(72.dp)) {
+                Text(
+                    text = "${hrvRmssd.roundToInt()}",
+                    style = MaterialTheme.typography.headlineMedium,
+                    color = color,
+                    fontWeight = FontWeight.Bold,
+                )
+                Text("ms RMSSD", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+            }
+            Spacer(Modifier.width(16.dp))
+            Column(Modifier.weight(1f)) {
+                Pill(label, color)
+                Spacer(Modifier.height(8.dp))
+                Text(explanation, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+            }
+        }
+    }
+}
+
 // ── formatting helpers ───────────────────────────────────────────────────────
 private fun fmt(v: Double): String =
     if (v == v.roundToInt().toDouble()) v.roundToInt().toString() else "%.1f".format(v)

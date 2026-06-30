@@ -17,6 +17,7 @@ def _row_to_schema(row: DailyCheckinRow) -> DailyCheckin:
         soreness=row.soreness,
         motivation=row.motivation,
         notes=row.notes,
+        hrv_rmssd=row.hrv_rmssd,
     )
 
 
@@ -33,6 +34,7 @@ def save_checkin(session: Session, checkin: DailyCheckin) -> DailyCheckinRow:
     row.soreness = checkin.soreness
     row.motivation = checkin.motivation
     row.notes = checkin.notes
+    row.hrv_rmssd = checkin.hrv_rmssd
     session.flush()
     return row
 

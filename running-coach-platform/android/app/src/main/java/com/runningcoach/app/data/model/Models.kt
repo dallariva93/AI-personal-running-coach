@@ -39,6 +39,8 @@ data class TrainingMetrics(
     // Recovery readiness.
     @SerializedName("readiness") val readiness: Double? = null,
     @SerializedName("readiness_state") val readinessState: String? = null,
+    @SerializedName("hrv_rmssd") val hrvRmssd: Double? = null,
+    @SerializedName("hrv_status") val hrvStatus: String? = null,
     // Goal-race forecast.
     @SerializedName("predicted_race_time") val predictedRaceTime: String? = null,
     @SerializedName("race_probability") val raceProbability: Double? = null,
@@ -175,6 +177,7 @@ data class DailyCheckin(
     @SerializedName("fatigue") val fatigue: Int? = null,
     @SerializedName("soreness") val soreness: Int? = null,
     @SerializedName("motivation") val motivation: Int? = null,
+    @SerializedName("hrv_rmssd") val hrvRmssd: Double? = null,
 )
 
 /** Best-ever performance at a canonical distance. */
@@ -368,6 +371,21 @@ data class GamificationData(
     @SerializedName("streak_days_best") val streakDaysBest: Int = 0,
     @SerializedName("total_badges_earned") val totalBadgesEarned: Int = 0,
     @SerializedName("badges") val badges: List<Badge> = emptyList(),
+)
+
+/** One route with GPS track for the heatmap. */
+data class HeatmapRoute(
+    @SerializedName("activity_id") val activityId: Int,
+    @SerializedName("date") val date: String,
+    @SerializedName("distance_km") val distanceKm: Double,
+    @SerializedName("points") val points: List<List<Double>>,
+)
+
+/** Response for the heatmap endpoint. */
+data class HeatmapResponse(
+    @SerializedName("routes") val routes: List<HeatmapRoute> = emptyList(),
+    @SerializedName("total_with_gps") val totalWithGps: Int = 0,
+    @SerializedName("total_activities") val totalActivities: Int = 0,
 )
 
 /** Everything the app needs to render its main screens, in one response. */
