@@ -3,6 +3,7 @@ package com.runningcoach.app.ui.components
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
+import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -18,6 +19,10 @@ import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -26,8 +31,10 @@ import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.graphics.drawscope.Stroke
+import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.ui.text.style.TextDecoration
 import androidx.compose.ui.unit.dp
 
 /** A muted, all-caps eyebrow label used above sections. */
@@ -56,15 +63,24 @@ fun ScreenTitle(text: String, subtitle: String? = null, modifier: Modifier = Mod
     }
 }
 
-/** A single labelled stat (value on top, caption below). */
+/** A single labelled stat (value on top, caption below). Long-press shows a tooltip if provided. */
 @Composable
 fun StatItem(
     label: String,
     value: String,
     modifier: Modifier = Modifier,
     valueColor: Color = MaterialTheme.colorScheme.onSurface,
+    tooltip: MetricInfo? = null,
 ) {
-    Column(modifier, horizontalAlignment = Alignment.CenterHorizontally) {
+    var showTooltip by remember { mutableStateOf(false) }
+    Column(
+        modifier.then(
+            if (tooltip != null) Modifier.pointerInput(Unit) {
+                detectTapGestures(onLongPress = { showTooltip = true })
+            } else Modifier
+        ),
+        horizontalAlignment = Alignment.CenterHorizontally,
+    ) {
         Text(
             value,
             style = MaterialTheme.typography.titleMedium,
@@ -73,10 +89,15 @@ fun StatItem(
         )
         Text(
             label,
-            style = MaterialTheme.typography.labelSmall,
+            style = MaterialTheme.typography.labelSmall.copy(
+                textDecoration = if (tooltip != null) TextDecoration.Underline else null,
+            ),
             color = MaterialTheme.colorScheme.onSurfaceVariant,
             textAlign = TextAlign.Center,
         )
+    }
+    if (showTooltip && tooltip != null) {
+        MetricInfoDialog(tooltip) { showTooltip = false }
     }
 }
 
@@ -117,9 +138,20 @@ fun MetricRing(
     caption: String,
     modifier: Modifier = Modifier,
     ringSize: androidx.compose.ui.unit.Dp = 116.dp,
+    tooltip: MetricInfo? = null,
 ) {
+    var showTooltip by remember { mutableStateOf(false) }
     val track = MaterialTheme.colorScheme.surfaceVariant
-    Box(modifier.size(ringSize), contentAlignment = Alignment.Center) {
+    Box(
+        modifier
+            .size(ringSize)
+            .then(
+                if (tooltip != null) Modifier.pointerInput(Unit) {
+                    detectTapGestures(onLongPress = { showTooltip = true })
+                } else Modifier
+            ),
+        contentAlignment = Alignment.Center,
+    ) {
         Canvas(Modifier.size(ringSize)) {
             val stroke = 11.dp.toPx()
             val inset = stroke / 2f
@@ -152,10 +184,15 @@ fun MetricRing(
             )
             Text(
                 caption,
-                style = MaterialTheme.typography.labelSmall,
+                style = MaterialTheme.typography.labelSmall.copy(
+                    textDecoration = if (tooltip != null) TextDecoration.Underline else null,
+                ),
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
         }
+    }
+    if (showTooltip && tooltip != null) {
+        MetricInfoDialog(tooltip) { showTooltip = false }
     }
 }
 

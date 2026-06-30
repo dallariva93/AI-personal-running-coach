@@ -39,6 +39,13 @@ import com.runningcoach.app.ui.theme.IntensityHard
 import com.runningcoach.app.ui.theme.IntensityModerate
 import com.runningcoach.app.ui.theme.activityColor
 import com.runningcoach.app.ui.theme.formColor
+import androidx.compose.foundation.gestures.detectTapGestures
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
+import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.text.style.TextDecoration
 import kotlin.math.roundToInt
 
 /** Headline form card: a big gauge + the key load signals + intensity mix. */
@@ -54,6 +61,7 @@ fun FormStateCard(metrics: TrainingMetrics, modifier: Modifier = Modifier) {
                 color = color,
                 label = metrics.tsb?.let { fmtSigned(it) } ?: "–",
                 caption = "FORMA",
+                tooltip = MetricTooltips.tsb,
             )
             Spacer(Modifier.width(16.dp))
             Column(Modifier.weight(1f)) {
@@ -72,9 +80,9 @@ fun FormStateCard(metrics: TrainingMetrics, modifier: Modifier = Modifier) {
         Spacer(Modifier.height(14.dp))
 
         Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
-            StatItem("Fitness", metrics.ctl?.let { fmt(it) } ?: "–")
-            StatItem("Fatica", metrics.atl?.let { fmt(it) } ?: "–")
-            StatItem("ACWR", metrics.acwr?.let { fmt(it) } ?: "–")
+            StatItem("Fitness", metrics.ctl?.let { fmt(it) } ?: "–", tooltip = MetricTooltips.ctl)
+            StatItem("Fatica", metrics.atl?.let { fmt(it) } ?: "–", tooltip = MetricTooltips.atl)
+            StatItem("ACWR", metrics.acwr?.let { fmt(it) } ?: "–", tooltip = MetricTooltips.acwr)
             StatItem("7 gg", "${fmt(metrics.acuteLoadKm)} km")
         }
 
@@ -83,22 +91,37 @@ fun FormStateCard(metrics: TrainingMetrics, modifier: Modifier = Modifier) {
 
         val extras = buildList {
             metrics.injuryLevel?.takeIf { it != "low" }?.let {
-                add("⚠ infortunio: $it")
+                add(Triple("⚠ infortuni: $it", MetricTooltips.injuryRisk, it))
             }
             metrics.readinessState?.takeIf { it != "unknown" }?.let {
-                add("recupero: $it")
+                add(Triple("recupero: $it", MetricTooltips.readiness, it))
             }
-            metrics.vo2max?.let { add("VO₂max ${fmt(it)}") }
+            metrics.vo2max?.let { add(Triple("VO₂max ${fmt(it)}", MetricTooltips.vo2max, it.toString())) }
         }
         if (extras.isNotEmpty()) {
             Spacer(Modifier.height(12.dp))
-            Text(
-                extras.joinToString("   ·   "),
-                style = MaterialTheme.typography.labelMedium,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-            )
+            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                extras.forEach { (text, info, _) ->
+                    TooltipChip(text, info)
+                }
+            }
         }
     }
+}
+
+/** Small tappable label that shows a tooltip on long press. */
+@Composable
+private fun TooltipChip(text: String, info: MetricInfo) {
+    var show by remember { mutableStateOf(false) }
+    Text(
+        text,
+        style = MaterialTheme.typography.labelMedium,
+        color = MaterialTheme.colorScheme.onSurfaceVariant,
+        modifier = Modifier.pointerInput(Unit) {
+            detectTapGestures(onLongPress = { show = true })
+        },
+    )
+    if (show) MetricInfoDialog(info) { show = false }
 }
 
 /** 80/20 intensity distribution as a stacked bar with a legend. */
@@ -107,12 +130,16 @@ private fun IntensityBar(metrics: TrainingMetrics, modifier: Modifier = Modifier
     val easy = (metrics.easyRatio ?: 0.0).toFloat()
     val moderate = (metrics.moderateRatio ?: 0.0).toFloat()
     val hard = (metrics.hardRatio ?: 0.0).toFloat()
+    var showTooltip by remember { mutableStateOf(false) }
     Column(modifier.fillMaxWidth()) {
         Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
             Text(
                 "Distribuzione intensità",
                 style = MaterialTheme.typography.labelMedium,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
+                modifier = Modifier.pointerInput(Unit) {
+                    detectTapGestures(onLongPress = { showTooltip = true })
+                },
             )
             Text(
                 "obiettivo 80 / 20",
@@ -120,6 +147,7 @@ private fun IntensityBar(metrics: TrainingMetrics, modifier: Modifier = Modifier
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
         }
+        if (showTooltip) MetricInfoDialog(MetricTooltips.intensityDistribution) { showTooltip = false }
         Spacer(Modifier.height(8.dp))
         if (easy + moderate + hard <= 0f) {
             Text("–", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
@@ -518,17 +546,27 @@ fun HrvCard(hrvRmssd: Double, hrvStatus: String?, modifier: Modifier = Modifier)
         "low" -> Triple(Coral, "HRV BASSO", "Recupero insufficiente: allenamento leggero o riposo consigliato.")
         else -> Triple(IntensityModerate, "HRV NORMALE", "Recupero nella norma: allenamento moderato ok.")
     }
+    var showTooltip by remember { mutableStateOf(false) }
     SurfaceCard(modifier) {
         Row(verticalAlignment = Alignment.CenterVertically) {
-            // Big HRV value
-            Column(horizontalAlignment = Alignment.CenterHorizontally, modifier = Modifier.width(72.dp)) {
+            // Big HRV value — long press for explanation
+            Column(
+                horizontalAlignment = Alignment.CenterHorizontally,
+                modifier = Modifier
+                    .width(72.dp)
+                    .pointerInput(Unit) { detectTapGestures(onLongPress = { showTooltip = true }) },
+            ) {
                 Text(
                     text = "${hrvRmssd.roundToInt()}",
                     style = MaterialTheme.typography.headlineMedium,
                     color = color,
                     fontWeight = FontWeight.Bold,
                 )
-                Text("ms RMSSD", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                Text(
+                    "ms RMSSD",
+                    style = MaterialTheme.typography.labelSmall.copy(textDecoration = TextDecoration.Underline),
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
             }
             Spacer(Modifier.width(16.dp))
             Column(Modifier.weight(1f)) {
@@ -538,6 +576,7 @@ fun HrvCard(hrvRmssd: Double, hrvStatus: String?, modifier: Modifier = Modifier)
             }
         }
     }
+    if (showTooltip) MetricInfoDialog(MetricTooltips.hrv) { showTooltip = false }
 }
 
 // ── formatting helpers ───────────────────────────────────────────────────────
