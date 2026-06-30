@@ -64,13 +64,15 @@ import com.runningcoach.app.widget.RunningWidget
 import kotlinx.coroutines.launch
 import java.io.File
 
+// Labels are kept short (≤7 chars) and single-line so all six destinations fit
+// a phone-width NavigationBar without ellipsis or wrapping.
 private enum class Dest(val route: String, val label: String, val icon: ImageVector) {
     Home("home", "Oggi", Icons.Filled.Today),
-    Activities("activities", "Allenamenti", Icons.Filled.DirectionsRun),
+    Activities("activities", "Corse", Icons.Filled.DirectionsRun),
     Plan("plan", "Piano", Icons.Filled.CalendarMonth),
     Chat("chat", "Coach", Icons.Filled.AutoAwesome),
-    Stats("stats", "Statistiche", Icons.Filled.BarChart),
-    Settings("settings", "Impostazioni", Icons.Filled.Settings),
+    Stats("stats", "Stats", Icons.Filled.BarChart),
+    Settings("settings", "Opzioni", Icons.Filled.Settings),
 }
 
 @Composable
@@ -189,7 +191,8 @@ fun AppScaffold(app: RunningCoachApp) {
                                 }
                             },
                             icon = { Icon(dest.icon, contentDescription = dest.label) },
-                            label = { Text(dest.label) },
+                            label = { Text(dest.label, maxLines = 1, softWrap = false) },
+                            alwaysShowLabel = true,
                             colors = NavigationBarItemDefaults.colors(
                                 selectedIconColor = MaterialTheme.colorScheme.onPrimary,
                                 indicatorColor = MaterialTheme.colorScheme.primary,

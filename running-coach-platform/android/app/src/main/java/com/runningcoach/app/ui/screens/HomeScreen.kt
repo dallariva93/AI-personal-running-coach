@@ -3,6 +3,7 @@ package com.runningcoach.app.ui.screens
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
@@ -99,20 +100,29 @@ fun HomeScreen(
 
             Spacer(Modifier.height(14.dp))
 
+            // Tight content padding + single-line labels keep "Sincronizza"
+            // on one line in a half-width button even on small phones.
+            val actionPad = PaddingValues(horizontal = 12.dp, vertical = 10.dp)
             Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-                Button(onClick = onSync, enabled = !state.working, modifier = Modifier.weight(1f)) {
+                Button(
+                    onClick = onSync,
+                    enabled = !state.working,
+                    modifier = Modifier.weight(1f),
+                    contentPadding = actionPad,
+                ) {
                     Icon(Icons.Filled.Sync, contentDescription = null, Modifier.height(18.dp))
                     Spacer(Modifier.width(6.dp))
-                    Text("Sincronizza")
+                    Text("Sincronizza", maxLines = 1, softWrap = false)
                 }
                 OutlinedButton(
                     onClick = onAnalyze,
                     enabled = !state.working,
                     modifier = Modifier.weight(1f),
+                    contentPadding = actionPad,
                 ) {
                     Icon(Icons.Filled.Analytics, contentDescription = null, Modifier.height(18.dp))
                     Spacer(Modifier.width(6.dp))
-                    Text("Analizza")
+                    Text("Analizza", maxLines = 1, softWrap = false)
                 }
             }
             if (state.working) {

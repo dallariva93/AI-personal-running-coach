@@ -5,6 +5,7 @@ import android.net.Uri
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
@@ -29,6 +30,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.PasswordVisualTransformation
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import com.runningcoach.app.data.model.AthleteProfile
 import com.runningcoach.app.data.model.StravaStatus
@@ -275,6 +277,14 @@ private fun ThemeSection(themeMode: String, onSaveTheme: (String) -> Unit) {
         options = listOf("system", "dark", "light"),
         selected = themeMode,
         onSelect = onSaveTheme,
+        display = {
+            when (it) {
+                "system" -> "Sistema"
+                "dark" -> "Scuro"
+                "light" -> "Chiaro"
+                else -> it
+            }
+        },
     )
 }
 
@@ -340,9 +350,35 @@ private fun CoachSetupSection(
         )
     }
     Spacer(Modifier.height(10.dp))
-    ChoiceRow("Livello", listOf("beginner", "intermediate", "advanced"), level) { level = it }
+    ChoiceRow(
+        "Livello",
+        listOf("beginner", "intermediate", "advanced"),
+        level,
+        onSelect = { level = it },
+        display = {
+            when (it) {
+                "beginner" -> "Base"
+                "intermediate" -> "Medio"
+                "advanced" -> "Avanzato"
+                else -> it
+            }
+        },
+    )
     Spacer(Modifier.height(8.dp))
-    ChoiceRow("Rischio", listOf("conservative", "moderate", "aggressive"), risk) { risk = it }
+    ChoiceRow(
+        "Rischio",
+        listOf("conservative", "moderate", "aggressive"),
+        risk,
+        onSelect = { risk = it },
+        display = {
+            when (it) {
+                "conservative" -> "Cauto"
+                "moderate" -> "Medio"
+                "aggressive" -> "Spinto"
+                else -> it
+            }
+        },
+    )
     Spacer(Modifier.height(14.dp))
     Button(
         onClick = { onSaveCoach(goalType, targetDate, targetTime, level, risk) },
@@ -352,26 +388,47 @@ private fun CoachSetupSection(
     }
 }
 
-/** A compact single-choice row rendered as a set of toggle buttons. */
+/** A compact single-choice row rendered as a set of toggle buttons.
+ *
+ * [display] maps the stored option value to a short, single-line label so the
+ * equally-weighted buttons never wrap (e.g. "intermediate" → "Medio").
+ */
 @Composable
 private fun ChoiceRow(
     label: String,
     options: List<String>,
     selected: String,
     onSelect: (String) -> Unit,
+    display: (String) -> String = { it.replaceFirstChar { c -> c.uppercase() } },
 ) {
+    // Tight content padding keeps the longest label on one line in a 1/3-width
+    // cell on narrow phones.
+    val pad = PaddingValues(horizontal = 6.dp, vertical = 8.dp)
     Text(label, style = MaterialTheme.typography.labelMedium, fontWeight = FontWeight.Bold)
     Spacer(Modifier.height(6.dp))
     Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
         options.forEach { opt ->
+            val text: @Composable () -> Unit = {
+                Text(
+                    display(opt),
+                    style = MaterialTheme.typography.labelSmall,
+                    maxLines = 1,
+                    softWrap = false,
+                    textAlign = TextAlign.Center,
+                )
+            }
             if (opt == selected) {
-                Button(onClick = { onSelect(opt) }, modifier = Modifier.weight(1f)) {
-                    Text(opt, style = MaterialTheme.typography.labelSmall)
-                }
+                Button(
+                    onClick = { onSelect(opt) },
+                    modifier = Modifier.weight(1f),
+                    contentPadding = pad,
+                ) { text() }
             } else {
-                OutlinedButton(onClick = { onSelect(opt) }, modifier = Modifier.weight(1f)) {
-                    Text(opt, style = MaterialTheme.typography.labelSmall)
-                }
+                OutlinedButton(
+                    onClick = { onSelect(opt) },
+                    modifier = Modifier.weight(1f),
+                    contentPadding = pad,
+                ) { text() }
             }
         }
     }
