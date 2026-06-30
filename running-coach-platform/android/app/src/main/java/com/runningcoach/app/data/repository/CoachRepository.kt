@@ -6,6 +6,9 @@ import com.runningcoach.app.data.model.AthleteProfile
 import com.runningcoach.app.data.model.DailyCheckin
 import com.runningcoach.app.data.model.Overview
 import com.runningcoach.app.data.model.PeriodStats
+import com.runningcoach.app.data.model.PlanChatMessage
+import com.runningcoach.app.data.model.PlanChatRequest
+import com.runningcoach.app.data.model.PlanChatResponse
 import com.runningcoach.app.data.model.PlanGenerateRequest
 import com.runningcoach.app.data.model.PlanSession
 import com.runningcoach.app.data.model.Report
@@ -51,6 +54,9 @@ class CoachRepository(private val settings: SettingsStore) {
     suspend fun stats(period: String = "all-time"): PeriodStats = api().getStats(period)
 
     suspend fun stravaStatus(): StravaStatus = api().stravaStatus()
+
+    suspend fun chatForPlan(messages: List<PlanChatMessage>): PlanChatResponse =
+        api().chatForPlan(PlanChatRequest(messages))
 
     suspend fun generatePlan(request: PlanGenerateRequest): TrainingPlan =
         api().generatePlan(request)

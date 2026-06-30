@@ -2,6 +2,7 @@ package com.runningcoach.app.ui.viewmodel
 
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
+import com.runningcoach.app.data.model.PlanChatMessage
 import com.runningcoach.app.data.model.PlanGenerateRequest
 import com.runningcoach.app.data.model.TrainingPlan
 import com.runningcoach.app.data.repository.CoachRepository
@@ -11,12 +12,23 @@ import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 
+private const val WELCOME_MESSAGE =
+    "Ciao! Prima di creare il tuo piano, dimmi qualcosa sul tuo allenamento attuale. " +
+    "Quanti km corri in media a settimana?"
+
 data class PlanUiState(
     val loading: Boolean = false,
     val plan: TrainingPlan? = null,
     val error: String? = null,
     val successMessage: String? = null,
     val showGenerateDialog: Boolean = false,
+    // Chat state
+    val chatMessages: List<PlanChatMessage> = listOf(
+        PlanChatMessage(role = "assistant", content = WELCOME_MESSAGE)
+    ),
+    val chatLoading: Boolean = false,
+    val chatComplete: Boolean = false,
+    val runnerContext: String? = null,
 )
 
 class PlanViewModel(private val repository: CoachRepository) : ViewModel() {
@@ -37,10 +49,55 @@ class PlanViewModel(private val repository: CoachRepository) : ViewModel() {
         }
     }
 
-    fun generatePlan(request: PlanGenerateRequest) {
+    fun sendChatMessage(text: String) {
+        val trimmed = text.trim().takeIf { it.isNotEmpty() } ?: return
+        val userMsg = PlanChatMessage(role = "user", content = trimmed)
+        val updatedMessages = _state.value.chatMessages + userMsg
+        _state.update { it.copy(chatMessages = updatedMessages, chatLoading = true, error = null) }
+
         viewModelScope.launch {
-            _state.update { it.copy(loading = true, error = null, successMessage = null, showGenerateDialog = false) }
-            runCatching { repository.generatePlan(request) }
+            runCatching {
+                repository.chatForPlan(updatedMessages)
+            }.onSuccess { response ->
+                val assistantMsg = PlanChatMessage(role = "assistant", content = response.message)
+                _state.update {
+                    it.copy(
+                        chatMessages = updatedMessages + assistantMsg,
+                        chatLoading = false,
+                        chatComplete = response.isComplete,
+                        runnerContext = response.runnerContext,
+                    )
+                }
+            }.onFailure { e ->
+                _state.update { it.copy(chatLoading = false, error = friendly(e)) }
+            }
+        }
+    }
+
+    fun resetChat() {
+        _state.update {
+            it.copy(
+                chatMessages = listOf(PlanChatMessage(role = "assistant", content = WELCOME_MESSAGE)),
+                chatLoading = false,
+                chatComplete = false,
+                runnerContext = null,
+            )
+        }
+    }
+
+    fun generatePlan(request: PlanGenerateRequest) {
+        val context = _state.value.runnerContext
+        val requestWithContext = request.copy(runnerContext = context)
+        viewModelScope.launch {
+            _state.update {
+                it.copy(
+                    loading = true,
+                    error = null,
+                    successMessage = null,
+                    showGenerateDialog = false,
+                )
+            }
+            runCatching { repository.generatePlan(requestWithContext) }
                 .onSuccess { plan ->
                     _state.update {
                         it.copy(loading = false, plan = plan, successMessage = "Piano generato!")
@@ -54,7 +111,6 @@ class PlanViewModel(private val repository: CoachRepository) : ViewModel() {
 
     fun toggleSession(sessionId: Int) {
         viewModelScope.launch {
-            // Optimistic update: flip the completed flag locally first.
             val current = _state.value.plan
             val optimistic = current?.let { plan ->
                 plan.copy(
@@ -71,7 +127,6 @@ class PlanViewModel(private val repository: CoachRepository) : ViewModel() {
 
             runCatching { repository.toggleSessionComplete(sessionId) }
                 .onSuccess { updated ->
-                    // Patch the single session with the server's response.
                     _state.update { st ->
                         val patched = st.plan?.copy(
                             weeks = st.plan.weeks.map { week ->
@@ -86,7 +141,6 @@ class PlanViewModel(private val repository: CoachRepository) : ViewModel() {
                     }
                 }
                 .onFailure { e ->
-                    // Rollback optimistic update on failure.
                     _state.update { it.copy(plan = current, error = friendly(e)) }
                 }
         }
@@ -109,7 +163,10 @@ class PlanViewModel(private val repository: CoachRepository) : ViewModel() {
 
     fun showGenerateDialog() = _state.update { it.copy(showGenerateDialog = true) }
 
-    fun dismissDialog() = _state.update { it.copy(showGenerateDialog = false) }
+    fun dismissDialog() {
+        _state.update { it.copy(showGenerateDialog = false) }
+        resetChat()
+    }
 
     fun clearMessage() = _state.update { it.copy(successMessage = null, error = null) }
 

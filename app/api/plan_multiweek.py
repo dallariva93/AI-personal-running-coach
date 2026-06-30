@@ -8,7 +8,13 @@ from sqlalchemy.orm import Session
 from app.coaching.coach import get_coach
 from app.db.database import get_session
 from app.processing import compute_metrics
-from app.schemas import PlanGenerateRequest, PlanSessionOut, TrainingPlanOut
+from app.schemas import (
+    PlanChatRequest,
+    PlanChatResponse,
+    PlanGenerateRequest,
+    PlanSessionOut,
+    TrainingPlanOut,
+)
 from app.services.checkin import latest_checkin
 from app.services.ingest import _all_summaries
 from app.services.plan_service import (
@@ -25,6 +31,20 @@ router = APIRouter(prefix="/api", tags=["plan-multiweek"])
 
 def _commit(session: Session) -> None:
     session.commit()
+
+
+@router.post("/plan/chat", response_model=PlanChatResponse)
+def post_plan_chat(payload: PlanChatRequest) -> PlanChatResponse:
+    """Chat with Haiku to collect runner profile before plan generation."""
+    coach = get_coach()
+    messages = [{"role": m.role, "content": m.content} for m in payload.messages]
+    try:
+        message, is_complete, runner_context = coach.chat_for_plan(messages)
+    except Exception as exc:
+        raise HTTPException(status_code=500, detail=str(exc)) from exc
+    return PlanChatResponse(
+        message=message, is_complete=is_complete, runner_context=runner_context
+    )
 
 
 @router.post("/plan/generate", response_model=TrainingPlanOut, status_code=201)

@@ -247,6 +247,24 @@ data class TrainingPlan(
     @SerializedName("weeks") val weeks: List<PlanWeek> = emptyList(),
 )
 
+/** One message in the pre-plan AI chat. */
+data class PlanChatMessage(
+    @SerializedName("role") val role: String,       // "user" or "assistant"
+    @SerializedName("content") val content: String,
+)
+
+/** Request body for the pre-plan chat endpoint. */
+data class PlanChatRequest(
+    @SerializedName("messages") val messages: List<PlanChatMessage>,
+)
+
+/** Response from the pre-plan chat endpoint. */
+data class PlanChatResponse(
+    @SerializedName("message") val message: String,
+    @SerializedName("is_complete") val isComplete: Boolean = false,
+    @SerializedName("runner_context") val runnerContext: String? = null,
+)
+
 /** Request body for generating a new multi-week training plan. */
 data class PlanGenerateRequest(
     @SerializedName("goal_type") val goalType: String = "marathon",
@@ -255,6 +273,7 @@ data class PlanGenerateRequest(
     @SerializedName("level") val level: String = "intermediate",
     @SerializedName("days_per_week") val daysPerWeek: Int = 4,
     @SerializedName("long_run_day") val longRunDay: Int = 6,
+    @SerializedName("runner_context") val runnerContext: String? = null,
 )
 
 /** One segment in a workout template. */

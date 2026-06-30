@@ -257,6 +257,44 @@ def build_weekly_user_message(
     )
 
 
+# ── Pre-plan chat prompt ─────────────────────────────────────────────────────
+
+PLAN_CHAT_SYSTEM_PROMPT = """\
+Sei un assistente coach di corsa AI. Stai conducendo una breve intervista per \
+raccogliere il profilo atletico dell'utente prima di generare un piano di allenamento.
+
+Parla in italiano, con un tono amichevole e diretto. Fai 1-2 domande alla volta, \
+non di più. Non ripetere domande già risposte.
+
+Informazioni da raccogliere (in ordine di priorità):
+1. Volume settimanale attuale (km/settimana)
+2. Passo soglia anaerobica — il ritmo che riesci a tenere 20-40 minuti di fila \
+   (es. "5:20/km"). Se non lo conosce, chiedi il passo di una recente gara 10K.
+3. Passo facile/rigenerativo (es. "6:10/km")
+4. Corsa più lunga recente (km)
+5. Personal best recenti — opzionale (5K, 10K, mezza, maratona)
+6. Infortuni o limitazioni fisiche in corso — opzionale
+7. Eventuali note specifiche sull'allenamento
+
+Quando hai raccolto almeno: volume settimanale + passo soglia o easy + stato fisico, \
+chiudi la conversazione con un breve riepilogo delle informazioni raccolte.
+
+IMPORTANTE: nell'ULTIMO messaggio (il riepilogo), dopo il testo visibile all'utente, \
+aggiungi ESATTAMENTE questi due blocchi su righe separate, senza spazi prima o dopo:
+
+§CTX§
+{"weekly_km":<numero o null>,"long_run_km":<numero o null>,
+"threshold_pace":"<M:SS/km o null>","easy_pace":"<M:SS/km o null>",
+"race_pbs":{"5k":"<o null>","10k":"<o null>","half":"<o null>","marathon":"<o null>"},
+"injuries":<"descrizione" o null>,"training_days":<numero o null>,
+"notes":"<note aggiuntive o stringa vuota>"}
+§/CTX§
+§READY§
+
+Usa null per i valori sconosciuti. Non includere §CTX§/§READY§ nei messaggi intermedi.
+"""
+
+
 # ── Multi-week plan prompt ────────────────────────────────────────────────────
 
 MULTIWEEK_PLAN_SYSTEM_PROMPT = """\
@@ -390,6 +428,13 @@ def build_multiweek_plan_message(
             profile_bits.append(f"{profile.weekly_runs} uscite/settimana attuali")
     profile_str = ", ".join(profile_bits) if profile_bits else "profilo non disponibile"
 
+    runner_context_section = ""
+    if request.runner_context:
+        runner_context_section = (
+            f"\nPROFILO RUNNER DA CHAT PRELIMINARE (priorità alta — usa questi dati "
+            f"per calibrare passi e volume):\n{request.runner_context}\n"
+        )
+
     return (
         f"Data di oggi: {today}\n"
         f"Obiettivo: {goal_dist}\n"
@@ -401,7 +446,8 @@ def build_multiweek_plan_message(
         f"(day_of_week={request.long_run_day})\n"
         f"Profilo atleta: {profile_str}\n"
         f"Volume settimanale attuale: ~{baseline_km:.0f} km\n"
-        f"Settimane disponibili fino alla gara: {weeks_available}\n\n"
+        f"Settimane disponibili fino alla gara: {weeks_available}\n"
+        f"{runner_context_section}\n"
         "Genera il piano COMPLETO con tutte le settimane. "
         "Ogni settimana deve avere ESATTAMENTE 7 sessioni (day_of_week 0-6). "
         "Rispetta la struttura di periodizzazione Base→Build→Specifico/Peak→Taper→Gara. "

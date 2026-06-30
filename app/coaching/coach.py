@@ -59,6 +59,11 @@ class Coach(Protocol):
         profile: AthleteProfile | None,
     ) -> WorkoutTemplateIn: ...
 
+    def chat_for_plan(
+        self,
+        messages: list[dict],
+    ) -> tuple[str, bool, str | None]: ...
+
 
 def _split_sections(text: str) -> tuple[str, str]:
     """Split a markdown response into (analysis, next_workout) by the headings."""
@@ -108,6 +113,25 @@ class AICoach:
             base_delay=2.0,
             description=f"claude.messages.create({model})",
         )
+
+    def _call_chat(
+        self, system: str, messages: list[dict], max_tokens: int = 600
+    ) -> str:
+        """Multi-turn chat call — always uses Haiku for cost efficiency."""
+        haiku = "claude-haiku-4-5-20251001"
+
+        def _do() -> str:
+            resp = self._get_client().messages.create(
+                model=haiku,
+                max_tokens=max_tokens,
+                system=system,
+                messages=messages,
+            )
+            return "".join(
+                block.text for block in resp.content if getattr(block, "type", "") == "text"
+            )
+
+        return retry_call(_do, retries=2, base_delay=1.0, description="haiku.chat")
 
     def analyze_run(
         self,
@@ -204,6 +228,34 @@ class AICoach:
                 "Workout suggest AI call failed, falling back to offline: %s", exc
             )
             return self._fallback.suggest_workout(request, metrics, profile)
+
+    def chat_for_plan(
+        self,
+        messages: list[dict],
+    ) -> tuple[str, bool, str | None]:
+        """Multi-turn Haiku chat to collect runner profile before plan generation.
+
+        Returns (visible_message, is_complete, runner_context_json).
+        When is_complete=True, runner_context_json contains the extracted runner
+        profile as a JSON string ready to pass to plan generation.
+        """
+        try:
+            raw = self._call_chat(prompts.PLAN_CHAT_SYSTEM_PROMPT, messages)
+        except Exception as exc:
+            logger.error("Plan chat AI call failed, using offline: %s", exc)
+            return self._fallback.chat_for_plan(messages)
+
+        is_complete = "§READY§" in raw
+        runner_context: str | None = None
+        if is_complete:
+            ctx_match = re.search(r"§CTX§\s*(.*?)\s*§/CTX§", raw, re.DOTALL)
+            if ctx_match:
+                runner_context = ctx_match.group(1).strip()
+
+        # Strip sentinels from the message shown to the user
+        message = re.sub(r"§CTX§.*?§/CTX§", "", raw, flags=re.DOTALL)
+        message = message.replace("§READY§", "").strip()
+        return message, is_complete, runner_context
 
     def _profile_text(self, profile: AthleteProfile | None) -> str:
         """Render the athlete profile for the system prompt.
@@ -739,6 +791,18 @@ class OfflineCoach:
                     notes=f"35 min @ {easy_pace}, passo molto comodo Z1-Z2",
                 ),
             ],
+        )
+
+    def chat_for_plan(
+        self,
+        messages: list[dict],
+    ) -> tuple[str, bool, str | None]:
+        """Offline fallback: immediately signals completion with no runner context."""
+        return (
+            "Modalità offline — la chat AI non è disponibile senza credenziali. "
+            "Puoi comunque generare il piano: sarà calibrato sui tuoi allenamenti salvati.",
+            True,
+            None,
         )
 
     def plan_multiweek(

@@ -6,6 +6,8 @@ import com.runningcoach.app.data.model.AthleteProfile
 import com.runningcoach.app.data.model.DailyCheckin
 import com.runningcoach.app.data.model.Overview
 import com.runningcoach.app.data.model.PeriodStats
+import com.runningcoach.app.data.model.PlanChatRequest
+import com.runningcoach.app.data.model.PlanChatResponse
 import com.runningcoach.app.data.model.PlanGenerateRequest
 import com.runningcoach.app.data.model.PlanSession
 import com.runningcoach.app.data.model.Report
@@ -60,6 +62,9 @@ interface ApiService {
 
     @GET("api/strava/status")
     suspend fun stravaStatus(): StravaStatus
+
+    @POST("api/plan/chat")
+    suspend fun chatForPlan(@Body request: PlanChatRequest): PlanChatResponse
 
     @POST("api/plan/generate")
     suspend fun generatePlan(@Body request: PlanGenerateRequest): TrainingPlan

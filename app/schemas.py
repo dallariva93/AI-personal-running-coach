@@ -503,6 +503,27 @@ class TrainingPlanOut(BaseModel):
     weeks: list[PlanWeekOut]
 
 
+class PlanChatMessage(BaseModel):
+    """One turn in the pre-plan AI chat."""
+
+    role: str  # "user" or "assistant"
+    content: str
+
+
+class PlanChatRequest(BaseModel):
+    """Request body for the pre-plan chat endpoint."""
+
+    messages: list[PlanChatMessage]
+
+
+class PlanChatResponse(BaseModel):
+    """Response from the pre-plan chat endpoint."""
+
+    message: str
+    is_complete: bool = False
+    runner_context: str | None = None  # JSON string with extracted runner profile
+
+
 class PlanGenerateRequest(BaseModel):
     """Request body for generating a new multi-week training plan."""
 
@@ -512,6 +533,7 @@ class PlanGenerateRequest(BaseModel):
     level: str = "intermediate"
     days_per_week: int = 4
     long_run_day: int = 6  # 0=Mon, 6=Sun (default Sunday)
+    runner_context: str | None = None  # JSON summary from pre-plan chat
 
 
 # ── Workout builder schemas ───────────────────────────────────────────────────

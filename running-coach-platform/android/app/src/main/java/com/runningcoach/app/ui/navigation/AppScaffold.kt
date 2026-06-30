@@ -249,6 +249,7 @@ fun AppScaffold(app: RunningCoachApp) {
                         onArchivePlan = planVm::archivePlan,
                         onShowGenerateDialog = planVm::showGenerateDialog,
                         onDismissDialog = planVm::dismissDialog,
+                        onSendChatMessage = planVm::sendChatMessage,
                         onOpenWorkouts = {
                             navController.navigate("workouts") { launchSingleTop = true }
                         },
