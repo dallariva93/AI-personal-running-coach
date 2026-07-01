@@ -20,11 +20,10 @@ def test_object_store_disabled_without_config(monkeypatch):
         "S3_SECRET_ACCESS_KEY",
         "AWS_SECRET_ACCESS_KEY",
     ):
-        monkeypatch.delenv(var, raising=False)
+        monkeypatch.setenv(var, "")
     from app.config import get_settings
 
     get_settings.cache_clear()
-    get_object_store.cache_clear()
     assert get_object_store() is None
 
 
@@ -34,12 +33,17 @@ class _FakeStore:
     def __init__(self) -> None:
         self.objects: dict[str, bytes] = {}
 
-    def full_key(self, *parts: str) -> str:
-        return "/".join(p.strip("/") for p in parts if p)
-
-    def put(self, key: str, data: bytes, content_type: str = "") -> str:
+    def put_bytes(self, key: str, data: bytes, content_type: str = "") -> None:
         self.objects[key] = data
-        return key
+
+    def get_bytes(self, key: str) -> bytes:
+        return self.objects[key]
+
+    def exists(self, key: str) -> bool:
+        return key in self.objects
+
+    def delete(self, key: str) -> None:
+        self.objects.pop(key, None)
 
 
 class _FakeClient:

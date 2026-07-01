@@ -64,9 +64,10 @@ _DOWNLOAD_KINDS: dict[str, tuple[str, str, str]] = {
 class GarminRawFetcher:
     """Archive every raw payload for an activity into an object store."""
 
-    def __init__(self, client: Any, store: ObjectStore) -> None:
+    def __init__(self, client: Any, store: ObjectStore, key_prefix: str = "") -> None:
         self.client = client
         self.store = store
+        self.key_prefix = key_prefix.strip("/")
 
     def fetch_all(
         self,
@@ -167,8 +168,9 @@ class GarminRawFetcher:
         data: bytes,
         content_type: str,
     ) -> RawAsset:
-        key = self.store.full_key(activity_id, filename)
-        self.store.put(key, data, content_type=content_type)
+        parts = [self.key_prefix, str(activity_id), filename] if self.key_prefix else [str(activity_id), filename]
+        key = "/".join(p.strip("/") for p in parts if p)
+        self.store.put_bytes(key, data, content_type=content_type)
         return RawAsset(
             activity_id=activity_id,
             activity_type_key=activity_type_key,
