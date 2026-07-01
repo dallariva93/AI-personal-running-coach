@@ -99,6 +99,7 @@ def recent_executions(db: Session, days: int = 21) -> list[ExecutionResult]:
             sess_date = _session_date(start, week.week_number, sess.day_of_week)
             if sess_date < cutoff:
                 continue
+            detail = sess.execution_detail or {}
             out.append(
                 ExecutionResult(
                     plan_session_id=sess.id,
@@ -108,6 +109,12 @@ def recent_executions(db: Session, days: int = 21) -> list[ExecutionResult]:
                     execution_status=sess.execution_status,
                     execution_notes=sess.execution_note or "",
                     evidence=list(sess.execution_evidence or []),
+                    volume_score=detail.get("volume_score"),
+                    intensity_score=detail.get("intensity_score"),
+                    pace_score=detail.get("pace_score"),
+                    structure_score=detail.get("structure_score"),
+                    distribution_score=detail.get("distribution_score"),
+                    time_in_zone_pct=detail.get("time_in_zone_pct"),
                 )
             )
     out.sort(key=lambda r: r.date, reverse=True)
@@ -121,9 +128,16 @@ def _apply(
     sess.execution_status = result.execution_status
     sess.execution_note = result.execution_notes
     sess.execution_evidence = result.evidence
+    sess.execution_detail = {
+        "volume_score": result.volume_score,
+        "intensity_score": result.intensity_score,
+        "pace_score": result.pace_score,
+        "structure_score": result.structure_score,
+        "distribution_score": result.distribution_score,
+        "time_in_zone_pct": result.time_in_zone_pct,
+    }
     if activity is not None:
         sess.executed_activity_id = activity.id
-        # Reality overrides the checkbox: a matching run marks the session done.
         if result.execution_score >= _AUTO_COMPLETE_SCORE and not sess.completed:
             sess.completed = True
 
