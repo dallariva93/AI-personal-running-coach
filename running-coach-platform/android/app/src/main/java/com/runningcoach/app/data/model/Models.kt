@@ -432,6 +432,32 @@ data class CoachActionRequest(
     @SerializedName("detail") val detail: String? = null,
 )
 
+/** A pending coach notification (Roadmap #6). */
+data class AppNotification(
+    @SerializedName("id") val id: Int,
+    @SerializedName("title") val title: String,
+    @SerializedName("body") val body: String,
+    @SerializedName("date") val date: String = "",
+    @SerializedName("event_type") val eventType: String = "",
+)
+
+/** IDs the client has delivered, to mark notifications as sent. */
+data class NotificationAck(
+    @SerializedName("ids") val ids: List<Int>,
+)
+
+/** One entry in the coach audit diary (Roadmap #5). */
+data class CoachEvent(
+    @SerializedName("id") val id: Int,
+    @SerializedName("date") val date: String,
+    @SerializedName("event_type") val eventType: String,
+    @SerializedName("title") val title: String,
+    @SerializedName("detail") val detail: String = "",
+    @SerializedName("signals") val signals: List<String>? = null,
+    @SerializedName("notifiable") val notifiable: Boolean = false,
+    @SerializedName("created_at") val createdAt: String? = null,
+)
+
 /** Everything the app needs to render its main screens, in one response. */
 data class Overview(
     @SerializedName("version") val version: String = "",
@@ -452,4 +478,5 @@ data class Overview(
     @SerializedName("gamification") val gamification: GamificationData? = null,
     @SerializedName("active_plan") val activePlan: TrainingPlan? = null,
     @SerializedName("today_decision") val todayDecision: CoachDecision? = null,
+    @SerializedName("notifications") val notifications: List<AppNotification> = emptyList(),
 )

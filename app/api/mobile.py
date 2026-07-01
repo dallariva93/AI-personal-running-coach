@@ -108,8 +108,10 @@ def overview(session: Session = Depends(get_session)) -> dict:
 
     # Coach Decision Engine: the dominant "what to do today" (Roadmap #7).
     from app.services.decision_service import build_today_decision
+    from app.services.event_service import pending_notifications
 
     today_decision = build_today_decision(session, persist=False)
+    notifications = pending_notifications(session)
 
     # Workout library count
     saved_workouts = list_workouts(session)
@@ -135,4 +137,5 @@ def overview(session: Session = Depends(get_session)) -> dict:
         "active_plan": active_plan.model_dump() if active_plan else None,
         "saved_workout_count": saved_workout_count,
         "today_decision": today_decision.model_dump(),
+        "notifications": [n.model_dump() for n in notifications],
     }

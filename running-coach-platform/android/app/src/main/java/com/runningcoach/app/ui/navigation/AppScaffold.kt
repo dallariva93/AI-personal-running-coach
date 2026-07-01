@@ -43,6 +43,7 @@ import com.runningcoach.app.ui.screens.ActivitiesScreen
 import com.runningcoach.app.ui.screens.ActivityDetailScreen
 import com.runningcoach.app.ui.screens.CalendarScreen
 import com.runningcoach.app.ui.screens.ChatScreen
+import com.runningcoach.app.ui.screens.CoachLogScreen
 import com.runningcoach.app.ui.screens.CrossTrainingScreen
 import com.runningcoach.app.ui.screens.HeatmapScreen
 import com.runningcoach.app.ui.screens.HomeScreen
@@ -134,6 +135,16 @@ fun AppScaffold(app: RunningCoachApp) {
             }
         }
 
+        // Deliver coach notifications in-app whenever the overview refreshes
+        // (Roadmap #6); the background worker covers the app-closed case.
+        LaunchedEffect(state.overview?.notifications) {
+            val notes = state.overview?.notifications.orEmpty()
+            if (notes.isNotEmpty()) {
+                notes.forEach { com.runningcoach.app.notify.CoachNotifications.post(context, it) }
+                overviewVm.ackNotifications(notes.map { it.id })
+            }
+        }
+
         // Update home-screen widget whenever the overview changes.
         LaunchedEffect(state.overview) {
             state.overview?.let { ov ->
@@ -218,6 +229,15 @@ fun AppScaffold(app: RunningCoachApp) {
                         onAnalyze = overviewVm::analyze,
                         onOpenActivity = openActivity,
                         onCoachAction = overviewVm::coachAction,
+                        onOpenCoachLog = {
+                            navController.navigate("coachlog") { launchSingleTop = true }
+                        },
+                    )
+                }
+                composable("coachlog") {
+                    CoachLogScreen(
+                        repository = app.repository,
+                        onBack = { navController.popBackStack() },
                     )
                 }
                 composable(Dest.Activities.route) {

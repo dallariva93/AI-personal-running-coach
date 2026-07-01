@@ -2,6 +2,7 @@ package com.runningcoach.app.data.remote
 
 import com.runningcoach.app.data.model.Activity
 import com.runningcoach.app.data.model.ActivityPatch
+import com.runningcoach.app.data.model.AppNotification
 import com.runningcoach.app.data.model.AthleteProfile
 import com.runningcoach.app.data.model.ChatMessage
 import com.runningcoach.app.data.model.ChatSendRequest
@@ -9,7 +10,9 @@ import com.runningcoach.app.data.model.ChatSendResponse
 import com.runningcoach.app.data.model.ChatSession
 import com.runningcoach.app.data.model.CoachActionRequest
 import com.runningcoach.app.data.model.CoachDecision
+import com.runningcoach.app.data.model.CoachEvent
 import com.runningcoach.app.data.model.DailyCheckin
+import com.runningcoach.app.data.model.NotificationAck
 import com.runningcoach.app.data.model.HeatmapResponse
 import com.runningcoach.app.data.model.Vo2maxHistory
 import com.runningcoach.app.data.model.Overview
@@ -58,6 +61,15 @@ interface ApiService {
 
     @POST("api/coach/today/action")
     suspend fun coachAction(@Body request: CoachActionRequest): CoachDecision
+
+    @GET("api/notifications")
+    suspend fun notifications(): List<AppNotification>
+
+    @POST("api/notifications/ack")
+    suspend fun ackNotifications(@Body request: NotificationAck): Map<String, Int>
+
+    @GET("api/coach/events")
+    suspend fun coachEvents(@Query("days") days: Int = 30): List<CoachEvent>
 
     @POST("api/analyze")
     suspend fun analyze(@Query("activity_id") activityId: Int? = null): Report

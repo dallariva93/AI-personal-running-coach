@@ -496,3 +496,36 @@ class CoachDecisionRow(Base):
 
     def __repr__(self) -> str:  # pragma: no cover
         return f"<CoachDecision {self.date} {self.decision}>"
+
+
+class CoachEvent(Base):
+    """Audit log of coaching decisions and plan adaptations (Roadmap #5).
+
+    Every meaningful change the coach makes — a decision, a plan adaptation, an
+    athlete action — is recorded here with *what* changed, *when*, *why*, the
+    *signals* used and the *before/after* state. This gives debuggability, user
+    trust, a coaching history, an analytics base, and the source for
+    notifications (Roadmap #6): a ``notifiable`` event not yet ``notified`` is a
+    pending notification.
+    """
+
+    __tablename__ = "coach_events"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    date: Mapped[str] = mapped_column(String(10), index=True)  # ISO date it concerns
+    event_type: Mapped[str] = mapped_column(String(24), index=True)
+    # decision | plan_adapted | action | execution
+    title: Mapped[str] = mapped_column(String(160))
+    detail: Mapped[str] = mapped_column(Text, default="")
+    signals: Mapped[list | None] = mapped_column(JSON, nullable=True)
+    before: Mapped[dict | None] = mapped_column(JSON, nullable=True)
+    after: Mapped[dict | None] = mapped_column(JSON, nullable=True)
+    plan_session_id: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    # Idempotency: identical re-syncs must not duplicate an event.
+    dedupe_key: Mapped[str | None] = mapped_column(String(128), nullable=True, index=True)
+    notifiable: Mapped[bool] = mapped_column(Boolean, default=False)
+    notified: Mapped[bool] = mapped_column(Boolean, default=False)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=_utcnow, index=True)
+
+    def __repr__(self) -> str:  # pragma: no cover
+        return f"<CoachEvent {self.event_type} {self.date} {self.title!r}>"

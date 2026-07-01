@@ -450,16 +450,16 @@ Sistema di test con atleti sintetici e scenari reali per validare sicurezza, qua
 
 ### Breve termine
 
-- Introdurre un modello dati per CoachDecision.
-- Salvare decisioni AI come entità queryable, non solo report testuali.
+- ✅ Introdurre un modello dati per CoachDecision. **FATTO** (tabella `coach_decisions`).
+- ✅ Salvare decisioni AI come entità queryable, non solo report testuali. **FATTO**.
 - Aggiungere job asincroni per generazione piano e analisi pesanti.
-- Preparare eventi interni: activity_imported, checkin_created, plan_changed, decision_created.
+- ✅ Event log / audit di decisioni e adattamenti (Priorità 5). **FATTO**: tabella `coach_events` registra cosa è cambiato, quando, perché, da quali segnali, con before/after della seduta. Emesso da adattamento piano, decisioni e azioni. API `GET /api/coach/events`. Android: schermata "Diario del coach". È anche la sorgente delle notifiche.
 
 ### Medio termine
 
 - Mobile cache locale per overview, piani, attività e decisioni.
 - Sync queue per modifiche offline.
-- Notifiche push basate su eventi coach.
+- ✅ Notifiche basate su eventi coach (Priorità 6). **FATTO**: le notifiche derivano solo da decisioni/adattamenti notabili (mai generiche). Sorgente = `coach_events` con flag `notifiable`. API `GET /api/notifications` + `POST /api/notifications/ack`. Android: `NotificationSyncWorker` (WorkManager, ogni ~3h) consegna a app chiusa; consegna in-app all'apertura; canale + permesso POST_NOTIFICATIONS.
 - Observability prodotto: activation, retention, usage delle feature.
 
 ### Lungo termine
@@ -486,7 +486,7 @@ Sistema di test con atleti sintetici e scenari reali per validare sicurezza, qua
 5. Adaptive plan after sync. ✅ FATTO
 6. Workout Execution Score. ✅ FATTO
 7. Health Connect MVP.
-8. Notifiche intelligenti.
+8. Notifiche intelligenti. ✅ FATTO
 9. Race recap.
 10. Audio/live coaching.
 

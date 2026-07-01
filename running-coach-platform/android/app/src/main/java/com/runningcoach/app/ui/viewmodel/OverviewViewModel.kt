@@ -87,6 +87,12 @@ class OverviewViewModel(private val repository: CoachRepository) : ViewModel() {
         action(msg) { repository.coachAction(action, detail) }
     }
 
+    /** Mark coach notifications as delivered (after posting them locally). */
+    fun ackNotifications(ids: List<Int>) {
+        if (ids.isEmpty()) return
+        viewModelScope.launch { runCatching { repository.ackNotifications(ids) } }
+    }
+
     /** Silently fetch Garmin wellness data for missing days (fire-and-forget). */
     fun ingestWellness() {
         viewModelScope.launch {

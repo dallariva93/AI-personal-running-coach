@@ -17,6 +17,7 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Analytics
+import androidx.compose.material.icons.filled.ChevronRight
 import androidx.compose.material.icons.filled.ExpandLess
 import androidx.compose.material.icons.filled.ExpandMore
 import androidx.compose.material.icons.filled.Sync
@@ -58,6 +59,7 @@ fun HomeScreen(
     onAnalyze: () -> Unit,
     onOpenActivity: (Int) -> Unit = {},
     onCoachAction: (String, String?) -> Unit = { _, _ -> },
+    onOpenCoachLog: () -> Unit = {},
 ) {
     val ov: Overview? = state.overview
     Column(
@@ -137,6 +139,26 @@ fun HomeScreen(
             if (ov.todayDecision != null) {
                 Spacer(Modifier.height(14.dp))
                 DetailsToggle(ov, prIds)
+            }
+
+            // Coach diary entry point (Roadmap #5).
+            Spacer(Modifier.height(8.dp))
+            Row(
+                Modifier.fillMaxWidth().clickable(onClick = onOpenCoachLog).padding(vertical = 6.dp),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                Text(
+                    "Diario del coach",
+                    style = MaterialTheme.typography.labelLarge,
+                    fontWeight = FontWeight.SemiBold,
+                    color = MaterialTheme.colorScheme.primary,
+                )
+                Spacer(Modifier.weight(1f))
+                Icon(
+                    Icons.Filled.ChevronRight,
+                    contentDescription = null,
+                    tint = MaterialTheme.colorScheme.primary,
+                )
             }
 
             Spacer(Modifier.height(18.dp))

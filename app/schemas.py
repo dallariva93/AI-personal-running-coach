@@ -337,6 +337,41 @@ class CoachActionRequest(BaseModel):
     detail: str | None = None  # for "problem": tired | pain
 
 
+class CoachEventOut(BaseModel):
+    """One entry in the coach audit log (Roadmap #5)."""
+
+    model_config = ConfigDict(from_attributes=True)
+
+    id: int
+    date: str
+    event_type: str  # decision | plan_adapted | action | execution
+    title: str
+    detail: str = ""
+    signals: list[str] | None = None
+    before: dict | None = None
+    after: dict | None = None
+    plan_session_id: int | None = None
+    notifiable: bool = False
+    notified: bool = False
+    created_at: str | None = None
+
+
+class NotificationOut(BaseModel):
+    """A pending coach notification (Roadmap #6), sourced from a notifiable event."""
+
+    id: int
+    title: str
+    body: str
+    date: str
+    event_type: str
+
+
+class NotificationAck(BaseModel):
+    """IDs of notifications the client has delivered, to mark them as sent."""
+
+    ids: list[int] = Field(default_factory=list)
+
+
 class ExecutionResult(BaseModel):
     """How faithfully a completed activity matched its prescribed plan session.
 

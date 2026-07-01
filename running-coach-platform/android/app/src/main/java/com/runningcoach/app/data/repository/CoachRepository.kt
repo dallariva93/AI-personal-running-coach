@@ -2,6 +2,7 @@ package com.runningcoach.app.data.repository
 
 import com.runningcoach.app.data.model.Activity
 import com.runningcoach.app.data.model.ActivityPatch
+import com.runningcoach.app.data.model.AppNotification
 import com.runningcoach.app.data.model.AthleteProfile
 import com.runningcoach.app.data.model.ChatMessage
 import com.runningcoach.app.data.model.ChatSendRequest
@@ -9,6 +10,8 @@ import com.runningcoach.app.data.model.ChatSendResponse
 import com.runningcoach.app.data.model.ChatSession
 import com.runningcoach.app.data.model.CoachActionRequest
 import com.runningcoach.app.data.model.CoachDecision
+import com.runningcoach.app.data.model.CoachEvent
+import com.runningcoach.app.data.model.NotificationAck
 import com.runningcoach.app.data.model.DailyCheckin
 import com.runningcoach.app.data.model.HeatmapResponse
 import com.runningcoach.app.data.model.Vo2maxHistory
@@ -55,6 +58,13 @@ class CoachRepository(private val settings: SettingsStore) {
 
     suspend fun coachAction(action: String, detail: String? = null): CoachDecision =
         api().coachAction(CoachActionRequest(action = action, detail = detail))
+
+    suspend fun notifications(): List<AppNotification> = api().notifications()
+
+    suspend fun ackNotifications(ids: List<Int>): Int =
+        runCatching { api().ackNotifications(NotificationAck(ids))["acked"] ?: 0 }.getOrDefault(0)
+
+    suspend fun coachEvents(days: Int = 30): List<CoachEvent> = api().coachEvents(days)
 
     suspend fun analyze(activityId: Int? = null): Report = api().analyze(activityId)
 

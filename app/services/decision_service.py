@@ -71,6 +71,45 @@ def get_today_decision(db: Session, ref: date | None = None) -> CoachDecision:
     return build_today_decision(db, ref=ref, persist=True)
 
 
+def record_decision_notification(db: Session, decision: CoachDecision) -> None:
+    """Emit a notifiable event for a *notable* decision (Roadmap #6).
+
+    Only decisions worth interrupting the athlete for become notifications; a
+    routine easy day does not. Deduped per (date, decision) so re-syncing the
+    same day never re-notifies.
+    """
+    from app.services.event_service import log_event
+
+    d = decision.decision
+    no_checkin = any("check-in" in m.lower() for m in decision.missing_data)
+    body: str | None = None
+    if d == "modify":
+        body = "La seduta di oggi è stata alleggerita."
+    elif d == "rest":
+        flag = decision.safety_flags[0] if decision.safety_flags else None
+        body = f"Oggi meglio riposo: {flag.lower()}." if flag else "Oggi meglio riposo."
+    elif d == "caution" and decision.safety_flags:
+        body = f"Attenzione: {decision.safety_flags[0].lower()}."
+    elif d == "quality":
+        body = (
+            "Hai un lavoro di qualità oggi: fai il check-in prima di partire."
+            if no_checkin
+            else "Oggi è giornata di qualità: sei fresco, rendila pulita."
+        )
+    if body is None:
+        return
+    log_event(
+        db,
+        date_str=decision.date,
+        event_type="decision",
+        title=decision.headline,
+        detail=body,
+        signals=decision.signals,
+        notifiable=True,
+        dedupe_key=f"{decision.date}:decision:{d}",
+    )
+
+
 def recent_decisions(db: Session, days: int = 14) -> list[CoachDecision]:
     """Return persisted decisions from the last ``days`` days, newest first."""
     cutoff = (date.today() - timedelta(days=days)).isoformat()
@@ -151,6 +190,24 @@ def apply_coach_action(
         _record_problem(db, detail, ref)
 
     db.flush()
+
+    # Audit the athlete's action (not notifiable — they did it themselves).
+    from app.services.event_service import log_event
+
+    _labels = {
+        "done": "Seduta segnata come completata",
+        "reduce": "Allenamento ridotto su richiesta",
+        "defer": "Seduta spostata a domani",
+        "problem": f"Segnalato un problema ({detail or 'stanchezza'})",
+    }
+    log_event(
+        db,
+        date_str=ref.isoformat(),
+        event_type="action",
+        title=_labels.get(action, action),
+        detail=_labels.get(action, action),
+        plan_session_id=today_sess.id if today_sess is not None else None,
+    )
 
     # A wellness problem should ripple into the upcoming plan; structural edits
     # (done/reduce/defer) should not be immediately re-adapted away.

@@ -77,4 +77,6 @@ dependencies {
 
     // Real OpenStreetMap tiles for the activity route map (free, no API key).
     implementation(libs.osmdroid.android)
+    // Background job for delivering coach notifications without opening the app.
+    implementation(libs.androidx.work.runtime.ktx)
 }

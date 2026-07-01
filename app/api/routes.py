@@ -37,12 +37,15 @@ from app.schemas import (
     Badge,
     CoachActionRequest,
     CoachDecision,
+    CoachEventOut,
     DailyCheckin,
     ExecutionResult,
     GamificationData,
     HeatmapResponse,
     HeatmapRoute,
     ManualActivityIn,
+    NotificationAck,
+    NotificationOut,
     PeriodizationPlan,
     PeriodStats,
     PersonalRecord,
@@ -156,10 +159,16 @@ def _adapt_after_change(session: Session) -> None:
     """
     try:
         from app.services.adaptive_plan import adapt_plan_after_sync
+        from app.services.decision_service import (
+            build_today_decision,
+            record_decision_notification,
+        )
         from app.services.execution_service import evaluate_plan_executions
 
         evaluate_plan_executions(session)
-        adapt_plan_after_sync(session)
+        adapt_plan_after_sync(session)  # logs plan_adapted audit events
+        decision = build_today_decision(session, persist=True)
+        record_decision_notification(session, decision)
         _commit(session)
     except Exception as exc:  # noqa: BLE001
         session.rollback()
@@ -329,6 +338,36 @@ def get_plan_executions(
     from app.services.execution_service import recent_executions
 
     return recent_executions(session, days=days)
+
+
+@router.get("/coach/events", response_model=list[CoachEventOut])
+def get_coach_events(
+    days: int = 30, limit: int = 100, session: Session = Depends(get_session)
+) -> list[CoachEventOut]:
+    """The coach audit diary: decisions, adaptations and actions (Roadmap #5)."""
+    from app.services.event_service import recent_events
+
+    return recent_events(session, days=days, limit=limit)
+
+
+@router.get("/notifications", response_model=list[NotificationOut])
+def get_notifications(session: Session = Depends(get_session)) -> list[NotificationOut]:
+    """Pending coach notifications tied to decisions/adaptations (Roadmap #6)."""
+    from app.services.event_service import pending_notifications
+
+    return pending_notifications(session)
+
+
+@router.post("/notifications/ack")
+def ack_notifications(
+    payload: NotificationAck, session: Session = Depends(get_session)
+) -> dict:
+    """Mark notifications as delivered so they aren't shown again."""
+    from app.services.event_service import mark_notified
+
+    n = mark_notified(session, payload.ids)
+    _commit(session)
+    return {"acked": n}
 
 
 @router.get("/metrics", response_model=TrainingMetrics)
