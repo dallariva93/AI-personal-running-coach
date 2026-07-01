@@ -302,6 +302,33 @@ class TrainingMetrics(BaseModel):
     adaptive_notes: list[str] = Field(default_factory=list)
 
 
+class CoachDecision(BaseModel):
+    """Structured "what to do today" recommendation from the Coach Decision Engine.
+
+    The single dominant output the home screen leads with. Every decision carries
+    its reasoning: the signals it used, the confidence, what data was missing,
+    alternatives and any safety flags — so the athlete can trust and understand it.
+    """
+
+    date: str  # ISO YYYY-MM-DD the decision is for
+    decision: str  # run | easy | quality | long | rest | modify | caution
+    headline: str  # short dominant title, e.g. "Corsa facile 8 km"
+    prescription: str  # concrete what-to-do
+    rationale: str  # plain-language why (the motivation)
+    confidence: str = "medium"  # low | medium | high
+    signals: list[str] = Field(default_factory=list)  # evidence used
+    missing_data: list[str] = Field(default_factory=list)  # gaps that lower confidence
+    alternatives: list[str] = Field(default_factory=list)  # other valid options
+    safety_flags: list[str] = Field(default_factory=list)  # warnings
+    # Link + prescription details when the decision maps to a plan session.
+    plan_session_id: int | None = None
+    session_type: str | None = None  # easy | long | tempo | intervals | rest | ...
+    target_distance_km: float | None = None
+    target_pace: str | None = None
+    target_duration_min: float | None = None
+    source: str = "rules"  # rules | ai
+
+
 class WeeklyBucket(BaseModel):
     """Aggregated stats for a single ISO week (used by the dashboard chart)."""
 
@@ -472,6 +499,7 @@ class PlanSessionOut(BaseModel):
     target_duration_min: float | None = None
     completed: bool
     completed_at: datetime | None = None
+    adjustment_note: str | None = None  # set by the adaptive engine (Roadmap #8)
 
 
 class PlanWeekOut(BaseModel):

@@ -346,6 +346,12 @@ class TrainingPlanSession(Base):
     target_duration_min: Mapped[float | None] = mapped_column(Float, nullable=True)
     completed: Mapped[bool] = mapped_column(Boolean, default=False)
     completed_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+    # Adaptive-plan bookkeeping (Roadmap #8): the original prescription is
+    # captured once so re-adapting after each sync recomputes from the base
+    # instead of compounding. ``adjustment_note`` explains the current tweak.
+    base_target_distance_km: Mapped[float | None] = mapped_column(Float, nullable=True)
+    base_session_type: Mapped[str | None] = mapped_column(String(32), nullable=True)
+    adjustment_note: Mapped[str | None] = mapped_column(Text, nullable=True)
 
     week: Mapped[TrainingPlanWeek] = relationship(back_populates="sessions")
 
@@ -447,3 +453,38 @@ class ChatMessage(Base):
 
     def __repr__(self) -> str:  # pragma: no cover
         return f"<ChatMessage {self.role} session={self.session_id}>"
+
+
+class CoachDecisionRow(Base):
+    """A persisted, queryable Coach Decision (Roadmap #7).
+
+    One row per date (upsert): the structured "what to do today" the home screen
+    leads with. Storing decisions as entities (not just report text) lets the app
+    show history and lets the adaptive engine reason over past prescriptions.
+    """
+
+    __tablename__ = "coach_decisions"
+    __table_args__ = (UniqueConstraint("date", name="uq_coach_decision_date"),)
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    date: Mapped[str] = mapped_column(String(10), index=True)  # ISO YYYY-MM-DD
+    decision: Mapped[str] = mapped_column(String(16))
+    headline: Mapped[str] = mapped_column(String(160))
+    prescription: Mapped[str] = mapped_column(Text)
+    rationale: Mapped[str] = mapped_column(Text)
+    confidence: Mapped[str] = mapped_column(String(16), default="medium")
+    signals: Mapped[list | None] = mapped_column(JSON, nullable=True)
+    missing_data: Mapped[list | None] = mapped_column(JSON, nullable=True)
+    alternatives: Mapped[list | None] = mapped_column(JSON, nullable=True)
+    safety_flags: Mapped[list | None] = mapped_column(JSON, nullable=True)
+    plan_session_id: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    session_type: Mapped[str | None] = mapped_column(String(32), nullable=True)
+    target_distance_km: Mapped[float | None] = mapped_column(Float, nullable=True)
+    target_pace: Mapped[str | None] = mapped_column(String(16), nullable=True)
+    target_duration_min: Mapped[float | None] = mapped_column(Float, nullable=True)
+    source: Mapped[str] = mapped_column(String(16), default="rules")
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=_utcnow)
+    updated_at: Mapped[datetime] = mapped_column(DateTime, default=_utcnow, onupdate=_utcnow)
+
+    def __repr__(self) -> str:  # pragma: no cover
+        return f"<CoachDecision {self.date} {self.decision}>"

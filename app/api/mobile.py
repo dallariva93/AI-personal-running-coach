@@ -106,6 +106,11 @@ def overview(session: Session = Depends(get_session)) -> dict:
     # Active multi-week training plan
     active_plan = get_current_plan(session)
 
+    # Coach Decision Engine: the dominant "what to do today" (Roadmap #7).
+    from app.services.decision_service import build_today_decision
+
+    today_decision = build_today_decision(session, persist=False)
+
     # Workout library count
     saved_workouts = list_workouts(session)
     saved_workout_count = len(saved_workouts)
@@ -129,4 +134,5 @@ def overview(session: Session = Depends(get_session)) -> dict:
         "gamification": gamification,
         "active_plan": active_plan.model_dump() if active_plan else None,
         "saved_workout_count": saved_workout_count,
+        "today_decision": today_decision.model_dump(),
     }

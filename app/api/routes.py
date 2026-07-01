@@ -35,6 +35,7 @@ from app.schemas import (
     AthleteProfile,
     AthleteSnapshot,
     Badge,
+    CoachDecision,
     DailyCheckin,
     GamificationData,
     HeatmapResponse,
@@ -144,12 +145,30 @@ def patch_activity(
     return activity
 
 
+def _adapt_after_change(session: Session) -> None:
+    """Best-effort adaptive-plan pass after a sync or check-in (Roadmap #8).
+
+    Never propagates: a failure here must not break the ingest/check-in call.
+    """
+    try:
+        from app.services.adaptive_plan import adapt_plan_after_sync
+
+        adapt_plan_after_sync(session)
+        _commit(session)
+    except Exception as exc:  # noqa: BLE001
+        session.rollback()
+        from app.logging_config import get_logger
+
+        get_logger("app.api").warning("Adaptive plan pass skipped: %s", exc)
+
+
 @router.post("/ingest", response_model=list[ActivityOut])
 def post_ingest(limit: int | None = None, session: Session = Depends(get_session)):
     saved = ingest_runs(session, limit=limit)
     _commit(session)
     for a in saved:
         session.refresh(a)
+    _adapt_after_change(session)
     return saved
 
 
@@ -172,6 +191,7 @@ def post_ingest_cross_training(
     _commit(session)
     for a in saved:
         session.refresh(a)
+    _adapt_after_change(session)
     return saved
 
 
@@ -256,7 +276,28 @@ def post_checkin(
 ) -> DailyCheckin:
     save_checkin(session, payload)
     _commit(session)
+    _adapt_after_change(session)
     return latest_checkin(session)
+
+
+@router.get("/coach/today", response_model=CoachDecision)
+def get_coach_today(session: Session = Depends(get_session)) -> CoachDecision:
+    """Today's dominant coaching decision (Coach Decision Engine, Roadmap #7)."""
+    from app.services.decision_service import get_today_decision
+
+    decision = get_today_decision(session)
+    _commit(session)
+    return decision
+
+
+@router.get("/coach/decisions", response_model=list[CoachDecision])
+def get_coach_decisions(
+    days: int = 14, session: Session = Depends(get_session)
+) -> list[CoachDecision]:
+    """Recent persisted decisions (decision history)."""
+    from app.services.decision_service import recent_decisions
+
+    return recent_decisions(session, days=days)
 
 
 @router.get("/metrics", response_model=TrainingMetrics)

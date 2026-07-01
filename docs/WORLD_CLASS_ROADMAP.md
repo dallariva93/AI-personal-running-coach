@@ -131,9 +131,11 @@ Strategia: copiare training hub e race tools; superare Coros con coach AI narrat
 
 ## Quick Wins: 1 settimana
 
-### 1. Today Workout Card
+### 1. Today Workout Card ✅ FATTO
 
 Una card primaria nella home che dica cosa fare oggi: corsa, riposo, modifica o attenzione.
+
+**Implementato:** `TodayWorkoutCard` in cima alla home mostra decisione dominante (icona + headline), prescrizione concreta, motivazione, chip di confidenza, safety flags sempre visibili ed espansione "Perché questa scelta?" con segnali usati, alternative e dati mancanti. Alimentata da `today_decision` nell'overview e da `GET /api/coach/today`.
 
 - Impatto utente: 10
 - Complessità tecnica: 3
@@ -142,9 +144,11 @@ Una card primaria nella home che dica cosa fare oggi: corsa, riposo, modifica o 
 - ROI: altissimo
 - Tempo stimato: 2-3 giorni
 
-### 2. Semplificazione della home
+### 2. Semplificazione della home ✅ FATTO
 
 Metriche avanzate dietro sezione Dettagli. In primo piano solo stato, decisione e motivazione.
+
+**Implementato:** la home ora guida con la Today Workout Card (decisione + motivazione) e le azioni primarie; tutte le metriche avanzate (forma/CTL/ATL/TSB, previsione gara, HRV, streak, PR, carico settimanale) sono raccolte dietro un unico toggle "Mostra dettagli" (progressive disclosure).
 
 - Impatto utente: 8
 - Complessità tecnica: 2
@@ -199,9 +203,11 @@ Gestione scarpe, chilometri accumulati e avviso sostituzione.
 
 ## Alto impatto: 1 mese
 
-### 7. Coach Decision Engine v1
+### 7. Coach Decision Engine v1 ✅ FATTO
 
 Output strutturato per ogni decisione: decisione, prescrizione, evidenze, confidenza, dati mancanti, alternative e safety flags.
+
+**Implementato:** `app/processing/decision.py` (`decide_today`, funzione pura e deterministica) produce un `CoachDecision` strutturato combinando piano del giorno, readiness, rischio infortuni, TSB e ACWR. Le decisioni sono persistite come entità queryable (tabella `coach_decisions`, una per data) via `decision_service`. API: `GET /api/coach/today`, `GET /api/coach/decisions`; incluso in `/api/mobile/overview`. Rule-based per essere offline, a costo zero, testabile e spiegabile.
 
 - Impatto utente: 10
 - Complessità tecnica: 6
@@ -210,9 +216,11 @@ Output strutturato per ogni decisione: decisione, prescrizione, evidenze, confid
 - ROI: altissimo
 - Tempo stimato: 3-4 settimane
 
-### 8. Adaptive plan after sync
+### 8. Adaptive plan after sync ✅ FATTO
 
 Dopo ogni nuova attività o check-in, il sistema valuta compliance e modifica automaticamente i prossimi 3-7 giorni.
+
+**Implementato:** `app/services/adaptive_plan.py` (`adapt_plan_after_sync`) viene richiamato automaticamente dopo `POST /api/ingest`, `/api/ingest/cross-training` e `/api/checkin`. Ripiega i segnali live (rischio infortuni, readiness, forma, carico acuto) sui prossimi 7 giorni del piano attivo: scala il volume e, quando l'atleta è compromesso, alleggerisce le sedute di qualità imminenti. Idempotente: la prescrizione originale è salvata in colonne `base_*` e ogni run ricalcola dalla base (nessun accumulo, ripristino automatico quando i segnali migliorano). Solo sedute future e non completate entro l'orizzonte vengono toccate.
 
 - Impatto utente: 10
 - Complessità tecnica: 7
@@ -465,11 +473,11 @@ Sistema di test con atleti sintetici e scenari reali per validare sicurezza, qua
 
 ## Ordine consigliato di implementazione
 
-1. Today Workout Card.
-2. CoachDecision schema e persistenza.
-3. Decision Engine v1.
+1. Today Workout Card. ✅ FATTO
+2. CoachDecision schema e persistenza. ✅ FATTO
+3. Decision Engine v1. ✅ FATTO
 4. Coach Daily Note.
-5. Adaptive plan after sync.
+5. Adaptive plan after sync. ✅ FATTO
 6. Workout Execution Score.
 7. Health Connect MVP.
 8. Notifiche intelligenti.

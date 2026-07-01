@@ -221,6 +221,7 @@ data class PlanSession(
     @SerializedName("target_duration_min") val targetDurationMin: Double? = null,
     @SerializedName("completed") val completed: Boolean = false,
     @SerializedName("completed_at") val completedAt: String? = null,
+    @SerializedName("adjustment_note") val adjustmentNote: String? = null,
 )
 
 /** One week in a multi-week training plan. */
@@ -401,6 +402,26 @@ data class Vo2maxHistory(
     @SerializedName("trend") val trend: String = "insufficient_data",
 )
 
+/** The dominant "what to do today" decision from the Coach Decision Engine. */
+data class CoachDecision(
+    @SerializedName("date") val date: String = "",
+    @SerializedName("decision") val decision: String = "easy",
+    @SerializedName("headline") val headline: String = "",
+    @SerializedName("prescription") val prescription: String = "",
+    @SerializedName("rationale") val rationale: String = "",
+    @SerializedName("confidence") val confidence: String = "medium",
+    @SerializedName("signals") val signals: List<String> = emptyList(),
+    @SerializedName("missing_data") val missingData: List<String> = emptyList(),
+    @SerializedName("alternatives") val alternatives: List<String> = emptyList(),
+    @SerializedName("safety_flags") val safetyFlags: List<String> = emptyList(),
+    @SerializedName("plan_session_id") val planSessionId: Int? = null,
+    @SerializedName("session_type") val sessionType: String? = null,
+    @SerializedName("target_distance_km") val targetDistanceKm: Double? = null,
+    @SerializedName("target_pace") val targetPace: String? = null,
+    @SerializedName("target_duration_min") val targetDurationMin: Double? = null,
+    @SerializedName("source") val source: String = "rules",
+)
+
 /** Everything the app needs to render its main screens, in one response. */
 data class Overview(
     @SerializedName("version") val version: String = "",
@@ -420,4 +441,5 @@ data class Overview(
     @SerializedName("pr_activity_ids") val prActivityIds: List<Int> = emptyList(),
     @SerializedName("gamification") val gamification: GamificationData? = null,
     @SerializedName("active_plan") val activePlan: TrainingPlan? = null,
+    @SerializedName("today_decision") val todayDecision: CoachDecision? = null,
 )

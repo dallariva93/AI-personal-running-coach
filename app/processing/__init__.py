@@ -6,6 +6,7 @@ the load trend. This is the quantitative input the coaching layer reasons over.
 """
 
 from app.processing.adaptive import adapt_plan
+from app.processing.decision import decide_today
 from app.processing.efficiency import aerobic_efficiency, decoupling
 from app.processing.gamification import compute_badges, compute_streak
 from app.processing.injury import injury_risk
@@ -53,6 +54,7 @@ __all__ = [
     "seconds_to_time",
     "time_to_seconds",
     "adapt_plan",
+    "decide_today",
     "trail_metrics",
     "is_trail",
     "compute_personal_records",

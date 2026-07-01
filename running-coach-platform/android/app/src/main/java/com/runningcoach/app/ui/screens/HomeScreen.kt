@@ -1,6 +1,8 @@
 package com.runningcoach.app.ui.screens
 
+import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
@@ -15,6 +17,8 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Analytics
+import androidx.compose.material.icons.filled.ExpandLess
+import androidx.compose.material.icons.filled.ExpandMore
 import androidx.compose.material.icons.filled.Sync
 import androidx.compose.material3.Button
 import androidx.compose.material3.CircularProgressIndicator
@@ -23,8 +27,13 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import com.runningcoach.app.data.model.Overview
 import com.runningcoach.app.ui.components.ActivityRow
@@ -36,6 +45,7 @@ import com.runningcoach.app.ui.components.PredictionCard
 import com.runningcoach.app.ui.components.ScreenTitle
 import com.runningcoach.app.ui.components.SectionTitle
 import com.runningcoach.app.ui.components.StreakCard
+import com.runningcoach.app.ui.components.TodayWorkoutCard
 import com.runningcoach.app.ui.components.WeeklyChart
 import com.runningcoach.app.ui.theme.BrandGreen
 import com.runningcoach.app.ui.theme.Coral
@@ -71,35 +81,17 @@ fun HomeScreen(
         if (ov != null) {
             val prIds = ov.prActivityIds.toSet()
 
-            FormStateCard(ov.metrics)
-
-            ov.prediction?.let {
-                Spacer(Modifier.height(12.dp))
-                PredictionCard(it)
-            }
-
-            // HRV readiness card
-            ov.checkin?.hrvRmssd?.let { hrv ->
-                Spacer(Modifier.height(12.dp))
-                HrvCard(hrv, ov.metrics.hrvStatus)
-            }
-
-            // Streak + badges (show only if at least one run exists).
-            ov.gamification?.let { gam ->
-                if (gam.streakDays > 0 || gam.totalBadgesEarned > 0) {
-                    Spacer(Modifier.height(12.dp))
-                    StreakCard(gam)
-                }
-            }
-
-            // Personal records (show only when data is available).
-            if (ov.personalRecords.isNotEmpty()) {
-                Spacer(Modifier.height(12.dp))
-                PersonalRecordsCard(ov.personalRecords)
+            // ── 1. The dominant decision: what to do today ──────────────────
+            if (ov.todayDecision != null) {
+                TodayWorkoutCard(ov.todayDecision)
+            } else {
+                // Fallback for an older backend without the decision engine.
+                FormStateCard(ov.metrics)
             }
 
             Spacer(Modifier.height(14.dp))
 
+            // ── 2. Primary actions ──────────────────────────────────────────
             // Tight content padding + single-line labels keep "Sincronizza"
             // on one line in a half-width button even on small phones.
             val actionPad = PaddingValues(horizontal = 12.dp, vertical = 10.dp)
@@ -134,8 +126,13 @@ fun HomeScreen(
                 }
             }
 
-            Spacer(Modifier.height(18.dp))
-            WeeklyChart(ov.weekly)
+            // ── 3. Advanced metrics — progressive disclosure ────────────────
+            // Front stays focused on the decision; the numbers live under a
+            // single "Dettagli" toggle (Roadmap #2, home simplification).
+            if (ov.todayDecision != null) {
+                Spacer(Modifier.height(14.dp))
+                DetailsToggle(ov, prIds)
+            }
 
             Spacer(Modifier.height(18.dp))
             SectionTitle("Ultime corse")
@@ -149,6 +146,62 @@ fun HomeScreen(
             Spacer(Modifier.height(16.dp))
         } else {
             EmptyHint()
+        }
+    }
+}
+
+/**
+ * Collapsible "Dettagli" section holding the advanced metric cards. Keeps the
+ * home focused on the decision while power users can still expand the numbers.
+ */
+@Composable
+private fun DetailsToggle(ov: Overview, prIds: Set<Int>) {
+    var expanded by remember { mutableStateOf(false) }
+    Row(
+        Modifier
+            .fillMaxWidth()
+            .clickable { expanded = !expanded }
+            .padding(vertical = 6.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Text(
+            if (expanded) "Nascondi dettagli" else "Mostra dettagli",
+            style = MaterialTheme.typography.labelLarge,
+            fontWeight = FontWeight.SemiBold,
+            color = MaterialTheme.colorScheme.primary,
+        )
+        Spacer(Modifier.weight(1f))
+        Icon(
+            if (expanded) Icons.Filled.ExpandLess else Icons.Filled.ExpandMore,
+            contentDescription = null,
+            tint = MaterialTheme.colorScheme.primary,
+        )
+    }
+    AnimatedVisibility(visible = expanded) {
+        Column {
+            Spacer(Modifier.height(4.dp))
+            FormStateCard(ov.metrics)
+
+            ov.prediction?.let {
+                Spacer(Modifier.height(12.dp))
+                PredictionCard(it)
+            }
+            ov.checkin?.hrvRmssd?.let { hrv ->
+                Spacer(Modifier.height(12.dp))
+                HrvCard(hrv, ov.metrics.hrvStatus)
+            }
+            ov.gamification?.let { gam ->
+                if (gam.streakDays > 0 || gam.totalBadgesEarned > 0) {
+                    Spacer(Modifier.height(12.dp))
+                    StreakCard(gam)
+                }
+            }
+            if (ov.personalRecords.isNotEmpty()) {
+                Spacer(Modifier.height(12.dp))
+                PersonalRecordsCard(ov.personalRecords)
+            }
+            Spacer(Modifier.height(12.dp))
+            WeeklyChart(ov.weekly)
         }
     }
 }
