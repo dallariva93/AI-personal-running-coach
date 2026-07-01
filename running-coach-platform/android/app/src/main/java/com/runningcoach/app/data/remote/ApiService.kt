@@ -7,6 +7,8 @@ import com.runningcoach.app.data.model.ChatMessage
 import com.runningcoach.app.data.model.ChatSendRequest
 import com.runningcoach.app.data.model.ChatSendResponse
 import com.runningcoach.app.data.model.ChatSession
+import com.runningcoach.app.data.model.CoachActionRequest
+import com.runningcoach.app.data.model.CoachDecision
 import com.runningcoach.app.data.model.DailyCheckin
 import com.runningcoach.app.data.model.HeatmapResponse
 import com.runningcoach.app.data.model.Vo2maxHistory
@@ -53,6 +55,9 @@ interface ApiService {
 
     @GET("api/activities/cross-training")
     suspend fun crossTraining(@Query("limit") limit: Int = 50): List<Activity>
+
+    @POST("api/coach/today/action")
+    suspend fun coachAction(@Body request: CoachActionRequest): CoachDecision
 
     @POST("api/analyze")
     suspend fun analyze(@Query("activity_id") activityId: Int? = null): Report

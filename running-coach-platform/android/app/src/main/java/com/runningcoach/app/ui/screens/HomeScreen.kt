@@ -57,6 +57,7 @@ fun HomeScreen(
     onSync: () -> Unit,
     onAnalyze: () -> Unit,
     onOpenActivity: (Int) -> Unit = {},
+    onCoachAction: (String, String?) -> Unit = { _, _ -> },
 ) {
     val ov: Overview? = state.overview
     Column(
@@ -83,7 +84,11 @@ fun HomeScreen(
 
             // ── 1. The dominant decision: what to do today ──────────────────
             if (ov.todayDecision != null) {
-                TodayWorkoutCard(ov.todayDecision)
+                TodayWorkoutCard(
+                    decision = ov.todayDecision,
+                    onAction = onCoachAction,
+                    actionsEnabled = !state.working,
+                )
             } else {
                 // Fallback for an older backend without the decision engine.
                 FormStateCard(ov.metrics)

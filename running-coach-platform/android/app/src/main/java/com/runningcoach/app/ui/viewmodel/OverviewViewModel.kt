@@ -75,6 +75,18 @@ class OverviewViewModel(private val repository: CoachRepository) : ViewModel() {
     fun updateActivity(id: Int, rpe: Int? = null, notes: String? = null) =
         action("Attività aggiornata") { repository.patchActivity(id, rpe = rpe, notes = notes) }
 
+    /** Act on today's coaching decision (done | reduce | defer | problem). */
+    fun coachAction(action: String, detail: String? = null) {
+        val msg = when (action) {
+            "done" -> "Seduta segnata come fatta"
+            "reduce" -> "Allenamento ridotto"
+            "defer" -> "Spostato a domani"
+            "problem" -> "Segnalato: il coach ha adattato"
+            else -> "Fatto"
+        }
+        action(msg) { repository.coachAction(action, detail) }
+    }
+
     /** Silently fetch Garmin wellness data for missing days (fire-and-forget). */
     fun ingestWellness() {
         viewModelScope.launch {

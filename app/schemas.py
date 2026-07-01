@@ -326,7 +326,35 @@ class CoachDecision(BaseModel):
     target_distance_km: float | None = None
     target_pace: str | None = None
     target_duration_min: float | None = None
+    daily_note: str = ""  # short, human, motivational one-liner (Roadmap #3)
     source: str = "rules"  # rules | ai
+
+
+class CoachActionRequest(BaseModel):
+    """A Today-card action from the athlete (Roadmap #2, actionable decision)."""
+
+    action: str  # done | reduce | defer | problem
+    detail: str | None = None  # for "problem": tired | pain
+
+
+class ExecutionResult(BaseModel):
+    """How faithfully a completed activity matched its prescribed plan session.
+
+    The Workout Execution Score (Roadmap #9): the coach can only adapt from real
+    compliance if it knows whether "8 km easy" were actually run easy. Produced by
+    comparing distance, duration, session type and intensity (with RPE/HR when
+    present) of the executed activity against the prescription.
+    """
+
+    plan_session_id: int | None = None
+    activity_id: int | None = None
+    date: str
+    execution_score: float = 0.0  # 0-100
+    execution_status: str = "skipped"
+    # completed_well | too_hard | too_short | skipped | turned_easy |
+    # quality_missed | volume_excess
+    execution_notes: str = ""
+    evidence: list[str] = Field(default_factory=list)
 
 
 class WeeklyBucket(BaseModel):
@@ -500,6 +528,11 @@ class PlanSessionOut(BaseModel):
     completed: bool
     completed_at: datetime | None = None
     adjustment_note: str | None = None  # set by the adaptive engine (Roadmap #8)
+    # Workout Execution Score (Roadmap #9) — filled once a matching activity is
+    # scored against this session.
+    execution_score: float | None = None
+    execution_status: str | None = None
+    execution_note: str | None = None
 
 
 class PlanWeekOut(BaseModel):

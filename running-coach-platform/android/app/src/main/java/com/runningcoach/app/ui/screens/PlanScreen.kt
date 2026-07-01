@@ -118,6 +118,19 @@ private fun sessionColor(type: String): Color = when (type.lowercase()) {
     else -> SessionRest
 }
 
+/** Label + color for a Workout Execution Score status (Roadmap #9). */
+@Composable
+private fun executionBadge(status: String): Pair<String, Color> = when (status) {
+    "completed_well" -> "Eseguita" to BrandGreen
+    "too_hard" -> "Troppo forte" to MaterialTheme.colorScheme.error
+    "volume_excess" -> "Volume alto" to MaterialTheme.colorScheme.error
+    "too_short" -> "Troppo corta" to SessionTempo
+    "turned_easy" -> "Fatta facile" to SessionTempo
+    "quality_missed" -> "Qualità mancata" to SessionTempo
+    "skipped" -> "Saltata" to MaterialTheme.colorScheme.onSurfaceVariant
+    else -> status to MaterialTheme.colorScheme.onSurfaceVariant
+}
+
 private fun sessionIcon(type: String): ImageVector = when (type.lowercase()) {
     "easy" -> Icons.Filled.Park
     "long" -> Icons.Filled.Landscape
@@ -527,6 +540,28 @@ private fun SessionRow(session: PlanSession, onToggleSession: (Int) -> Unit) {
                         fontWeight = FontWeight.Medium,
                     )
                 }
+            }
+            // Adaptive tweak (Roadmap #8) and execution score (Roadmap #9).
+            session.adjustmentNote?.let {
+                Text(
+                    "⚙ $it",
+                    style = MaterialTheme.typography.labelSmall,
+                    color = MaterialTheme.colorScheme.tertiary,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                )
+            }
+            session.executionStatus?.let { st ->
+                val (label, exColor) = executionBadge(st)
+                val score = session.executionScore?.let { " ${it.toInt()}/100" } ?: ""
+                Text(
+                    "● $label$score",
+                    style = MaterialTheme.typography.labelSmall,
+                    color = exColor,
+                    fontWeight = FontWeight.Medium,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                )
             }
         }
         if (!isRest) {

@@ -100,6 +100,29 @@ def _confidence(missing: list[str], flags: list[str]) -> str:
     return "medium"
 
 
+def daily_note(decision: str, m: TrainingMetrics) -> str:
+    """A short, human, motivational one-liner for today (Roadmap #3).
+
+    Deterministic and contextual: keyed on the decision plus the dominant live
+    signal. Not a report — one sentence that adds tone, not data.
+    """
+    tsb = m.tsb
+    if decision == "rest":
+        return "Il riposo di oggi è un investimento: recupera davvero, senza sensi di colpa."
+    if decision == "modify":
+        return "Ascolta il corpo oggi: alleggerire ora protegge tutta la settimana."
+    if decision == "long":
+        return "Il lungo si corre con la testa: parti piano, finisci forte."
+    if decision == "quality":
+        return "Sei fresco: rendi ogni ripetuta pulita, non solo veloce."
+    # easy / run
+    if tsb is not None and tsb <= -15:
+        return "Hai ancora fatica nelle gambe: oggi vinci se corri piano."
+    if tsb is not None and tsb >= 15:
+        return "Ti senti bene, ma non sprecare energia nei primi km: resta in controllo."
+    return "Costruisci continuità, non solo chilometri: una corsa facile fatta bene conta."
+
+
 def decide_today(
     metrics: TrainingMetrics,
     profile: AthleteProfile | None,
@@ -107,7 +130,20 @@ def decide_today(
     checkin: DailyCheckin | None,
     ref: date | None = None,
 ) -> CoachDecision:
-    """Produce today's structured coaching decision. Deterministic."""
+    """Produce today's structured coaching decision with its daily note."""
+    decision = _decide_core(metrics, profile, today_session, checkin, ref)
+    decision.daily_note = daily_note(decision.decision, metrics)
+    return decision
+
+
+def _decide_core(
+    metrics: TrainingMetrics,
+    profile: AthleteProfile | None,
+    today_session: PlanSessionOut | None,
+    checkin: DailyCheckin | None,
+    ref: date | None = None,
+) -> CoachDecision:
+    """The rule cascade producing the decision (note attached by the wrapper)."""
     ref = ref or date.today()
     signals = _collect_signals(metrics)
     flags = _safety_flags(metrics)

@@ -8,6 +8,7 @@ import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
@@ -16,15 +17,20 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Bolt
+import androidx.compose.material.icons.filled.CheckCircle
 import androidx.compose.material.icons.filled.DirectionsRun
 import androidx.compose.material.icons.filled.ExpandLess
 import androidx.compose.material.icons.filled.ExpandMore
 import androidx.compose.material.icons.filled.Hotel
+import androidx.compose.material.icons.filled.MoveDown
 import androidx.compose.material.icons.filled.Route
+import androidx.compose.material.icons.filled.Sick
+import androidx.compose.material.icons.filled.TrendingDown
 import androidx.compose.material.icons.filled.Tune
 import androidx.compose.material.icons.filled.WarningAmber
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.OutlinedButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -35,6 +41,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.text.font.FontStyle
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import com.runningcoach.app.data.model.CoachDecision
@@ -63,7 +70,12 @@ private fun styleFor(decision: String): DecisionStyle = when (decision.lowercase
  * safety flags — so the recommendation is trusted, not just displayed.
  */
 @Composable
-fun TodayWorkoutCard(decision: CoachDecision, modifier: Modifier = Modifier) {
+fun TodayWorkoutCard(
+    decision: CoachDecision,
+    modifier: Modifier = Modifier,
+    onAction: (String, String?) -> Unit = { _, _ -> },
+    actionsEnabled: Boolean = true,
+) {
     val style = styleFor(decision.decision)
     var expanded by remember { mutableStateOf(false) }
 
@@ -95,6 +107,18 @@ fun TodayWorkoutCard(decision: CoachDecision, modifier: Modifier = Modifier) {
             }
         }
 
+        // Coach Daily Note (Roadmap #3): short, human, motivational.
+        if (decision.dailyNote.isNotBlank()) {
+            Spacer(Modifier.height(10.dp))
+            Text(
+                decision.dailyNote,
+                style = MaterialTheme.typography.bodyMedium,
+                fontStyle = FontStyle.Italic,
+                fontWeight = FontWeight.Medium,
+                color = style.color,
+            )
+        }
+
         Spacer(Modifier.height(12.dp))
         Text(decision.prescription, style = MaterialTheme.typography.bodyMedium)
 
@@ -122,6 +146,29 @@ fun TodayWorkoutCard(decision: CoachDecision, modifier: Modifier = Modifier) {
                     Text(flag, style = MaterialTheme.typography.labelMedium, color = ActivityHard)
                 }
                 Spacer(Modifier.height(2.dp))
+            }
+        }
+
+        // ── Actions: make the card a coaching interface, not just content ──
+        if (actionsEnabled) {
+            Spacer(Modifier.height(14.dp))
+            val pad = PaddingValues(horizontal = 8.dp, vertical = 6.dp)
+            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                ActionButton("Fatto", Icons.Filled.CheckCircle, Modifier.weight(1f), pad) {
+                    onAction("done", null)
+                }
+                ActionButton("Riduci", Icons.Filled.TrendingDown, Modifier.weight(1f), pad) {
+                    onAction("reduce", null)
+                }
+            }
+            Spacer(Modifier.height(8.dp))
+            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                ActionButton("Sposta", Icons.Filled.MoveDown, Modifier.weight(1f), pad) {
+                    onAction("defer", null)
+                }
+                ActionButton("Sto male", Icons.Filled.Sick, Modifier.weight(1f), pad) {
+                    onAction("problem", "tired")
+                }
             }
         }
 
@@ -156,6 +203,21 @@ fun TodayWorkoutCard(decision: CoachDecision, modifier: Modifier = Modifier) {
                 DetailList("Dati mancanti", decision.missingData)
             }
         }
+    }
+}
+
+@Composable
+private fun ActionButton(
+    label: String,
+    icon: ImageVector,
+    modifier: Modifier,
+    pad: PaddingValues,
+    onClick: () -> Unit,
+) {
+    OutlinedButton(onClick = onClick, modifier = modifier, contentPadding = pad) {
+        Icon(icon, contentDescription = null, modifier = Modifier.size(16.dp))
+        Spacer(Modifier.width(6.dp))
+        Text(label, style = MaterialTheme.typography.labelMedium, maxLines = 1, softWrap = false)
     }
 }
 

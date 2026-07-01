@@ -222,6 +222,9 @@ data class PlanSession(
     @SerializedName("completed") val completed: Boolean = false,
     @SerializedName("completed_at") val completedAt: String? = null,
     @SerializedName("adjustment_note") val adjustmentNote: String? = null,
+    @SerializedName("execution_score") val executionScore: Double? = null,
+    @SerializedName("execution_status") val executionStatus: String? = null,
+    @SerializedName("execution_note") val executionNote: String? = null,
 )
 
 /** One week in a multi-week training plan. */
@@ -419,7 +422,14 @@ data class CoachDecision(
     @SerializedName("target_distance_km") val targetDistanceKm: Double? = null,
     @SerializedName("target_pace") val targetPace: String? = null,
     @SerializedName("target_duration_min") val targetDurationMin: Double? = null,
+    @SerializedName("daily_note") val dailyNote: String = "",
     @SerializedName("source") val source: String = "rules",
+)
+
+/** Body for a Today-card action (done | reduce | defer | problem). */
+data class CoachActionRequest(
+    @SerializedName("action") val action: String,
+    @SerializedName("detail") val detail: String? = null,
 )
 
 /** Everything the app needs to render its main screens, in one response. */

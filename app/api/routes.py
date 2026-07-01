@@ -35,8 +35,10 @@ from app.schemas import (
     AthleteProfile,
     AthleteSnapshot,
     Badge,
+    CoachActionRequest,
     CoachDecision,
     DailyCheckin,
+    ExecutionResult,
     GamificationData,
     HeatmapResponse,
     HeatmapRoute,
@@ -146,20 +148,24 @@ def patch_activity(
 
 
 def _adapt_after_change(session: Session) -> None:
-    """Best-effort adaptive-plan pass after a sync or check-in (Roadmap #8).
+    """Best-effort post-sync pipeline: score executions, then adapt the plan.
 
-    Never propagates: a failure here must not break the ingest/check-in call.
+    Compliance (Roadmap #9) is evaluated first so the adaptive engine (#8) can
+    reason over what was actually executed. Never propagates: a failure here must
+    not break the ingest/check-in call.
     """
     try:
         from app.services.adaptive_plan import adapt_plan_after_sync
+        from app.services.execution_service import evaluate_plan_executions
 
+        evaluate_plan_executions(session)
         adapt_plan_after_sync(session)
         _commit(session)
     except Exception as exc:  # noqa: BLE001
         session.rollback()
         from app.logging_config import get_logger
 
-        get_logger("app.api").warning("Adaptive plan pass skipped: %s", exc)
+        get_logger("app.api").warning("Post-sync pipeline skipped: %s", exc)
 
 
 @router.post("/ingest", response_model=list[ActivityOut])
@@ -298,6 +304,31 @@ def get_coach_decisions(
     from app.services.decision_service import recent_decisions
 
     return recent_decisions(session, days=days)
+
+
+@router.post("/coach/today/action", response_model=CoachDecision)
+def post_coach_action(
+    payload: CoachActionRequest, session: Session = Depends(get_session)
+) -> CoachDecision:
+    """Act on today's decision (done | reduce | defer | problem) — Roadmap #2."""
+    from app.services.decision_service import apply_coach_action
+
+    try:
+        decision = apply_coach_action(session, payload.action, payload.detail)
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+    _commit(session)
+    return decision
+
+
+@router.get("/plan/executions", response_model=list[ExecutionResult])
+def get_plan_executions(
+    days: int = 21, session: Session = Depends(get_session)
+) -> list[ExecutionResult]:
+    """Recent Workout Execution scores for the active plan (Roadmap #9)."""
+    from app.services.execution_service import recent_executions
+
+    return recent_executions(session, days=days)
 
 
 @router.get("/metrics", response_model=TrainingMetrics)

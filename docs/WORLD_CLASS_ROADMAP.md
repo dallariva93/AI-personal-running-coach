@@ -137,6 +137,8 @@ Una card primaria nella home che dica cosa fare oggi: corsa, riposo, modifica o 
 
 **Implementato:** `TodayWorkoutCard` in cima alla home mostra decisione dominante (icona + headline), prescrizione concreta, motivazione, chip di confidenza, safety flags sempre visibili ed espansione "Perché questa scelta?" con segnali usati, alternative e dati mancanti. Alimentata da `today_decision` nell'overview e da `GET /api/coach/today`.
 
+**Azionabile (Priorità 2):** la card è anche interfaccia di coaching, non solo contenuto. Pulsanti Fatto / Riduci / Sposta / Sto male → `POST /api/coach/today/action` (`done` completa la seduta, `reduce` taglia il volume del 30% dalla base, `defer` scambia la seduta con quella di domani, `problem` registra un segnale di stanchezza/dolore che fa scendere la readiness, adatta il piano e ammorbidisce la decisione).
+
 - Impatto utente: 10
 - Complessità tecnica: 3
 - Costo: basso
@@ -157,9 +159,11 @@ Metriche avanzate dietro sezione Dettagli. In primo piano solo stato, decisione 
 - ROI: alto
 - Tempo stimato: 1-2 giorni
 
-### 3. Coach Daily Note
+### 3. Coach Daily Note ✅ FATTO
 
 Messaggio quotidiano personalizzato basato su carico, readiness, piano e ultima attività.
+
+**Implementato:** `daily_note()` in `app/processing/decision.py` genera una frase breve, personale e contestuale (deterministica, keyed su decisione + TSB), allegata a ogni `CoachDecision` (`daily_note`) e mostrata in corsivo nella Today Workout Card. Es. "Hai ancora fatica nelle gambe: oggi vinci se corri piano."
 
 - Impatto utente: 8
 - Complessità tecnica: 3
@@ -229,9 +233,11 @@ Dopo ogni nuova attività o check-in, il sistema valuta compliance e modifica au
 - ROI: altissimo
 - Tempo stimato: 4 settimane
 
-### 9. Workout Execution Score
+### 9. Workout Execution Score ✅ FATTO
 
 Misura quanto la seduta eseguita rispetta quella prescritta: volume, intensità, distribuzione, passo, frequenza cardiaca e RPE.
+
+**Implementato:** `app/processing/execution.py` (`score_execution`, funzione pura) confronta l'attività reale con la sessione prescritta — distanza, durata, tipo, intensità, con RPE/passo quando presenti — e produce `execution_score` (0-100), `execution_status` (completed_well | too_hard | too_short | skipped | turned_easy | quality_missed | volume_excess), note ed evidenze. `execution_service.evaluate_plan_executions` collega attività↔sessione per data, salva il punteggio sulla sessione e auto-completa la seduta quando l'attività combacia. Gira nel pipeline post-sync (prima dell'adattamento, così la compliance reale guida l'adattamento). API: `GET /api/plan/executions`. Android: badge esito+score sulle righe delle sedute del piano.
 
 - Impatto utente: 9
 - Complessità tecnica: 6
@@ -476,9 +482,9 @@ Sistema di test con atleti sintetici e scenari reali per validare sicurezza, qua
 1. Today Workout Card. ✅ FATTO
 2. CoachDecision schema e persistenza. ✅ FATTO
 3. Decision Engine v1. ✅ FATTO
-4. Coach Daily Note.
+4. Coach Daily Note. ✅ FATTO
 5. Adaptive plan after sync. ✅ FATTO
-6. Workout Execution Score.
+6. Workout Execution Score. ✅ FATTO
 7. Health Connect MVP.
 8. Notifiche intelligenti.
 9. Race recap.

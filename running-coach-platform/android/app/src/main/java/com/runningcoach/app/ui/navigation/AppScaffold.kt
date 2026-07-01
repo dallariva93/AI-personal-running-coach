@@ -217,6 +217,7 @@ fun AppScaffold(app: RunningCoachApp) {
                         onSync = overviewVm::sync,
                         onAnalyze = overviewVm::analyze,
                         onOpenActivity = openActivity,
+                        onCoachAction = overviewVm::coachAction,
                     )
                 }
                 composable(Dest.Activities.route) {

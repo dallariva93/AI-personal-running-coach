@@ -7,6 +7,8 @@ import com.runningcoach.app.data.model.ChatMessage
 import com.runningcoach.app.data.model.ChatSendRequest
 import com.runningcoach.app.data.model.ChatSendResponse
 import com.runningcoach.app.data.model.ChatSession
+import com.runningcoach.app.data.model.CoachActionRequest
+import com.runningcoach.app.data.model.CoachDecision
 import com.runningcoach.app.data.model.DailyCheckin
 import com.runningcoach.app.data.model.HeatmapResponse
 import com.runningcoach.app.data.model.Vo2maxHistory
@@ -50,6 +52,9 @@ class CoachRepository(private val settings: SettingsStore) {
     suspend fun ingestCrossTraining(): List<Activity> = api().ingestCrossTraining()
 
     suspend fun crossTraining(limit: Int = 50): List<Activity> = api().crossTraining(limit)
+
+    suspend fun coachAction(action: String, detail: String? = null): CoachDecision =
+        api().coachAction(CoachActionRequest(action = action, detail = detail))
 
     suspend fun analyze(activityId: Int? = null): Report = api().analyze(activityId)
 

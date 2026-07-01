@@ -352,6 +352,13 @@ class TrainingPlanSession(Base):
     base_target_distance_km: Mapped[float | None] = mapped_column(Float, nullable=True)
     base_session_type: Mapped[str | None] = mapped_column(String(32), nullable=True)
     adjustment_note: Mapped[str | None] = mapped_column(Text, nullable=True)
+    # Workout Execution Score (Roadmap #9): filled once a matching activity is
+    # scored against this session.
+    execution_score: Mapped[float | None] = mapped_column(Float, nullable=True)
+    execution_status: Mapped[str | None] = mapped_column(String(24), nullable=True)
+    execution_note: Mapped[str | None] = mapped_column(Text, nullable=True)
+    execution_evidence: Mapped[list | None] = mapped_column(JSON, nullable=True)
+    executed_activity_id: Mapped[int | None] = mapped_column(Integer, nullable=True)
 
     week: Mapped[TrainingPlanWeek] = relationship(back_populates="sessions")
 
@@ -472,6 +479,7 @@ class CoachDecisionRow(Base):
     headline: Mapped[str] = mapped_column(String(160))
     prescription: Mapped[str] = mapped_column(Text)
     rationale: Mapped[str] = mapped_column(Text)
+    daily_note: Mapped[str | None] = mapped_column(Text, nullable=True)
     confidence: Mapped[str] = mapped_column(String(16), default="medium")
     signals: Mapped[list | None] = mapped_column(JSON, nullable=True)
     missing_data: Mapped[list | None] = mapped_column(JSON, nullable=True)
