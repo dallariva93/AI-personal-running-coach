@@ -25,7 +25,7 @@ v2 changes:
 
 from __future__ import annotations
 
-from datetime import date, timedelta
+from datetime import date
 
 from app.schemas import (
     AthleteProfile,
@@ -295,7 +295,6 @@ def _has_quality_tomorrow(
     """Check if there is a hard session scheduled tomorrow (P1-3 lookahead)."""
     if not next_sessions:
         return False
-    tomorrow = ref + timedelta(days=1)
     for sess in next_sessions:
         st = (sess.session_type or "").lower()
         if _is_hard(st):
@@ -552,7 +551,10 @@ def _decide_core(
         date=ref.isoformat(),
         decision="easy",
         headline="Corsa facile",
-        prescription=f"Corsa aerobica in Z2, {lo_min}-{hi_min} min ({lo_km:.0f}-{hi_km:.0f} km) a ritmo conversazionale.",
+        prescription=(
+            f"Corsa aerobica in Z2, {lo_min}-{hi_min} min "
+            f"({lo_km:.0f}-{hi_km:.0f} km) a ritmo conversazionale."
+        ),
         rationale=(
             "Nessuna seduta pianificata oggi e i segnali sono nella norma: "
             "una corsa facile costruisce la base senza aggiungere fatica."

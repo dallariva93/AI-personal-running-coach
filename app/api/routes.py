@@ -437,11 +437,13 @@ def get_personal_records(session: Session = Depends(get_session)) -> list[Person
 @router.get("/gamification", response_model=GamificationData)
 def get_gamification(session: Session = Depends(get_session)) -> GamificationData:
     """Current running streak and earned badges."""
-    from datetime import date as _date, timedelta as _timedelta
+    from datetime import date as _date
+    from datetime import timedelta as _timedelta
 
     from sqlalchemy import select as sa_select
 
-    from app.db.models import Activity as ActivityModel, TrainingPlan
+    from app.db.models import Activity as ActivityModel
+    from app.db.models import TrainingPlan
 
     activities = list(
         session.scalars(sa_select(ActivityModel).where(ActivityModel.sport == "run")).all()

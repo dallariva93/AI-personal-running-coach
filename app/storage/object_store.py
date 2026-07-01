@@ -75,7 +75,7 @@ class ObjectStore:
         except Exception:  # noqa: BLE001 - any error means "treat as absent"
             return False
 
-    def put(
+    def put_bytes(
         self,
         key: str,
         data: bytes,
@@ -90,9 +90,36 @@ class ObjectStore:
         )
         return key
 
-    def get(self, key: str) -> bytes:
+    def get_bytes(self, key: str) -> bytes:
         resp = self.client.get_object(Bucket=self.bucket, Key=key)
         return resp["Body"].read()
+
+    # Backwards-compatible aliases for the older method names.
+    put = put_bytes
+    get = get_bytes
+
+
+class InMemoryObjectStore:
+    """Dict-backed object store for tests and demo/offline use.
+
+    Exposes the same interface the archival pipeline relies on
+    (``put_bytes`` / ``get_bytes`` / ``exists``) with no network or boto3.
+    """
+
+    def __init__(self) -> None:
+        self.objects: dict[str, bytes] = {}
+
+    def put_bytes(
+        self, key: str, data: bytes, content_type: str = "application/octet-stream"
+    ) -> str:
+        self.objects[key] = data
+        return key
+
+    def get_bytes(self, key: str) -> bytes:
+        return self.objects[key]
+
+    def exists(self, key: str) -> bool:
+        return key in self.objects
 
 
 def checksum(data: bytes) -> str:

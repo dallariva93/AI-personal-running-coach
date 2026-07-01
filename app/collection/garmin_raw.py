@@ -168,7 +168,11 @@ class GarminRawFetcher:
         data: bytes,
         content_type: str,
     ) -> RawAsset:
-        parts = [self.key_prefix, str(activity_id), filename] if self.key_prefix else [str(activity_id), filename]
+        parts = (
+            [self.key_prefix, str(activity_id), filename]
+            if self.key_prefix
+            else [str(activity_id), filename]
+        )
         key = "/".join(p.strip("/") for p in parts if p)
         self.store.put_bytes(key, data, content_type=content_type)
         return RawAsset(

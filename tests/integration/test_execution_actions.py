@@ -84,9 +84,21 @@ def test_action_done_completes_session(session):
     start = date(2026, 6, 22)
     _seed_runs(session)
     _plan_with_session(session, start, dow=0, st="easy", km=8.0)
-    apply_coach_action(session, "done", ref=start)
+    # P0-3: "done" needs evidence — an explicit RPE (or a matching activity).
+    apply_coach_action(session, "done", rpe=5, ref=start)
     sess = session.query(TrainingPlanSession).filter_by(day_of_week=0).one()
     assert sess.completed is True
+
+
+def test_action_done_without_evidence_is_rejected(session):
+    """P0-3: a bare 'done' with no activity and no RPE must be refused."""
+    import pytest
+
+    start = date(2026, 6, 22)
+    _seed_runs(session)
+    _plan_with_session(session, start, dow=0, st="easy", km=8.0)
+    with pytest.raises(ValueError, match="attivita|RPE"):
+        apply_coach_action(session, "done", ref=start)
 
 
 def test_action_reduce_cuts_volume(session):

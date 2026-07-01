@@ -43,9 +43,9 @@ from app.services import (
     save_checkin,
     save_profile,
 )
-from app.services.ingest import _all_summaries
-from app.services.event_service import pending_notifications
 from app.services.decision_service import build_today_decision
+from app.services.event_service import pending_notifications
+from app.services.ingest import _all_summaries
 
 logger = get_logger("app.main")
 BASE_DIR = Path(__file__).resolve().parent

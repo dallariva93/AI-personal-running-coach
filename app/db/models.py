@@ -494,7 +494,9 @@ class CoachDecisionRow(Base):
     target_duration_min: Mapped[float | None] = mapped_column(Float, nullable=True)
     source: Mapped[str] = mapped_column(String(16), default="rules")
     expected_outcome: Mapped[str | None] = mapped_column(Text, nullable=True)
-    engine_version: Mapped[str] = mapped_column(String(16), default="2.0")
+    engine_version: Mapped[str | None] = mapped_column(
+        String(16), default="2.0", nullable=True
+    )
     created_at: Mapped[datetime] = mapped_column(DateTime, default=_utcnow)
     updated_at: Mapped[datetime] = mapped_column(DateTime, default=_utcnow, onupdate=_utcnow)
 
