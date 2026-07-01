@@ -4,17 +4,34 @@ Records what the coach changed, when, why and from which signals, keeping the
 before/after state. A ``notifiable`` event that hasn't been ``notified`` is a
 pending notification — so the audit log doubles as the notification source, and
 notifications stay tied to real decisions/adaptations (never generic).
+
+v2 (P3-2): time-window aware delivery, priority levels (high/medium/low), and
+cooldown to avoid re-notifying the same event type within a short period.
 """
 
 from __future__ import annotations
 
-from datetime import date, timedelta
+from datetime import date, datetime, timedelta
 
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from app.db.models import CoachEvent
 from app.schemas import CoachEventOut, NotificationOut, TrainingMetrics
+
+# Cooldown (hours): don't show a new notification of the same event_type if one
+# was already notified within this window (P3-2).
+_COOLDOWN_HOURS = 6
+
+# Time windows (24h, local) when each priority is relevant (P3-2).
+# High-priority (safety) notifications are always shown.
+# Medium-priority notifications are shown 6:00-22:00.
+# Low-priority notifications are shown 8:00-21:00.
+_WINDOW = {
+    "high": (0, 24),
+    "medium": (6, 22),
+    "low": (8, 21),
+}
 
 
 def signal_list(m: TrainingMetrics) -> list[str]:
@@ -45,8 +62,12 @@ def log_event(
     plan_session_id: int | None = None,
     notifiable: bool = False,
     dedupe_key: str | None = None,
+    priority: str | None = None,
 ) -> CoachEvent | None:
-    """Append an event. If ``dedupe_key`` already exists, do nothing (idempotent)."""
+    """Append an event. If ``dedupe_key`` already exists, do nothing (idempotent).
+
+    ``priority`` (high/medium/low) is stored when ``notifiable`` is True.
+    """
     if dedupe_key is not None:
         existing = db.scalar(select(CoachEvent).where(CoachEvent.dedupe_key == dedupe_key))
         if existing is not None:
@@ -63,6 +84,7 @@ def log_event(
         notifiable=notifiable,
         notified=False,
         dedupe_key=dedupe_key,
+        priority=priority if notifiable else None,
     )
     db.add(event)
     db.flush()
@@ -81,24 +103,71 @@ def recent_events(db: Session, days: int = 30, limit: int = 100) -> list[CoachEv
     return [_to_out(r) for r in rows]
 
 
-def pending_notifications(db: Session, limit: int = 20) -> list[NotificationOut]:
-    """Notifiable events not yet delivered, oldest first."""
+def _in_time_window(priority: str | None, now: datetime | None = None) -> bool:
+    """True if the current hour falls within the delivery window for ``priority``."""
+    if priority is None:
+        priority = "medium"
+    now = now or datetime.now()
+    start, end = _WINDOW.get(priority, _WINDOW["medium"])
+    return start <= now.hour < end
+
+
+def _recently_notified(
+    db: Session, event_type: str, hours: int = _COOLDOWN_HOURS
+) -> bool:
+    """True if a similar event_type was notified within the cooldown window."""
+    cutoff = datetime.now() - timedelta(hours=hours)
+    row = db.scalar(
+        select(CoachEvent)
+        .where(CoachEvent.event_type == event_type)
+        .where(CoachEvent.notified.is_(True))
+        .where(CoachEvent.created_at >= cutoff)
+        .limit(1)
+    )
+    return row is not None
+
+
+def pending_notifications(
+    db: Session, limit: int = 20, now: datetime | None = None
+) -> list[NotificationOut]:
+    """Notifiable events not yet delivered, filtered by time-window and cooldown.
+
+    Priority order: high first, then medium, then low. Within each priority,
+    oldest first. Events outside their time-window or within cooldown of a
+    recently notified same-type event are suppressed (P3-2).
+    """
+    now = now or datetime.now()
     rows = db.scalars(
         select(CoachEvent)
         .where(CoachEvent.notifiable.is_(True), CoachEvent.notified.is_(False))
         .order_by(CoachEvent.created_at.asc())
-        .limit(limit)
+        .limit(limit * 3)
     ).all()
-    return [
-        NotificationOut(
-            id=r.id,
-            title=r.title,
-            body=r.detail or r.title,
-            date=r.date,
-            event_type=r.event_type,
+
+    result: list[NotificationOut] = []
+    _priority_order = {"high": 0, "medium": 1, "low": 2}
+
+    for r in rows:
+        priority = r.priority or "medium"
+        if not _in_time_window(priority, now):
+            continue
+        if _recently_notified(db, r.event_type):
+            continue
+        result.append(
+            NotificationOut(
+                id=r.id,
+                title=r.title,
+                body=r.detail or r.title,
+                date=r.date,
+                event_type=r.event_type,
+                priority=priority,
+            )
         )
-        for r in rows
-    ]
+        if len(result) >= limit:
+            break
+
+    result.sort(key=lambda n: (_priority_order.get(n.priority, 1), n.date))
+    return result
 
 
 def mark_notified(db: Session, ids: list[int]) -> int:

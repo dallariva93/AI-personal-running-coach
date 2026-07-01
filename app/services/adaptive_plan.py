@@ -6,6 +6,14 @@ actually responding — not stay a static PDF. This service folds the live signa
 multi-week plan: it scales upcoming volume and, when the athlete is compromised,
 eases the intensity of imminent quality sessions.
 
+v2 changes (P2-2):
+- Taper-aware: during taper (days_to_race <= 14), quality sessions are preserved
+  (volume reduced, intensity kept) unless the athlete is severely compromised.
+- Dynamic horizon: the lookahead window shrinks as the race approaches (10 days
+  in base/build, 7 in peak, 3 in taper, 1 in race week).
+- Reshape: instead of always downgrading quality→easy, the adapter now chooses
+  between volume reduction, intensity ease, or full downgrade based on context.
+
 Idempotent by design: the *original* prescription is captured once into the
 ``base_*`` columns, and every run recomputes ``target_distance_km`` /
 ``session_type`` from that base times the current factor. Re-running after each
@@ -35,8 +43,40 @@ from app.services.profile import get_profile
 
 logger = get_logger("app.services.adaptive_plan")
 
-# How many days ahead the adapter is allowed to reshape.
-_HORIZON_DAYS = 7
+# Dynamic horizon (days) by periodization phase (P2-2).
+_HORIZON_BY_PHASE = {
+    "base": 10,
+    "build": 10,
+    "specific": 7,
+    "peak": 7,
+    "taper": 3,
+    "race": 1,
+}
+_DEFAULT_HORIZON = 7
+
+# Taper window: within this many days of race, quality is preserved (P0-2/P2-2).
+_TAPER_DAYS = 14
+
+
+def _days_to_race(m: TrainingMetrics) -> int | None:
+    """Estimate days to race from weeks_to_race, if available."""
+    if m.weeks_to_race is None:
+        return None
+    return m.weeks_to_race * 7
+
+
+def _dynamic_horizon(m: TrainingMetrics) -> int:
+    """Horizon shrinks as the race approaches (P2-2)."""
+    phase = (m.phase or "").lower()
+    return _HORIZON_BY_PHASE.get(phase, _DEFAULT_HORIZON)
+
+
+def _is_taper(m: TrainingMetrics) -> bool:
+    """True when the athlete is within the taper window."""
+    days = _days_to_race(m)
+    if days is not None and days <= _TAPER_DAYS:
+        return True
+    return (m.phase or "").lower() in ("taper", "race")
 
 
 def _should_ease(m: TrainingMetrics) -> bool:
@@ -50,6 +90,18 @@ def _should_ease(m: TrainingMetrics) -> bool:
     if m.acwr is not None and m.acwr >= 1.5:
         return True
     return False
+
+
+def _is_severe(m: TrainingMetrics) -> bool:
+    """True when the athlete is severely compromised: multiple red signals."""
+    red_count = 0
+    if m.injury_level == "high":
+        red_count += 1
+    if m.readiness_state == "red":
+        red_count += 1
+    if m.tsb is not None and m.tsb <= -30:
+        red_count += 1
+    return red_count >= 2
 
 
 def _session_date(start: date, week_number: int, day_of_week: int) -> date:
@@ -80,36 +132,48 @@ def adapt_plan_after_sync(db: Session, ref: date | None = None) -> dict:
 
     factor, notes = adapt_plan(metrics)
     ease = _should_ease(metrics)
-    horizon_end = ref + timedelta(days=_HORIZON_DAYS)
+    severe = _is_severe(metrics)
+    taper = _is_taper(metrics)
+    horizon_days = _dynamic_horizon(metrics)
+    horizon_end = ref + timedelta(days=horizon_days)
     signals = signal_list(metrics)
 
     adjusted = 0
     for week in plan.weeks:
         for sess in week.sessions:
             sess_date = _session_date(start, week.week_number, sess.day_of_week)
-            # Only reshape upcoming, not-yet-done sessions in the horizon window.
             if sess_date < ref or sess_date > horizon_end or sess.completed:
                 continue
             if (sess.session_type or "").lower() in _REST_TYPES:
                 continue
-            change = _adjust_session(sess, factor, ease)
+            change = _adjust_session(sess, factor, ease, severe, taper)
             if change is not None:
                 adjusted += 1
                 _log_adaptation(db, change, signals, sess_date)
 
     db.flush()
     if adjusted:
-        logger.info("Adaptive plan: %d session(s) adjusted (factor %.2f)", adjusted, factor)
+        logger.info(
+            "Adaptive plan v2: %d session(s) adjusted (factor %.2f, horizon %dd, taper=%s)",
+            adjusted, factor, horizon_days, taper,
+        )
     return {"adjusted": adjusted, "factor": factor, "notes": notes}
 
 
 def _adjust_session(
-    sess: TrainingPlanSession, factor: float, ease: bool
+    sess: TrainingPlanSession,
+    factor: float,
+    ease: bool,
+    severe: bool,
+    taper: bool,
 ) -> dict | None:
-    """Apply the volume factor and (optional) intensity ease from the base.
+    """Apply the volume factor and intensity adjustment from the base (P2-2).
 
-    Idempotent. Returns a change record ``{title, before_km, after_km,
-    before_type, after_type, session_id}`` when something changed, else ``None``.
+    Taper-aware: during taper, quality sessions keep their type (volume is
+    reduced by factor). Only severe compromise downgrades quality to easy
+    even in taper. Outside taper, the normal ease logic applies.
+
+    Idempotent. Returns a change record when something changed, else ``None``.
     """
     # Capture the untouched original once.
     if sess.base_target_distance_km is None and sess.target_distance_km is not None:
@@ -131,13 +195,26 @@ def _adjust_session(
         if factor < 1.0:
             note_parts.append(f"volume {int(round((1 - factor) * 100))}% ridotto")
 
-    # Intensity: ease imminent quality work; restore it when signals recover.
+    # Intensity adjustment: taper-aware reshape (P2-2).
     base_type = (sess.base_session_type or "").lower()
-    if ease and base_type in _HARD_TYPES:
+    if severe and base_type in _HARD_TYPES:
+        # Severe compromise: downgrade to easy regardless of phase.
         if sess.session_type != "easy":
             sess.session_type = "easy"
             changed = True
-        note_parts.append("qualità alleggerita per recupero")
+        note_parts.append("qualita declassata per compromissione severa")
+    elif ease and base_type in _HARD_TYPES and not taper:
+        # Normal (non-taper): ease quality to easy when signals warrant.
+        if sess.session_type != "easy":
+            sess.session_type = "easy"
+            changed = True
+        note_parts.append("qualita alleggerita per recupero")
+    elif ease and base_type in _HARD_TYPES and taper:
+        # Taper: preserve quality but note the volume reduction is intentional.
+        if sess.session_type != sess.base_session_type:
+            sess.session_type = sess.base_session_type
+            changed = True
+        note_parts.append("qualita mantenuta in taper (volume ridotto)")
     elif not ease and sess.base_session_type and sess.session_type != sess.base_session_type:
         # Restore the original intensity now that the athlete has recovered.
         sess.session_type = sess.base_session_type
@@ -194,6 +271,14 @@ def _log_adaptation(
         detail = f"Il coach ha aggiornato {title}{why}."
 
     significant = type_changed or km_delta >= 0.15
+    if type_changed and (a_type or "") == "easy":
+        priority = "high"
+    elif type_changed:
+        priority = "low"
+    elif km_delta >= 0.15:
+        priority = "medium"
+    else:
+        priority = "low"
     log_event(
         db,
         date_str=sess_date.isoformat(),
@@ -206,4 +291,5 @@ def _log_adaptation(
         plan_session_id=change["session_id"],
         notifiable=significant,
         dedupe_key=f"{sess_date.isoformat()}:adapt:{change['session_id']}:{a_km}:{a_type}",
+        priority=priority if significant else None,
     )

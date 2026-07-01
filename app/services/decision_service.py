@@ -83,19 +83,24 @@ def record_decision_notification(db: Session, decision: CoachDecision) -> None:
     d = decision.decision
     no_checkin = any("check-in" in m.lower() for m in decision.missing_data)
     body: str | None = None
+    priority = "medium"
     if d == "modify":
         body = "La seduta di oggi è stata alleggerita."
+        priority = "medium"
     elif d == "rest":
         flag = decision.safety_flags[0] if decision.safety_flags else None
         body = f"Oggi meglio riposo: {flag.lower()}." if flag else "Oggi meglio riposo."
+        priority = "high"
     elif d == "caution" and decision.safety_flags:
         body = f"Attenzione: {decision.safety_flags[0].lower()}."
+        priority = "high"
     elif d == "quality":
         body = (
             "Hai un lavoro di qualità oggi: fai il check-in prima di partire."
             if no_checkin
             else "Oggi è giornata di qualità: sei fresco, rendila pulita."
         )
+        priority = "low"
     if body is None:
         return
     log_event(
@@ -107,6 +112,7 @@ def record_decision_notification(db: Session, decision: CoachDecision) -> None:
         signals=decision.signals,
         notifiable=True,
         dedupe_key=f"{decision.date}:decision:{d}",
+        priority=priority,
     )
 
 
