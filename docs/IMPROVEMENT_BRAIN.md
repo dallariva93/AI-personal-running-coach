@@ -207,3 +207,69 @@ Tutti i 23 gap del documento sono coperti e le 4 fasi della roadmap completate,
 con il modello di carico ora ancorato ai dati fisiologici reali di Garmin quando
 disponibili. Possibili evoluzioni future: VDOT/Daniels per la previsione,
 difficoltà tecnica del trail, UI dedicata per gare B/C e zone.
+
+---
+
+## 5. Limitazioni note e problemi non risolvibili
+
+I seguenti limiti sono stati identificati durante il refactoring (P0-P3) ma non
+sono risolvibili nel dominio del software, o lo sono solo parzialmente. Sono
+documentati qui per trasparenza e per guidare future decisioni.
+
+### 5.1 HR zone data non sempre disponibile (P0-5)
+
+Il time-in-zone check in `execution.py` funziona solo quando `run.hr_zones` è
+popolato. Attività inserite manualmente o senza sensore HR non hanno zone FC,
+quindi il check viene saltato silenziosamente. Non è possibile inferire le zone
+ dalla FC media sola senza conoscere le soglie individuali e la distribuzione
+temporale. **Mitigazione**: il punteggio finale non viene penalizzato quando i
+dati HR mancano (il check è additivo, non sostitutivo).
+
+### 5.2 Streak: rest days solo dal piano attivo (P0-8)
+
+Il bridging dei rest day in `compute_streak` considera solo i rest day del piano
+attivo. Periodi senza piano, o rest day non pianificati, interrompono ancora la
+streak. Non è possibile distinguere un "giorno di riposo pianificato" da un
+"giorno saltato" senza un piano di riferimento. **Mitigazione**: quando un piano
+è attivo, i rest day pianificati sono bridged correttamente.
+
+### 5.3 days_to_race approssimato (P2-2)
+
+La detection del taper in `adaptive_plan.py` usa `weeks_to_race * 7` come
+approssimazione di `days_to_race`. Questo può essere off fino a 6 giorni. Una
+stima precisa richiederebbe la `goal_date` del piano, non disponibile in
+`TrainingMetrics` (che ha solo `weeks_to_race`). **Mitigazione**: la fase
+periodization (`taper`/`race`) è usata come fallback, quindi il taper viene
+rilevato comunque quando la fase è corretta.
+
+### 5.4 RPE auto-riferito non validabile (P0-3)
+
+Il RPE richiesto per mark-done è auto-riferito dall'atleta e non può essere
+validato per accuratezza. Un atleta può inserire RPE=1 senza aver corso.
+**Mitigazione**: il flusso preferito richiede un'attività registrata (con GPS/HR);
+l'RPE è un fallback per sessioni indoor o senza dispositivo.
+
+### 5.5 Confidence euristica, non statistica (P0-7)
+
+La confidence basata sul signal disagreement è un'euristica (pesi fissi sui
+disallineamenti), non una misura statistica di incertezza (es. intervallo di
+confidenza bayesiano). Una calibrazione rigorosa richiederebbe un dataset
+storico di decisioni e outcomes per stimare la correlazione tra disagreement e
+tasso di errore. **Mitigazione**: i pesi sono ancorati a principi fisiologici
+(segnali di carico in conflitto = incertezza reale).
+
+### 5.6 Cooldown notifiche: query per-event (P3-2)
+
+`_recently_notified` esegue una query DB per ogni evento pending, il che può
+essere lento con molti eventi. Un'ottimizzazione (batch query per event_type)
+è possibile ma non implementata per semplicità. **Mitigazione**: il limite di
+20 notifiche e il dedupe_key mantengono il volume basso in pratica.
+
+### 5.7 Adaptive plan: orizzonte fisso per fase (P2-2)
+
+L'horizon dinamico è determinato dalla fase periodization, ma non si adatta a
+eventi eccezionali (es. infortunio improvviso potrebbe richiedere orizzonte più
+lungo per riprogrammare l'intera settimana). **Mitigazione**: il factor di
+volume si applica a tutte le sessioni nell'orizzonte, e l'evento di infortunio
+viene loggato e notificato con priority high.
+
