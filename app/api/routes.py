@@ -155,9 +155,15 @@ def _adapt_after_change(session: Session) -> None:
 
     Compliance (Roadmap #9) is evaluated first so the adaptive engine (#8) can
     reason over what was actually executed. Never propagates: a failure here must
-    not break the ingest/check-in call.
+    not break the ingest/check-in call. Retries once with a short backoff before
+    giving up (P0-9: no more silent failure).
     """
-    try:
+    from app.logging_config import get_logger
+    from app.utils import retry_call
+
+    logger = get_logger("app.api")
+
+    def _pipeline() -> None:
         from app.services.adaptive_plan import adapt_plan_after_sync
         from app.services.decision_service import (
             build_today_decision,
@@ -166,15 +172,16 @@ def _adapt_after_change(session: Session) -> None:
         from app.services.execution_service import evaluate_plan_executions
 
         evaluate_plan_executions(session)
-        adapt_plan_after_sync(session)  # logs plan_adapted audit events
+        adapt_plan_after_sync(session)
         decision = build_today_decision(session, persist=True)
         record_decision_notification(session, decision)
         _commit(session)
+
+    try:
+        retry_call(_pipeline, retries=2, base_delay=0.5, description="post-sync pipeline")
     except Exception as exc:  # noqa: BLE001
         session.rollback()
-        from app.logging_config import get_logger
-
-        get_logger("app.api").warning("Post-sync pipeline skipped: %s", exc)
+        logger.error("Post-sync pipeline failed after retry: %s", exc, exc_info=True)
 
 
 @router.post("/ingest", response_model=list[ActivityOut])
@@ -323,7 +330,9 @@ def post_coach_action(
     from app.services.decision_service import apply_coach_action
 
     try:
-        decision = apply_coach_action(session, payload.action, payload.detail)
+        decision = apply_coach_action(
+            session, payload.action, payload.detail, rpe=payload.rpe
+        )
     except ValueError as exc:
         raise HTTPException(status_code=422, detail=str(exc)) from exc
     _commit(session)
@@ -428,14 +437,34 @@ def get_personal_records(session: Session = Depends(get_session)) -> list[Person
 @router.get("/gamification", response_model=GamificationData)
 def get_gamification(session: Session = Depends(get_session)) -> GamificationData:
     """Current running streak and earned badges."""
+    from datetime import date as _date, timedelta as _timedelta
+
     from sqlalchemy import select as sa_select
 
-    from app.db.models import Activity as ActivityModel
+    from app.db.models import Activity as ActivityModel, TrainingPlan
 
     activities = list(
         session.scalars(sa_select(ActivityModel).where(ActivityModel.sport == "run")).all()
     )
-    current, best = compute_streak(activities)
+
+    # P0-8: collect planned rest days so they don't break the streak.
+    rest_dates: set[_date] = set()
+    plan = session.scalar(sa_select(TrainingPlan).where(TrainingPlan.status == "active"))
+    if plan is not None:
+        try:
+            start = _date.fromisoformat(plan.start_date)
+            for week in plan.weeks:
+                for sess in week.sessions:
+                    if (sess.session_type or "").lower() in ("rest", "riposo"):
+                        rest_dates.add(
+                            start + _timedelta(
+                                days=(week.week_number - 1) * 7 + sess.day_of_week
+                            )
+                        )
+        except (ValueError, TypeError):
+            pass
+
+    current, best = compute_streak(activities, rest_dates=rest_dates)
     badges = [Badge(**b) for b in compute_badges(activities, current, best)]
     return GamificationData(
         streak_days=current,

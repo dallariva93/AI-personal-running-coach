@@ -71,17 +71,19 @@ def generate_plan(
         db.flush()
 
         for sess_data in week_data.get("sessions", []):
+            target_dist = (
+                float(sess_data["target_distance_km"])
+                if sess_data.get("target_distance_km") is not None
+                else None
+            )
+            sess_type = sess_data.get("session_type", "easy")
             sess = TrainingPlanSession(
                 week_id=week.id,
                 day_of_week=int(sess_data["day_of_week"]),
-                session_type=sess_data.get("session_type", "easy"),
+                session_type=sess_type,
                 title=sess_data.get("title", ""),
                 description=sess_data.get("description"),
-                target_distance_km=(
-                    float(sess_data["target_distance_km"])
-                    if sess_data.get("target_distance_km") is not None
-                    else None
-                ),
+                target_distance_km=target_dist,
                 target_pace=sess_data.get("target_pace"),
                 target_duration_min=(
                     float(sess_data["target_duration_min"])
@@ -89,6 +91,9 @@ def generate_plan(
                     else None
                 ),
                 completed=bool(sess_data.get("completed", False)),
+                # P0-10: capture base prescription at creation time.
+                base_target_distance_km=target_dist,
+                base_session_type=sess_type,
             )
             db.add(sess)
 

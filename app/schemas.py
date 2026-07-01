@@ -129,6 +129,11 @@ class AthletePhysiology(BaseModel):
     critical_speed: str | None = None
     resting_hr: int | None = None
     lactate_threshold_hr: int | None = None
+    # AthleteModel v1: derived metrics that individualise coaching decisions.
+    # Pace degradation per 10 km in long runs (sec/km per 10 km). Lower = more durable.
+    durability_index: float | None = None
+    # Difference between LT2 pace and best-5K pace (sec/km). Higher = more speed reserve.
+    speed_reserve_sec: float | None = None
 
 
 class Goal(BaseModel):
@@ -328,6 +333,11 @@ class CoachDecision(BaseModel):
     target_duration_min: float | None = None
     daily_note: str = ""  # short, human, motivational one-liner (Roadmap #3)
     source: str = "rules"  # rules | ai
+    # Feedback loop (P2-1): what the coach expects to happen, so outcomes can be
+    # compared retrospectively and the engine calibrated.
+    expected_outcome: str | None = None
+    # Engine version for compatibility between persisted and recomputed decisions.
+    engine_version: str = "2.0"
 
 
 class CoachActionRequest(BaseModel):
@@ -335,6 +345,7 @@ class CoachActionRequest(BaseModel):
 
     action: str  # done | reduce | defer | problem
     detail: str | None = None  # for "problem": tired | pain
+    rpe: int | None = None  # 1-10, required for "done" to validate execution (P0-3)
 
 
 class CoachEventOut(BaseModel):
@@ -364,6 +375,7 @@ class NotificationOut(BaseModel):
     body: str
     date: str
     event_type: str
+    priority: str = "medium"  # high | medium | low (P3-2)
 
 
 class NotificationAck(BaseModel):
@@ -390,6 +402,15 @@ class ExecutionResult(BaseModel):
     # quality_missed | volume_excess
     execution_notes: str = ""
     evidence: list[str] = Field(default_factory=list)
+    # Multi-dimensional sub-scores (P0-5, P0-6): volume, intensity (time-in-zone),
+    # pace, structure and distribution. None when not computable.
+    volume_score: float | None = None
+    intensity_score: float | None = None
+    pace_score: float | None = None
+    structure_score: float | None = None
+    distribution_score: float | None = None
+    # Percentage of time spent in the target HR zone (when hr_zones available).
+    time_in_zone_pct: float | None = None
 
 
 class WeeklyBucket(BaseModel):

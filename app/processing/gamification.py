@@ -12,20 +12,37 @@ if TYPE_CHECKING:
     from app.db.models import Activity
 
 
-def compute_streak(activities: list[Activity]) -> tuple[int, int]:
+def compute_streak(
+    activities: list[Activity],
+    rest_dates: set[date] | None = None,
+) -> tuple[int, int]:
     """Return (current_streak_days, best_streak_days).
 
     A streak increments on consecutive calendar days with at least one run.
+    Planned rest days (``rest_dates``) do not break the streak: a gap that
+    coincides with a rest day is bridged (P0-8).
     The current streak is still alive if the last run was today or yesterday.
     """
     if not activities:
         return 0, 0
 
+    rest = rest_dates or set()
     unique = sorted(
         {date.fromisoformat(a.date) for a in activities},
         reverse=True,
     )
     today = date.today()
+
+    def _bridge_gap(prev_d: date, d: date) -> bool:
+        """True if every day between d and prev_d (exclusive) is a rest day."""
+        if prev_d - d <= timedelta(days=1):
+            return True
+        check = d + timedelta(days=1)
+        while check < prev_d:
+            if check not in rest:
+                return False
+            check += timedelta(days=1)
+        return True
 
     # Current streak — must include today or yesterday to still be "live".
     current = 0
@@ -35,6 +52,9 @@ def compute_streak(activities: list[Activity]) -> tuple[int, int]:
             if d == expected:
                 current += 1
                 expected -= timedelta(days=1)
+            elif d < expected and _bridge_gap(expected + timedelta(days=1), d):
+                current += 1
+                expected = d - timedelta(days=1)
             else:
                 break
 
@@ -42,7 +62,7 @@ def compute_streak(activities: list[Activity]) -> tuple[int, int]:
     best = max(current, 1 if unique else 0)
     run = 1
     for i in range(1, len(unique)):
-        if unique[i - 1] - unique[i] == timedelta(days=1):
+        if _bridge_gap(unique[i - 1], unique[i]):
             run += 1
             best = max(best, run)
         else:

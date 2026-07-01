@@ -359,6 +359,8 @@ class TrainingPlanSession(Base):
     execution_note: Mapped[str | None] = mapped_column(Text, nullable=True)
     execution_evidence: Mapped[list | None] = mapped_column(JSON, nullable=True)
     executed_activity_id: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    # Multi-dimensional execution sub-scores stored as JSON (P0-5, P0-6).
+    execution_detail: Mapped[dict | None] = mapped_column(JSON, nullable=True)
 
     week: Mapped[TrainingPlanWeek] = relationship(back_populates="sessions")
 
@@ -491,6 +493,8 @@ class CoachDecisionRow(Base):
     target_pace: Mapped[str | None] = mapped_column(String(16), nullable=True)
     target_duration_min: Mapped[float | None] = mapped_column(Float, nullable=True)
     source: Mapped[str] = mapped_column(String(16), default="rules")
+    expected_outcome: Mapped[str | None] = mapped_column(Text, nullable=True)
+    engine_version: Mapped[str] = mapped_column(String(16), default="2.0")
     created_at: Mapped[datetime] = mapped_column(DateTime, default=_utcnow)
     updated_at: Mapped[datetime] = mapped_column(DateTime, default=_utcnow, onupdate=_utcnow)
 
@@ -525,6 +529,9 @@ class CoachEvent(Base):
     dedupe_key: Mapped[str | None] = mapped_column(String(128), nullable=True, index=True)
     notifiable: Mapped[bool] = mapped_column(Boolean, default=False)
     notified: Mapped[bool] = mapped_column(Boolean, default=False)
+    # Notification priority (P3-2): high = injury/safety, medium = plan adapted,
+    # low = informational. NULL when not notifiable.
+    priority: Mapped[str | None] = mapped_column(String(16), nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime, default=_utcnow, index=True)
 
     def __repr__(self) -> str:  # pragma: no cover

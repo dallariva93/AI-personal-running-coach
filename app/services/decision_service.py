@@ -126,19 +126,27 @@ COACH_ACTIONS = {"done", "reduce", "defer", "problem"}
 
 
 def apply_coach_action(
-    db: Session, action: str, detail: str | None = None, ref: date | None = None
+    db: Session,
+    action: str,
+    detail: str | None = None,
+    ref: date | None = None,
+    rpe: int | None = None,
 ) -> CoachDecision:
     """Apply a Today-card action and return the freshly recomputed decision.
 
-    * ``done``    — mark today's planned session completed.
-    * ``reduce``  — cut today's session volume by 30% (from its base).
-    * ``defer``   — swap today's session with tomorrow's (same week).
-    * ``problem`` — record a wellness signal (``detail`` = ``tired`` | ``pain``)
+    * ``done``    - mark today's planned session completed. Requires either a
+      matching activity for today or an explicit RPE (P0-3: no bypassing the
+      execution score with a bare "done").
+    * ``reduce``  - cut today's session volume by 30% (from its base).
+    * ``defer``   - swap today's session with tomorrow's (same week). If
+      tomorrow is a rest day, shift today's session forward instead of
+      swapping (P0-4: don't lose the rest day).
+    * ``problem`` - record a wellness signal (``detail`` = ``tired`` | ``pain``)
       so readiness drops, the plan adapts and the decision softens.
     """
     from datetime import UTC, datetime
 
-    from app.db.models import TrainingPlan, TrainingPlanSession
+    from app.db.models import Activity, TrainingPlan, TrainingPlanSession
 
     ref = ref or date.today()
     if action not in COACH_ACTIONS:
@@ -167,8 +175,23 @@ def apply_coach_action(
     today_sess = _session_on(ref)
 
     if action == "done" and today_sess is not None:
+        # P0-3: require evidence (matching activity or RPE) to mark done.
+        today_str = ref.isoformat()
+        has_activity = db.scalar(
+            select(Activity.id)
+            .where(Activity.date == today_str)
+            .where(Activity.sport == "run")
+            .limit(1)
+        ) is not None
+        if not has_activity and rpe is None:
+            raise ValueError(
+                "Per segnare la seduta come completata serve un'attivita registrata "
+                "oppure un RPE. Usa 'done' con rpe=1-10 o registra prima la tua corsa."
+            )
         today_sess.completed = True
         today_sess.completed_at = datetime.now(UTC)
+        if rpe is not None:
+            today_sess.execution_note = f"RPE atleta: {rpe}/10"
 
     elif action == "reduce" and today_sess is not None:
         if today_sess.base_target_distance_km is None and today_sess.target_distance_km:
@@ -180,11 +203,23 @@ def apply_coach_action(
     elif action == "defer" and today_sess is not None and today_sess.day_of_week < 6:
         next_sess = _session_on(ref + timedelta(days=1))
         if next_sess is not None:
-            # Swap the two days so nothing is lost.
-            today_sess.day_of_week, next_sess.day_of_week = (
-                next_sess.day_of_week,
-                today_sess.day_of_week,
-            )
+            next_type = (next_sess.session_type or "").lower()
+            # P0-4: if tomorrow is a rest day, don't swap (would put rest today
+            # and lose the session). Shift today's session to tomorrow and
+            # mark tomorrow as rest instead.
+            if next_type in ("rest", "riposo"):
+                today_sess.day_of_week = next_sess.day_of_week
+                next_sess.day_of_week = ref.weekday()
+                next_sess.session_type = "rest"
+                next_sess.target_distance_km = None
+                next_sess.target_pace = None
+                next_sess.target_duration_min = None
+                next_sess.adjustment_note = "riposo (seduta spostata da defer)"
+            else:
+                today_sess.day_of_week, next_sess.day_of_week = (
+                    next_sess.day_of_week,
+                    today_sess.day_of_week,
+                )
 
     elif action == "problem":
         _record_problem(db, detail, ref)
