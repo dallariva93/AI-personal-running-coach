@@ -44,6 +44,8 @@ from app.services import (
     save_profile,
 )
 from app.services.ingest import _all_summaries
+from app.services.event_service import pending_notifications
+from app.services.decision_service import build_today_decision
 
 logger = get_logger("app.main")
 BASE_DIR = Path(__file__).resolve().parent
@@ -128,6 +130,8 @@ def _dashboard_context(session: Session, request: Request, flash: str | None = N
         "checkin": checkin,
         "version": __version__,
         "flash": flash,
+        "notifications": pending_notifications(session),
+        "today_decision": build_today_decision(session, persist=False),
     }
 
 
