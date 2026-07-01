@@ -163,7 +163,7 @@ Guida completa: [`docs/DEPLOYMENT.md`](docs/DEPLOYMENT.md) · runbook operativo:
 - [Deployment](docs/DEPLOYMENT.md) — hosting gratuito e backup
 - [Runbook operativo](docs/OPERATIONS.md) — log, migrazioni, troubleshooting
 - [Production readiness](docs/PRODUCTION_READINESS.md) — cosa rende l'app pronta
-- [Architettura](docs/ARCHITECTURE.md) · [Roadmap](docs/ROADMAP.md) · [Sicurezza](docs/SECURITY.md)
+- [Architettura](docs/ARCHITECTURE.md) · [Roadmap](docs/ROADMAP_OLD.md) · [Sicurezza](docs/SECURITY.md)
 - [Analisi feature Fase 2](docs/FASE2_ANALISI.md) · [Changelog](CHANGELOG.md)
 
 ## 🏗️ Architettura
@@ -179,7 +179,7 @@ collection/  →  processing/  →  coaching/
 ```
 
 Dettagli completi in [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md) e la
-roadmap in [`docs/ROADMAP.md`](docs/ROADMAP.md).
+roadmap in [`docs/ROADMAP.md`](docs/ROADMAP_OLD.md).
 
 ---
 
