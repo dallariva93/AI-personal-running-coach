@@ -19,6 +19,7 @@ import androidx.compose.material3.NavigationBarItemDefaults
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.SnackbarHost
 import androidx.compose.material3.SnackbarHostState
+import androidx.compose.material3.SnackbarResult
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
@@ -120,11 +121,19 @@ fun AppScaffold(app: RunningCoachApp) {
             }
         }
 
-        // Surface plan action results / errors as snackbars.
+        // Surface plan action results / errors as snackbars. A move offers an
+        // "Annulla" action (Roadmap Q8) — the swap is its own inverse.
         LaunchedEffect(planState.successMessage, planState.error) {
             val text = planState.error ?: planState.successMessage
             if (text != null) {
-                snackbar.showSnackbar(text)
+                val move = planState.lastMove
+                val result = snackbar.showSnackbar(
+                    message = text,
+                    actionLabel = if (move != null) "Annulla" else null,
+                )
+                if (result == SnackbarResult.ActionPerformed && move != null) {
+                    planVm.moveSession(move.first, move.second)
+                }
                 planVm.clearMessage()
             }
         }

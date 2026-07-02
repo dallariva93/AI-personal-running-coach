@@ -388,10 +388,11 @@ data class ActivityPatch(
     @SerializedName("notes") val notes: String? = null,
 )
 
-/** Running streak and earned badges. */
+/** Streak (plan-adherence when a plan is active, else legacy running streak) and badges. */
 data class GamificationData(
     @SerializedName("streak_days") val streakDays: Int = 0,
     @SerializedName("streak_days_best") val streakDaysBest: Int = 0,
+    @SerializedName("streak_kind") val streakKind: String = "runs", // "adherence" | "runs"
     @SerializedName("total_badges_earned") val totalBadgesEarned: Int = 0,
     @SerializedName("badges") val badges: List<Badge> = emptyList(),
 )

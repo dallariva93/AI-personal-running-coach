@@ -22,8 +22,11 @@ from app.services.ingest import _activity_to_summary
 
 logger = get_logger("app.services.execution")
 
-# How far back to (re)evaluate sessions on each pass.
-_LOOKBACK_DAYS = 21
+# How far back to (re)evaluate sessions on each pass. Matches the adherence
+# streak's 60-day window (Roadmap Q4): sessions never scored within this
+# range stay execution_status=None, which the adherence streak treats as
+# "not skipped" (benefit of the doubt) rather than a broken streak.
+_LOOKBACK_DAYS = 60
 # A matching activity with at least this score auto-completes the session.
 _AUTO_COMPLETE_SCORE = 50.0
 

@@ -21,15 +21,14 @@ from app.processing import (
     aerobic_efficiency,
     build_periodization,
     build_snapshot,
-    compute_badges,
     compute_metrics,
     compute_personal_records,
-    compute_streak,
     predict_race_time,
     weekly_buckets,
 )
 from app.schemas import ActivityOut, ReportOut, TrainingMetrics, WeeklyBucket
 from app.services import get_profile, hrv_history, latest_checkin, list_activities
+from app.services.gamification_service import compute_gamification
 from app.services.ingest import _all_summaries
 from app.services.plan_service import get_current_plan
 from app.services.workout_service import list_workouts
@@ -87,17 +86,10 @@ def overview(session: Session = Depends(get_session)) -> dict:
     activities = [ActivityOut.model_validate(a) for a in list_activities(session, limit=30)]
     snapshot = build_snapshot(summaries)
 
-    # Personal records + gamification (streak / badges).
+    # Personal records + gamification (adherence streak / badges).
     prs = compute_personal_records(all_activities_orm)
     pr_activity_ids = [r["activity_id"] for r in prs if r.get("activity_id")]
-    streak_days, streak_best = compute_streak(all_activities_orm)
-    raw_badges = compute_badges(all_activities_orm, streak_days, streak_best)
-    gamification = {
-        "streak_days": streak_days,
-        "streak_days_best": streak_best,
-        "total_badges_earned": sum(1 for b in raw_badges if b["earned"]),
-        "badges": raw_badges,
-    }
+    gamification = compute_gamification(session, all_activities_orm).model_dump()
 
     goal = profile.goal if profile else None
     prediction = plan = None

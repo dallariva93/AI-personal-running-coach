@@ -6,6 +6,7 @@ import com.runningcoach.app.data.model.PlanChatMessage
 import com.runningcoach.app.data.model.PlanGenerateRequest
 import com.runningcoach.app.data.model.TrainingPlan
 import com.runningcoach.app.data.repository.CoachRepository
+import java.time.LocalDate
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -21,6 +22,9 @@ data class PlanUiState(
     val plan: TrainingPlan? = null,
     val error: String? = null,
     val successMessage: String? = null,
+    // (sessionId, sourceDateIso) of the last successful move, for the snackbar
+    // "Annulla" action (Roadmap Q8) — a swap is its own inverse.
+    val lastMove: Pair<Int, String>? = null,
     val showGenerateDialog: Boolean = false,
     // Chat state
     val chatMessages: List<PlanChatMessage> = listOf(
@@ -100,7 +104,10 @@ class PlanViewModel(private val repository: CoachRepository) : ViewModel() {
             runCatching { repository.generatePlan(requestWithContext) }
                 .onSuccess { plan ->
                     _state.update {
-                        it.copy(loading = false, plan = plan, successMessage = "Piano generato!")
+                        it.copy(
+                            loading = false, plan = plan, successMessage = "Piano generato!",
+                            lastMove = null,
+                        )
                     }
                 }
                 .onFailure { e ->
@@ -137,7 +144,7 @@ class PlanViewModel(private val repository: CoachRepository) : ViewModel() {
                                 )
                             },
                         )
-                        st.copy(plan = patched)
+                        st.copy(plan = patched, lastMove = null)
                     }
                 }
                 .onFailure { e ->
@@ -148,6 +155,7 @@ class PlanViewModel(private val repository: CoachRepository) : ViewModel() {
 
     /** Move a plan session to another day (calendar editor, Roadmap #12). */
     fun moveSession(sessionId: Int, targetDate: String) {
+        val sourceDate = _state.value.plan?.let { sourceDateOf(it, sessionId) }
         viewModelScope.launch {
             runCatching { repository.movePlanSession(sessionId, targetDate) }
                 .onSuccess { result ->
@@ -157,7 +165,12 @@ class PlanViewModel(private val repository: CoachRepository) : ViewModel() {
                         "Spostata — ⚠ " + result.warnings.joinToString(" ")
                     }
                     _state.update {
-                        it.copy(plan = result.plan, successMessage = msg, error = null)
+                        it.copy(
+                            plan = result.plan, successMessage = msg, error = null,
+                            // Q8: a swap is its own inverse — remembering where the
+                            // session came from lets the snackbar offer "Annulla".
+                            lastMove = sourceDate?.let { d -> sessionId to d },
+                        )
                     }
                 }
                 .onFailure { e ->
@@ -170,9 +183,19 @@ class PlanViewModel(private val repository: CoachRepository) : ViewModel() {
                             Regex("\"detail\"\\s*:\\s*\"([^\"]+)\"")
                                 .find(body)?.groupValues?.get(1)
                         }
-                    _state.update { it.copy(error = detail ?: friendly(e)) }
+                    _state.update { it.copy(error = detail ?: friendly(e), lastMove = null) }
                 }
         }
+    }
+
+    /** The calendar date ``sessionId`` currently sits on, from its week/day-of-week. */
+    private fun sourceDateOf(plan: TrainingPlan, sessionId: Int): String? {
+        val start = runCatching { LocalDate.parse(plan.startDate) }.getOrNull() ?: return null
+        for (week in plan.weeks) {
+            val sess = week.sessions.find { it.id == sessionId } ?: continue
+            return start.plusDays((week.weekNumber - 1) * 7L + sess.dayOfWeek).toString()
+        }
+        return null
     }
 
     fun archivePlan(planId: Int) {
@@ -181,7 +204,10 @@ class PlanViewModel(private val repository: CoachRepository) : ViewModel() {
             runCatching { repository.archivePlan(planId) }
                 .onSuccess {
                     _state.update {
-                        it.copy(loading = false, plan = null, successMessage = "Piano archiviato.")
+                        it.copy(
+                            loading = false, plan = null, successMessage = "Piano archiviato.",
+                            lastMove = null,
+                        )
                     }
                 }
                 .onFailure { e ->
@@ -197,7 +223,8 @@ class PlanViewModel(private val repository: CoachRepository) : ViewModel() {
         resetChat()
     }
 
-    fun clearMessage() = _state.update { it.copy(successMessage = null, error = null) }
+    fun clearMessage() =
+        _state.update { it.copy(successMessage = null, error = null, lastMove = null) }
 
     private fun friendly(e: Throwable): String = when (e) {
         is retrofit2.HttpException ->

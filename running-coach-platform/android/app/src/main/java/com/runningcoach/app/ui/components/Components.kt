@@ -390,7 +390,9 @@ fun StreakCard(gamification: GamificationData, modifier: Modifier = Modifier) {
                     color = if (gamification.streakDays >= 7) Coral else BrandGreen,
                 )
                 Text(
-                    "giorni di fila",
+                    // Roadmap Q4: "days the plan was honoured" when a plan is
+                    // active, the plainer legacy running streak otherwise.
+                    if (gamification.streakKind == "adherence") "giorni di piano rispettato" else "giorni di fila",
                     style = MaterialTheme.typography.labelSmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )

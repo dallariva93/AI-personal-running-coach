@@ -9,7 +9,12 @@ from app.processing.adaptive import adapt_plan
 from app.processing.decision import decide_today
 from app.processing.efficiency import aerobic_efficiency, decoupling
 from app.processing.execution import score_execution
-from app.processing.gamification import compute_badges, compute_streak
+from app.processing.gamification import (
+    AdherenceDay,
+    compute_adherence_streak,
+    compute_badges,
+    compute_streak,
+)
 from app.processing.injury import injury_risk
 from app.processing.load import (
     equivalent_flat_km,
@@ -63,5 +68,7 @@ __all__ = [
     "is_trail",
     "compute_personal_records",
     "compute_streak",
+    "compute_adherence_streak",
+    "AdherenceDay",
     "compute_badges",
 ]

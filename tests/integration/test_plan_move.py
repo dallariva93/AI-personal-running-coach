@@ -161,6 +161,27 @@ def test_move_writes_audit_event(session):
     assert moved[0].before is not None and moved[0].after is not None
 
 
+def test_move_then_undo_restores_identical_week(session):
+    """Q8: undo is just moving back to the source date — a swap is its own
+    inverse, so week1 must end up byte-identical to how it started."""
+    start = _next_monday()
+    plan = _mk_plan(session, start)
+    tempo = _find(session, plan, 1, 3)
+    before = {s.day_of_week: s.session_type for s in _find(session, plan, 1, 3).week.sessions}
+
+    move_session(session, tempo.id, (start + timedelta(days=4)).isoformat(), ref=start)
+    result = move_session(session, tempo.id, (start + timedelta(days=3)).isoformat(), ref=start)
+
+    week1 = next(w for w in result.plan.weeks if w.week_number == 1)
+    after = {s.day_of_week: s.session_type for s in week1.sessions}
+    assert after == before
+
+    # Both the move and its undo are audited (two events, by design).
+    events = recent_events(session, days=60)
+    moved = [e for e in events if e.event_type == "action" and "spostata" in e.title.lower()]
+    assert len(moved) == 2
+
+
 def test_unknown_session_raises_lookup(session):
     with pytest.raises(LookupError):
         move_session(session, 999_999, date.today().isoformat())

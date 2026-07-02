@@ -5,6 +5,7 @@ Works on ORM Activity rows. Pure functions, no I/O.
 
 from __future__ import annotations
 
+from dataclasses import dataclass
 from datetime import date, timedelta
 from typing import TYPE_CHECKING
 
@@ -67,6 +68,74 @@ def compute_streak(
             best = max(best, run)
         else:
             run = 1
+
+    return current, best
+
+
+@dataclass
+class AdherenceDay:
+    """One calendar day's plan-adherence signal (Roadmap Q4).
+
+    ``has_session`` and ``prescribed_rest`` are mutually exclusive: a day is
+    either a prescribed workout, a prescribed rest day, or neither (not
+    covered by any plan on that date — treated as neutral, see
+    :func:`compute_adherence_streak`).
+    """
+
+    day: date
+    has_session: bool = False
+    execution_status: str | None = None  # only meaningful when has_session
+    prescribed_rest: bool = False
+    ran_hard: bool = False  # a non-easy activity landed on a prescribed rest day
+
+
+def _day_state(d: AdherenceDay) -> bool | None:
+    """True = adherent (extends the streak), False = broken, None = no plan
+    coverage that day — skipped over, neither extends nor breaks (bridged,
+    same spirit as rest-day bridging in :func:`compute_streak`)."""
+    if d.has_session:
+        # None = not yet evaluated (today, or predates the execution engine):
+        # benefit of the doubt, only an explicit "skipped" breaks the streak.
+        return d.execution_status != "skipped"
+    if d.prescribed_rest:
+        return not d.ran_hard
+    return None  # no prescription that day — doesn't count as plan-honoured work
+
+
+def compute_adherence_streak(days: list[AdherenceDay]) -> tuple[int, int]:
+    """Return ``(current_streak_days, best_streak_days)`` of plan adherence.
+
+    Unlike :func:`compute_streak` (which counts running days), this counts
+    *calendar* days where the athlete honoured the plan: did the prescribed
+    session (or rest was genuinely rest). A prescribed rest day with only an
+    easy run does not break the streak; a ``skipped`` prescribed session does.
+    Days with no plan coverage at all (e.g. before the plan started) are
+    bridged — they neither extend nor break an existing streak.
+    """
+    if not days:
+        return 0, 0
+
+    ordered = sorted(days, key=lambda d: d.day)
+    states = [_day_state(d) for d in ordered]
+
+    best = 0
+    run = 0
+    for state in states:
+        if state is None:
+            continue
+        if state:
+            run += 1
+            best = max(best, run)
+        else:
+            run = 0
+
+    current = 0
+    for state in reversed(states):
+        if state is None:
+            continue
+        if not state:
+            break
+        current += 1
 
     return current, best
 

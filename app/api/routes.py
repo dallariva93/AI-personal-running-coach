@@ -23,10 +23,8 @@ from app.processing import (
     aerobic_efficiency,
     build_periodization,
     build_snapshot,
-    compute_badges,
     compute_metrics,
     compute_personal_records,
-    compute_streak,
     predict_race_time,
     trail_metrics,
     weekly_buckets,
@@ -36,7 +34,6 @@ from app.schemas import (
     ActivityPatch,
     AthleteProfile,
     AthleteSnapshot,
-    Badge,
     CoachActionRequest,
     CoachDecision,
     CoachEventOut,
@@ -462,44 +459,16 @@ def get_personal_records(session: Session = Depends(get_session)) -> list[Person
 
 @router.get("/gamification", response_model=GamificationData)
 def get_gamification(session: Session = Depends(get_session)) -> GamificationData:
-    """Current running streak and earned badges."""
-    from datetime import date as _date
-    from datetime import timedelta as _timedelta
-
+    """Current plan-adherence streak (or legacy running streak) and earned badges."""
     from sqlalchemy import select as sa_select
 
     from app.db.models import Activity as ActivityModel
-    from app.db.models import TrainingPlan
+    from app.services.gamification_service import compute_gamification
 
     activities = list(
         session.scalars(sa_select(ActivityModel).where(ActivityModel.sport == "run")).all()
     )
-
-    # P0-8: collect planned rest days so they don't break the streak.
-    rest_dates: set[_date] = set()
-    plan = session.scalar(sa_select(TrainingPlan).where(TrainingPlan.status == "active"))
-    if plan is not None:
-        try:
-            start = _date.fromisoformat(plan.start_date)
-            for week in plan.weeks:
-                for sess in week.sessions:
-                    if (sess.session_type or "").lower() in ("rest", "riposo"):
-                        rest_dates.add(
-                            start + _timedelta(
-                                days=(week.week_number - 1) * 7 + sess.day_of_week
-                            )
-                        )
-        except (ValueError, TypeError):
-            pass
-
-    current, best = compute_streak(activities, rest_dates=rest_dates)
-    badges = [Badge(**b) for b in compute_badges(activities, current, best)]
-    return GamificationData(
-        streak_days=current,
-        streak_days_best=best,
-        total_badges_earned=sum(1 for b in badges if b.earned),
-        badges=badges,
-    )
+    return compute_gamification(session, activities)
 
 
 @router.get("/stats", response_model=PeriodStats)

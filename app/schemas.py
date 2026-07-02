@@ -560,6 +560,7 @@ class GamificationData(BaseModel):
 
     streak_days: int = 0
     streak_days_best: int = 0
+    streak_kind: str = "runs"  # "adherence" (plan-aware) | "runs" (legacy, no active plan)
     total_badges_earned: int = 0
     badges: list[Badge] = Field(default_factory=list)
 

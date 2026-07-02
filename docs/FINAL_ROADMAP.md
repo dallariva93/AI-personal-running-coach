@@ -322,7 +322,39 @@ crescenti e non richiede un nuovo contratto API.
 
 ---
 
-#### Passo 3 — Q4 · Streak di aderenza (+ Q8 · Undo nel calendario)
+#### Passo 3 — Q4 · Streak di aderenza (+ Q8 · Undo nel calendario) ✅ FATTO — 2026-07-02
+
+**Implementato:** `AdherenceDay` + `compute_adherence_streak()` pure in
+`app/processing/gamification.py`: ogni giorno del calendario è aderente/rotto/neutro
+(seduta completata o riposo rispettato = aderente, `skipped` o corsa hard in un
+giorno di riposo = rotto, nessuna copertura del piano quel giorno = neutro,
+bridged senza contare — evita che i giorni "vuoti" prima dell'inizio piano gonfino
+artificialmente lo streak a 60). Nuovo `app/services/gamification_service.py`
+(`compute_gamification`) unifica `/api/gamification` e `/api/mobile/overview`,
+che prima duplicavano la logica in modo leggermente diverso: con piano attivo usa
+la finestra di 60gg di aderenza, senza piano ricade sul vecchio `compute_streak`
+(comportamento legacy). `GamificationData.streak_kind` ("adherence"|"runs")
+esposto per la label Android. Android: `StreakCard` mostra "giorni di piano
+rispettato" vs "giorni di fila" in base a `streakKind`. Q8: `PlanViewModel.moveSession`
+calcola la data sorgente della seduta dal piano corrente prima dello spostamento e la
+salva in `lastMove`; la snackbar in `AppScaffold` mostra "Annulla" quando presente e
+richiama `moveSession` con id+data sorgente per invertire lo swap.
+
+**Deviazioni dal brief:**
+1. `execution_service._LOOKBACK_DAYS` alzato da 21 a 60gg: la finestra di
+   aderenza di 60gg altrimenti avrebbe letto `execution_status=None` (mai
+   valutato) su tutti i giorni oltre i 21, ricevendo il beneficio del dubbio
+   invece di un vero controllo — scoperto leggendo `execution_service.py`, non
+   menzionato nel brief.
+2. Il brief dà per scontato che "Q8: test manuale UI + l'integrazione backend
+   già copre lo swap inverso" — verificato che NON era vero (nessun test di
+   `test_plan_move.py` copriva move+undo): aggiunto
+   `test_move_then_undo_restores_identical_week`.
+3. **Fix separato pre-esistente** (commit `bcec72a`): la build Android era rossa
+   da 7 commit (da `cdaca7f1`, incl. i miei Passo 1/2) per un type mismatch in
+   `ShoesScreen.kt` (`Shoe` passato dove serviva `ShoeIn`) — riparato prima di
+   iniziare Passo 3, come richiesto dall'utente ("mi sa che è andato male build
+   e deploy automatico").
 
 **Q4 Obiettivo.** Lo streak premia l'aderenza al piano (riposo prescritto incluso), non il correre tutti i giorni.
 
