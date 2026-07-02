@@ -1,0 +1,60 @@
+<resources>
+    <string name="app_name">Running Coach</string>
+    <string name="nav_home">Oggi</string>
+    <string name="nav_activities">Allenamenti</string>
+    <string name="nav_plan">Piano</string>
+    <string name="nav_settings">Impostazioni</string>
+    <string name="settings_base_url">URL del backend</string>
+    <string name="settings_token">Token di accesso (opzionale)</string>
+    <string name="settings_save">Salva</string>
+
+    <!-- Home screen (Roadmap Q7) -->
+    <string name="home_title">Oggi</string>
+    <string name="home_subtitle">Il tuo stato di forma in tempo reale</string>
+    <string name="home_loading">Elaboro…</string>
+    <string name="home_coach_diary">Diario del coach</string>
+    <string name="home_recent_runs">Ultime corse</string>
+    <string name="home_empty_hint">Collega il backend in Impostazioni: il sync parte da solo.</string>
+
+    <string name="sync_last">Ultimo sync %1$s</string>
+    <string name="sync_last_with_new">Ultimo sync %1$s · %2$s</string>
+    <string name="sync_waiting_first">In attesa del primo sync…</string>
+    <string name="sync_now_description">Sincronizza ora</string>
+    <plurals name="new_activities_count">
+        <item quantity="one">%1$d nuova corsa</item>
+        <item quantity="other">%1$d nuove corse</item>
+    </plurals>
+
+    <string name="details_show">Mostra dettagli</string>
+    <string name="details_hide">Nascondi dettagli</string>
+
+    <!-- Onboarding checklist (Roadmap #4) -->
+    <string name="onboarding_title">Configurazione in corso</string>
+    <string name="onboarding_step_connect_data">Collega i dati</string>
+    <string name="onboarding_step_set_goal">Imposta obiettivo</string>
+    <string name="onboarding_step_first_checkin">Primo check-in</string>
+    <string name="onboarding_step_generate_plan">Genera piano</string>
+    <string name="onboarding_step_first_recommendation">Prima raccomandazione</string>
+    <string name="onboarding_step_done_description">Fatto</string>
+    <string name="onboarding_step_todo_description">Da fare</string>
+    <string name="onboarding_next_step">Prossimo passo: %1$s</string>
+
+    <!-- Today Workout Card (Roadmap #1) -->
+    <string name="decision_rest">RIPOSO</string>
+    <string name="decision_quality">QUALITÀ</string>
+    <string name="decision_long">LUNGO</string>
+    <string name="decision_modify">ADATTA</string>
+    <string name="decision_caution">ATTENZIONE</string>
+    <string name="decision_default">OGGI</string>
+    <string name="confidence_high">confidenza alta</string>
+    <string name="confidence_low">confidenza bassa</string>
+    <string name="confidence_medium">confidenza media</string>
+    <string name="today_card_why">Perché questa scelta?</string>
+    <string name="action_done">Fatto</string>
+    <string name="action_reduce">Riduci</string>
+    <string name="action_defer">Sposta</string>
+    <string name="action_problem">Sto male</string>
+    <string name="detail_signals_used">Segnali usati</string>
+    <string name="detail_alternatives">Alternative</string>
+    <string name="detail_missing_data">Dati mancanti</string>
+</resources>

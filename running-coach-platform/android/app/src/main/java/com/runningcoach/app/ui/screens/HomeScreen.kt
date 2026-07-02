@@ -33,8 +33,11 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.res.pluralStringResource
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
+import com.runningcoach.app.R
 import com.runningcoach.app.data.model.Overview
 import com.runningcoach.app.data.settings.SyncStatus
 import com.runningcoach.app.ui.components.ActivityRow
@@ -73,7 +76,11 @@ fun HomeScreen(
             .padding(horizontal = 16.dp, vertical = 12.dp),
     ) {
         Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
-            ScreenTitle("Oggi", "Il tuo stato di forma in tempo reale", Modifier.weight(1f))
+            ScreenTitle(
+                stringResource(R.string.home_title),
+                stringResource(R.string.home_subtitle),
+                Modifier.weight(1f),
+            )
             ov?.let {
                 Column(horizontalAlignment = Alignment.End) {
                     Pill(it.mode.uppercase(), BrandGreen)
@@ -119,7 +126,7 @@ fun HomeScreen(
                 Row(verticalAlignment = Alignment.CenterVertically) {
                     CircularProgressIndicator(Modifier.height(18.dp), strokeWidth = 2.dp)
                     Spacer(Modifier.width(8.dp))
-                    Text("Elaboro…", style = MaterialTheme.typography.bodySmall)
+                    Text(stringResource(R.string.home_loading), style = MaterialTheme.typography.bodySmall)
                 }
             }
 
@@ -138,7 +145,7 @@ fun HomeScreen(
                 verticalAlignment = Alignment.CenterVertically,
             ) {
                 Text(
-                    "Diario del coach",
+                    stringResource(R.string.home_coach_diary),
                     style = MaterialTheme.typography.labelLarge,
                     fontWeight = FontWeight.SemiBold,
                     color = MaterialTheme.colorScheme.primary,
@@ -152,7 +159,7 @@ fun HomeScreen(
             }
 
             Spacer(Modifier.height(18.dp))
-            SectionTitle("Ultime corse")
+            SectionTitle(stringResource(R.string.home_recent_runs))
             ov.activities.take(5).forEach { act ->
                 ActivityRow(
                     activity = act,
@@ -179,12 +186,14 @@ private fun SyncStatusRow(syncStatus: SyncStatus, working: Boolean, onSyncNow: (
         val time = Instant.ofEpochMilli(millis).atZone(ZoneId.systemDefault())
             .format(DateTimeFormatter.ofPattern("HH:mm"))
         if (syncStatus.newActivities > 0) {
-            val corse = if (syncStatus.newActivities == 1) "corsa" else "corse"
-            "Ultimo sync $time · ${syncStatus.newActivities} nuove $corse"
+            val newCount = pluralStringResource(
+                R.plurals.new_activities_count, syncStatus.newActivities, syncStatus.newActivities,
+            )
+            stringResource(R.string.sync_last_with_new, time, newCount)
         } else {
-            "Ultimo sync $time"
+            stringResource(R.string.sync_last, time)
         }
-    } ?: "In attesa del primo sync…"
+    } ?: stringResource(R.string.sync_waiting_first)
 
     Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
         Text(
@@ -194,7 +203,7 @@ private fun SyncStatusRow(syncStatus: SyncStatus, working: Boolean, onSyncNow: (
             modifier = Modifier.weight(1f),
         )
         IconButton(onClick = onSyncNow, enabled = !working) {
-            Icon(Icons.Filled.Sync, contentDescription = "Sincronizza ora")
+            Icon(Icons.Filled.Sync, contentDescription = stringResource(R.string.sync_now_description))
         }
     }
 }
@@ -214,7 +223,7 @@ private fun DetailsToggle(ov: Overview, prIds: Set<Int>) {
         verticalAlignment = Alignment.CenterVertically,
     ) {
         Text(
-            if (expanded) "Nascondi dettagli" else "Mostra dettagli",
+            stringResource(if (expanded) R.string.details_hide else R.string.details_show),
             style = MaterialTheme.typography.labelLarge,
             fontWeight = FontWeight.SemiBold,
             color = MaterialTheme.colorScheme.primary,
@@ -259,7 +268,7 @@ private fun DetailsToggle(ov: Overview, prIds: Set<Int>) {
 private fun EmptyHint() {
     Column {
         Text(
-            "Collega il backend in Impostazioni: il sync parte da solo.",
+            stringResource(R.string.home_empty_hint),
             style = MaterialTheme.typography.bodyMedium,
             color = MaterialTheme.colorScheme.onSurfaceVariant,
         )
@@ -269,11 +278,11 @@ private fun EmptyHint() {
 @Composable
 private fun OnboardingCard(onboarding: com.runningcoach.app.data.model.OnboardingStatus) {
     val steps = listOf(
-        onboarding.connectData to "Collega i dati",
-        onboarding.setGoal to "Imposta obiettivo",
-        onboarding.firstCheckin to "Primo check-in",
-        onboarding.generatePlan to "Genera piano",
-        onboarding.firstRecommendation to "Prima raccomandazione",
+        onboarding.connectData to stringResource(R.string.onboarding_step_connect_data),
+        onboarding.setGoal to stringResource(R.string.onboarding_step_set_goal),
+        onboarding.firstCheckin to stringResource(R.string.onboarding_step_first_checkin),
+        onboarding.generatePlan to stringResource(R.string.onboarding_step_generate_plan),
+        onboarding.firstRecommendation to stringResource(R.string.onboarding_step_first_recommendation),
     )
     val completed = steps.count { (isDone, _) -> isDone }
 
@@ -290,7 +299,7 @@ private fun OnboardingCard(onboarding: com.runningcoach.app.data.model.Onboardin
                 verticalAlignment = Alignment.CenterVertically
             ) {
                 Text(
-                    "Configurazione in corso",
+                    stringResource(R.string.onboarding_title),
                     style = MaterialTheme.typography.titleMedium,
                     fontWeight = FontWeight.Bold
                 )
@@ -308,7 +317,13 @@ private fun OnboardingCard(onboarding: com.runningcoach.app.data.model.Onboardin
                 ) {
                     Icon(
                         imageVector = if (isDone) Icons.Default.CheckCircle else Icons.Outlined.Circle,
-                        contentDescription = null,
+                        // Q7: this is the only visual cue for done/pending — the
+                        // label text alone doesn't say which, so unlike a purely
+                        // decorative icon this needs a real description.
+                        contentDescription = stringResource(
+                            if (isDone) R.string.onboarding_step_done_description
+                            else R.string.onboarding_step_todo_description,
+                        ),
                         tint = if (isDone) BrandGreen else MaterialTheme.colorScheme.onSurfaceVariant,
                         modifier = Modifier.width(20.dp)
                     )
@@ -323,16 +338,16 @@ private fun OnboardingCard(onboarding: com.runningcoach.app.data.model.Onboardin
             onboarding.nextStep?.let { next ->
                 Spacer(Modifier.height(12.dp))
                 val nextLabel = when (next) {
-                    "connect_data" -> "Collega i dati"
-                    "set_goal" -> "Imposta obiettivo"
-                    "first_checkin" -> "Primo check-in"
-                    "generate_plan" -> "Genera piano"
-                    "first_recommendation" -> "Prima raccomandazione"
+                    "connect_data" -> stringResource(R.string.onboarding_step_connect_data)
+                    "set_goal" -> stringResource(R.string.onboarding_step_set_goal)
+                    "first_checkin" -> stringResource(R.string.onboarding_step_first_checkin)
+                    "generate_plan" -> stringResource(R.string.onboarding_step_generate_plan)
+                    "first_recommendation" -> stringResource(R.string.onboarding_step_first_recommendation)
                     else -> null
                 }
                 nextLabel?.let {
                     Text(
-                        "Prossimo passo: $it",
+                        stringResource(R.string.onboarding_next_step, it),
                         style = MaterialTheme.typography.labelSmall,
                         color = MaterialTheme.colorScheme.primary,
                         fontWeight = FontWeight.SemiBold

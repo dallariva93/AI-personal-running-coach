@@ -45,6 +45,7 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.semantics.clearAndSetSemantics
 import androidx.compose.ui.text.style.TextDecoration
 import kotlin.math.roundToInt
 
@@ -331,6 +332,10 @@ fun ActivityRow(
                 Text(
                     activityGlyphs[activity.activityType.lowercase()] ?: "🏃",
                     style = MaterialTheme.typography.titleMedium,
+                    // Decorative (Q7): the type name is announced by the label
+                    // right next to this glyph — don't make TalkBack read the
+                    // raw emoji too and double (or garble) the announcement.
+                    modifier = Modifier.clearAndSetSemantics {},
                 )
             }
             Spacer(Modifier.width(12.dp))

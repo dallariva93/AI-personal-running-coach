@@ -36,6 +36,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextDecoration
 import androidx.compose.ui.unit.dp
+import com.runningcoach.app.ui.theme.textSafeOn
 
 /** A muted, all-caps eyebrow label used above sections. */
 @Composable
@@ -101,13 +102,19 @@ fun StatItem(
     }
 }
 
-/** Small rounded status chip with a leading dot. */
+/**
+ * Small rounded status chip with a leading dot. The dot and background tint
+ * keep the vivid brand [color]; the text uses [Color.textSafeOn] against the
+ * surrounding surface so every pill clears WCAG AA contrast (Roadmap Q7),
+ * whichever semantic color a call site passes in.
+ */
 @Composable
 fun Pill(
     text: String,
     color: Color,
     modifier: Modifier = Modifier,
 ) {
+    val textColor = color.textSafeOn(MaterialTheme.colorScheme.surface)
     Row(
         modifier
             .clip(RoundedCornerShape(50))
@@ -120,7 +127,7 @@ fun Pill(
         Text(
             text,
             style = MaterialTheme.typography.labelMedium,
-            color = color,
+            color = textColor,
             fontWeight = FontWeight.SemiBold,
         )
     }

@@ -1,6 +1,8 @@
 package com.runningcoach.app.ui.theme
 
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.toArgb
+import androidx.core.graphics.ColorUtils
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Brand palette — energetic, premium, distinct from Strava (orange) and Garmin
@@ -104,4 +106,52 @@ fun activityColor(type: String): Color = when (type.lowercase()) {
     "intervalli", "gara" -> ActivityHard
     "trail" -> ActivityTrail
     else -> FormUnknown
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// WCAG contrast helper (Roadmap Q7). The semantic palette above is tuned to pop
+// on the near-black dark theme; several of those same colors fall well under
+// the 4.5:1 AA threshold for normal text once used on a *light* surface — a
+// contrast audit script run against every color/surface combination in this
+// file found the failure is systemic (light mode), not a couple of edge cases.
+// Rather than hand-author a light-mode "*Deep" twin for every color (easy to
+// forget for new colors, and to let drift out of sync), text-bearing components
+// call [textSafeOn] once, which darkens (or, on a dark surface, lightens) the
+// color just enough to clear the ratio — provably correct for any color, not
+// just the ones audited today.
+// ─────────────────────────────────────────────────────────────────────────────
+
+/**
+ * Returns [this], adjusted in lightness if necessary, so it reaches at least
+ * [minRatio] contrast (WCAG AA normal text = 4.5:1) against [background]. Used
+ * for text/icon color; leave decorative fills (dots, chip backgrounds) using
+ * the original vivid color — only legibility of text needs the guarantee.
+ */
+fun Color.textSafeOn(background: Color, minRatio: Double = 4.5): Color {
+    val fgArgb = this.toArgb()
+    val bgArgb = background.toArgb()
+    if (ColorUtils.calculateContrast(fgArgb, bgArgb) >= minRatio) return this
+
+    val hsl = FloatArray(3)
+    ColorUtils.colorToHSL(fgArgb, hsl)
+    val bgIsDark = ColorUtils.calculateLuminance(bgArgb) < 0.5
+    // Lighten toward 1 on a dark background, darken toward 0 on a light one.
+    var lo = if (bgIsDark) hsl[2] else 0f
+    var hi = if (bgIsDark) 1f else hsl[2]
+    var result = this
+    repeat(16) {
+        val mid = (lo + hi) / 2f
+        val candidateHsl = hsl.copyOf()
+        candidateHsl[2] = mid
+        val candidateArgb = ColorUtils.HSLToColor(candidateHsl)
+        if (ColorUtils.calculateContrast(candidateArgb, bgArgb) >= minRatio) {
+            result = Color(candidateArgb)
+            // This lightness clears the bar — search back towards the original
+            // hue/lightness for the *least* adjustment that still passes.
+            if (bgIsDark) hi = mid else lo = mid
+        } else {
+            if (bgIsDark) lo = mid else hi = mid
+        }
+    }
+    return result
 }

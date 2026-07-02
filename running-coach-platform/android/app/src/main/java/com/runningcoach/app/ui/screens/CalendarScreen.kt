@@ -15,6 +15,7 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.sizeIn
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.grid.GridCells
 import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
@@ -138,7 +139,9 @@ fun CalendarScreen(
             columns = GridCells.Fixed(7),
             modifier = Modifier
                 .fillMaxWidth()
-                .padding(horizontal = 8.dp),
+                // Tight 4dp (was 8dp): reclaim width so a 7-column week clears the
+                // 48dp touch-target minimum on more phones (Q7).
+                .padding(horizontal = 4.dp),
             contentPadding = PaddingValues(bottom = 8.dp),
         ) {
             // Leading blank cells.
@@ -215,7 +218,10 @@ private fun DayCell(
     Box(
         Modifier
             .aspectRatio(1f)
-            .padding(2.dp)
+            // 48dp touch-target floor (Q7) — see PlanCalendarScreen for the same
+            // narrow-device caveat (a 7-column week can't force this on <336dp).
+            .sizeIn(minWidth = 48.dp, minHeight = 48.dp)
+            .padding(1.dp)
             .clip(RoundedCornerShape(8.dp))
             .then(
                 if (isSelected) Modifier.background(MaterialTheme.colorScheme.primaryContainer)

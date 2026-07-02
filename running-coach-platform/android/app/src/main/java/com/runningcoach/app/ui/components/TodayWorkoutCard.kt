@@ -42,9 +42,11 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontStyle
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
+import com.runningcoach.app.R
 import com.runningcoach.app.data.model.CoachDecision
 import com.runningcoach.app.ui.theme.ActivityHard
 import com.runningcoach.app.ui.theme.ActivityTempo
@@ -55,13 +57,14 @@ import com.runningcoach.app.ui.theme.RiskModerate
 
 private data class DecisionStyle(val icon: ImageVector, val color: Color, val verb: String)
 
+@Composable
 private fun styleFor(decision: String): DecisionStyle = when (decision.lowercase()) {
-    "rest" -> DecisionStyle(Icons.Filled.Hotel, FormUnknown, "RIPOSO")
-    "quality" -> DecisionStyle(Icons.Filled.Bolt, ActivityTempo, "QUALITÀ")
-    "long" -> DecisionStyle(Icons.Filled.Route, BrandGreenDeep, "LUNGO")
-    "modify" -> DecisionStyle(Icons.Filled.Tune, RiskModerate, "ADATTA")
-    "caution" -> DecisionStyle(Icons.Filled.WarningAmber, ActivityHard, "ATTENZIONE")
-    else -> DecisionStyle(Icons.Filled.DirectionsRun, BrandGreen, "OGGI")
+    "rest" -> DecisionStyle(Icons.Filled.Hotel, FormUnknown, stringResource(R.string.decision_rest))
+    "quality" -> DecisionStyle(Icons.Filled.Bolt, ActivityTempo, stringResource(R.string.decision_quality))
+    "long" -> DecisionStyle(Icons.Filled.Route, BrandGreenDeep, stringResource(R.string.decision_long))
+    "modify" -> DecisionStyle(Icons.Filled.Tune, RiskModerate, stringResource(R.string.decision_modify))
+    "caution" -> DecisionStyle(Icons.Filled.WarningAmber, ActivityHard, stringResource(R.string.decision_caution))
+    else -> DecisionStyle(Icons.Filled.DirectionsRun, BrandGreen, stringResource(R.string.decision_default))
 }
 
 /**
@@ -155,19 +158,19 @@ fun TodayWorkoutCard(
             Spacer(Modifier.height(14.dp))
             val pad = PaddingValues(horizontal = 8.dp, vertical = 6.dp)
             Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                ActionButton("Fatto", Icons.Filled.CheckCircle, Modifier.weight(1f), pad) {
+                ActionButton(stringResource(R.string.action_done), Icons.Filled.CheckCircle, Modifier.weight(1f), pad) {
                     onAction("done", null)
                 }
-                ActionButton("Riduci", Icons.Filled.TrendingDown, Modifier.weight(1f), pad) {
+                ActionButton(stringResource(R.string.action_reduce), Icons.Filled.TrendingDown, Modifier.weight(1f), pad) {
                     onAction("reduce", null)
                 }
             }
             Spacer(Modifier.height(8.dp))
             Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                ActionButton("Sposta", Icons.Filled.MoveDown, Modifier.weight(1f), pad) {
+                ActionButton(stringResource(R.string.action_defer), Icons.Filled.MoveDown, Modifier.weight(1f), pad) {
                     onAction("defer", null)
                 }
-                ActionButton("Sto male", Icons.Filled.Sick, Modifier.weight(1f), pad) {
+                ActionButton(stringResource(R.string.action_problem), Icons.Filled.Sick, Modifier.weight(1f), pad) {
                     onAction("problem", "tired")
                 }
             }
@@ -183,7 +186,7 @@ fun TodayWorkoutCard(
             verticalAlignment = Alignment.CenterVertically,
         ) {
             Text(
-                if (expanded) "Nascondi dettagli" else "Perché questa scelta?",
+                stringResource(if (expanded) R.string.details_hide else R.string.today_card_why),
                 style = MaterialTheme.typography.labelMedium,
                 color = MaterialTheme.colorScheme.primary,
                 fontWeight = FontWeight.SemiBold,
@@ -199,9 +202,9 @@ fun TodayWorkoutCard(
         AnimatedVisibility(visible = expanded) {
             Column {
                 Spacer(Modifier.height(4.dp))
-                DetailList("Segnali usati", decision.signals)
-                DetailList("Alternative", decision.alternatives)
-                DetailList("Dati mancanti", decision.missingData)
+                DetailList(stringResource(R.string.detail_signals_used), decision.signals)
+                DetailList(stringResource(R.string.detail_alternatives), decision.alternatives)
+                DetailList(stringResource(R.string.detail_missing_data), decision.missingData)
             }
         }
     }
@@ -241,8 +244,9 @@ private fun DetailList(title: String, items: List<String>) {
     }
 }
 
+@Composable
 private fun confidenceLabel(c: String): String = when (c.lowercase()) {
-    "high" -> "confidenza alta"
-    "low" -> "confidenza bassa"
-    else -> "confidenza media"
+    "high" -> stringResource(R.string.confidence_high)
+    "low" -> stringResource(R.string.confidence_low)
+    else -> stringResource(R.string.confidence_medium)
 }

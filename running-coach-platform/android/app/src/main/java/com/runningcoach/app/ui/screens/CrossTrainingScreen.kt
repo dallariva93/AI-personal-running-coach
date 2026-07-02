@@ -35,6 +35,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.semantics.clearAndSetSemantics
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import com.runningcoach.app.data.model.Activity
@@ -130,7 +131,13 @@ fun CrossTrainingScreen(
                     horizontalAlignment = Alignment.CenterHorizontally,
                     modifier = Modifier.padding(32.dp),
                 ) {
-                    Text("🚴 🏊 🏋️", style = MaterialTheme.typography.headlineMedium)
+                    Text(
+                        "🚴 🏊 🏋️",
+                        style = MaterialTheme.typography.headlineMedium,
+                        // Decorative empty-state illustration (Q7): the two
+                        // Text rows right below already say what's missing.
+                        modifier = Modifier.clearAndSetSemantics {},
+                    )
                     Spacer(Modifier.height(12.dp))
                     Text(
                         "Nessuna attività di cross-training.",
@@ -170,7 +177,13 @@ private fun CrossTrainingRow(activity: Activity) {
                     .background(style.color.copy(alpha = 0.18f)),
                 contentAlignment = Alignment.Center,
             ) {
-                Text(style.glyph, style = MaterialTheme.typography.titleMedium)
+                Text(
+                    style.glyph,
+                    style = MaterialTheme.typography.titleMedium,
+                    // Decorative (Q7): style.label right next to it already
+                    // announces the sport ("Ciclismo"/"Nuoto"/"Palestra").
+                    modifier = Modifier.clearAndSetSemantics {},
+                )
             }
             Spacer(Modifier.width(12.dp))
             Column(Modifier.width(96.dp)) {

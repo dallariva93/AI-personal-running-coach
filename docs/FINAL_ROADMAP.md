@@ -486,7 +486,41 @@ test per contratto — dichiarato. Nessun tocco Android: l'evento "weather" flui
 
 ---
 
-#### Passo 7 — Q7 · Accessibility & i18n pass
+#### Passo 7 — Q7 · Accessibility & i18n pass ✅ FATTO — 2026-07-02
+
+**Implementato** (dettagli completi in `docs/ACCESSIBILITY.md`):
+- **Stringhe:** `values/strings.xml` (inglese, default) + `values-it/strings.xml`
+  estratti e cablati per Home + Today Workout Card (39 chiavi, incl. `<plurals>`
+  per "N nuove corse"); rimosse 3 entry morte (`action_sync/analyze/plan`, dai
+  bottoni Q2). `styleFor`/`confidenceLabel` in `TodayWorkoutCard.kt` diventati
+  `@Composable` per poter chiamare `stringResource()`.
+- **contentDescription:** trovata e corretta una violazione reale (checklist
+  onboarding: l'icona fatto/da-fare era l'unico segnale di stato ma aveva
+  `null`); tutte le altre icone in Home/Today/Plan erano già corrette
+  (decorative accanto a testo equivalente).
+- **Emoji decorativi:** `Modifier.clearAndSetSemantics {}` su `ActivityRow`/
+  `CrossTrainingRow`/empty-state — il glifo resta visibile ma non letto da
+  TalkBack (il testo adiacente già dice il tipo).
+- **Touch target 48dp:** `PlanCalendarScreen`/`CalendarScreen` day-cell, padding
+  ridotto + `sizeIn(48dp)`. Limite onesto documentato: una griglia 7 colonne fisse
+  non può garantire 48dp su schermi <336dp, strutturalmente (non risolvibile con
+  un Modifier).
+- **Contrasto WCAG:** script una-tantum ha trovato il fallimento **sistemico**
+  in tema chiaro (non i 2-3 casi limite ipotizzati dal brief). Invece di
+  autorare a mano varianti `*Deep`, aggiunto `Color.textSafeOn(bg)` algoritmico
+  (ricerca binaria su HSL via `ColorUtils`, garantisce 4.5:1 per qualunque
+  colore) e applicato a `Pill` (18 call site in 6 file).
+- **`docs/ACCESSIBILITY.md`:** checklist TalkBack (da compilare manualmente,
+  nessun device/emulatore in questo ambiente) + sezione esplicita "cosa NON è
+  coperto".
+
+**Deviazioni dal brief:** scope reale più ampio del previsto sul contrasto
+(sistemico, non pochi casi) → fix algoritmico invece di costanti `*Deep`
+manuali. Plan screen (976 righe) non toccato per tenere il diff revisionabile;
+prossimo passo naturale ripetere lo stesso pattern. Lint Android reale
+(`./gradlew lint`) non eseguibile in questo ambiente (niente SDK) — verifica
+sostitutiva per lettura/grep mirata, dichiarata esplicitamente in
+`ACCESSIBILITY.md`.
 
 **Obiettivo.** Rilascio firmabile da un Accessibility Specialist; stringhe pronte per mercati non-italiani.
 
