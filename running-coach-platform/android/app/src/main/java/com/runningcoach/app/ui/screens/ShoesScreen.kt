@@ -90,7 +90,18 @@ fun ShoesScreen(
                         onRetire = {
                             scope.launch {
                                 try {
-                                    repository.updateShoe(shoe.id, shoe.copy(retired = true))
+                                    repository.updateShoe(
+                                        shoe.id,
+                                        ShoeIn(
+                                            name = shoe.name,
+                                            brand = shoe.brand,
+                                            model = shoe.model,
+                                            purchaseDate = shoe.purchaseDate,
+                                            maxKm = shoe.maxKm,
+                                            retired = true,
+                                            notes = shoe.notes,
+                                        ),
+                                    )
                                     loadShoes()
                                 } catch (e: Exception) {
                                     error = e.message
