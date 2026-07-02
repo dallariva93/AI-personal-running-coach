@@ -67,6 +67,8 @@ class RunSummary(BaseModel):
     anaerobic_te_message: str | None = None  # e.g. "NO_ANAEROBIC_BENEFIT_0"
     altitude_profile: list[float] | None = None  # per-km average altitude (m)
     route_polyline: str | None = None  # JSON list of [lat, lon] pairs
+    # Optional shoe reference for mileage tracking (Roadmap #6).
+    shoe_id: int | None = None
 
 
 class DailyCheckin(BaseModel):
@@ -429,6 +431,9 @@ class CoachingResult(BaseModel):
     model: str = "offline"
     analysis: str = ""
     next_workout: str = ""
+    # Confidence and missing data for AI report transparency (Roadmap #5).
+    confidence: str = "medium"  # low | medium | high
+    missing_data: list[str] = Field(default_factory=list)
 
     def as_markdown(self) -> str:
         return f"## Analisi\n\n{self.analysis}\n\n## Prossimo allenamento\n\n{self.next_workout}\n"
@@ -477,6 +482,8 @@ class ActivityOut(BaseModel):
     anaerobic_te_message: str | None = None
     altitude_profile: list[float] | None = None
     route_polyline: str | None = None
+    # Optional shoe reference for mileage tracking (Roadmap #6).
+    shoe_id: int | None = None
 
 
 class ReportOut(BaseModel):
@@ -491,6 +498,9 @@ class ReportOut(BaseModel):
     analysis: str
     next_workout: str
     metrics: dict | None = None
+    # Confidence and missing data for AI report transparency (Roadmap #5).
+    confidence: str = "medium"  # low | medium | high
+    missing_data: list[str] | None = None
     created_at: str | None = None
 
 
@@ -780,3 +790,48 @@ class Vo2maxPoint(BaseModel):
 class Vo2maxHistory(BaseModel):
     points: list[Vo2maxPoint]
     trend: str
+
+
+# ── Shoe tracking schemas (Roadmap #6) ───────────────────────────────────────
+
+
+class ShoeIn(BaseModel):
+    """Payload for creating or updating a shoe."""
+
+    name: str
+    brand: str | None = None
+    model: str | None = None
+    purchase_date: str | None = None  # ISO YYYY-MM-DD
+    max_km: float = 800.0
+    retired: bool = False
+    notes: str | None = None
+
+
+class ShoeOut(BaseModel):
+    """API response model for a shoe, with computed mileage and wear status."""
+
+    model_config = ConfigDict(from_attributes=True)
+
+    id: int
+    name: str
+    brand: str | None = None
+    model: str | None = None
+    purchase_date: str | None = None
+    max_km: float
+    retired: bool = False
+    notes: str | None = None
+    total_km: float = 0.0  # computed from activities referencing this shoe
+    wear_pct: float = 0.0  # total_km / max_km * 100
+    replacement_due: bool = False  # wear_pct >= 100 and not retired
+
+
+class OnboardingStatus(BaseModel):
+    """Onboarding checklist completion state (Roadmap #4)."""
+
+    connect_data: bool = False
+    set_goal: bool = False
+    first_checkin: bool = False
+    generate_plan: bool = False
+    first_recommendation: bool = False
+    complete: bool = False
+    next_step: str | None = None

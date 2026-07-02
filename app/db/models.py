@@ -80,6 +80,8 @@ class Activity(Base):
     # GPS / elevation profile (populated when Garmin split data is available).
     altitude_profile: Mapped[list | None] = mapped_column(JSON, nullable=True)
     route_polyline: Mapped[str | None] = mapped_column(Text, nullable=True)
+    # Optional shoe reference for mileage tracking (Roadmap #6).
+    shoe_id: Mapped[int | None] = mapped_column(Integer, nullable=True, index=True)
 
     created_at: Mapped[datetime] = mapped_column(DateTime, default=_utcnow)
 
@@ -147,6 +149,9 @@ class CoachingReport(Base):
     next_workout: Mapped[str] = mapped_column(Text, default="")
     # Snapshot of the metrics that informed this report (form, load, ACWR...).
     metrics: Mapped[dict | None] = mapped_column(JSON, nullable=True)
+    # Confidence and missing data for AI report transparency (Roadmap #5).
+    confidence: Mapped[str] = mapped_column(String(16), default="medium")
+    missing_data: Mapped[list | None] = mapped_column(JSON, nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime, default=_utcnow, index=True)
 
     activity: Mapped[Activity | None] = relationship(back_populates="reports")
@@ -538,3 +543,27 @@ class CoachEvent(Base):
 
     def __repr__(self) -> str:  # pragma: no cover
         return f"<CoachEvent {self.event_type} {self.date} {self.title!r}>"
+
+
+class Shoe(Base):
+    """A running shoe with accumulated mileage and replacement alert (Roadmap #6).
+
+    One row per physical shoe. Activities can optionally reference a shoe via
+    ``shoe_id`` so the coach can track wear and suggest rotations.
+    """
+
+    __tablename__ = "shoes"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    name: Mapped[str] = mapped_column(String(128))
+    brand: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    model: Mapped[str | None] = mapped_column(String(128), nullable=True)
+    purchase_date: Mapped[str | None] = mapped_column(String(10), nullable=True)
+    max_km: Mapped[float] = mapped_column(Float, default=800.0)
+    retired: Mapped[bool] = mapped_column(Boolean, default=False)
+    notes: Mapped[str | None] = mapped_column(Text, nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=_utcnow)
+    updated_at: Mapped[datetime] = mapped_column(DateTime, default=_utcnow, onupdate=_utcnow)
+
+    def __repr__(self) -> str:  # pragma: no cover
+        return f"<Shoe {self.id} {self.name!r} retired={self.retired}>"

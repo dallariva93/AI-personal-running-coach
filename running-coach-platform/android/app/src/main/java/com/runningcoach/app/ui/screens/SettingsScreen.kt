@@ -48,6 +48,7 @@ fun SettingsScreen(
     onSaveTheme: (String) -> Unit = {},
     stravaStatus: StravaStatus? = null,
     onRefreshStrava: () -> Unit = {},
+    onOpenShoes: () -> Unit = {},
 ) {
     var baseUrl by remember { mutableStateOf("") }
     var token by remember { mutableStateOf("") }
@@ -143,6 +144,30 @@ fun SettingsScreen(
         Divider()
         Spacer(Modifier.height(16.dp))
         CoachSetupSection(profile = profile, onSaveCoach = onSaveCoach)
+
+        Spacer(Modifier.height(24.dp))
+        Divider()
+        Spacer(Modifier.height(16.dp))
+        Row(
+            Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.SpaceBetween,
+            verticalAlignment = androidx.compose.ui.Alignment.CenterVertically,
+        ) {
+            Text(
+                "Scarpe",
+                style = MaterialTheme.typography.titleMedium,
+                fontWeight = FontWeight.Bold,
+            )
+            OutlinedButton(onClick = onOpenShoes) {
+                Text("Gestisci")
+            }
+        }
+        Spacer(Modifier.height(4.dp))
+        Text(
+            "Traccia i chilometri delle tue scarpe e ricevi avvisi di sostituzione.",
+            style = MaterialTheme.typography.bodySmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+        )
 
         Spacer(Modifier.height(24.dp))
         Text(

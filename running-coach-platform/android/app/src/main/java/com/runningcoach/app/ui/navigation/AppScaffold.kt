@@ -50,6 +50,7 @@ import com.runningcoach.app.ui.screens.HomeScreen
 import com.runningcoach.app.ui.screens.MapFullscreenScreen
 import com.runningcoach.app.ui.screens.PlanScreen
 import com.runningcoach.app.ui.screens.SettingsScreen
+import com.runningcoach.app.ui.screens.ShoesScreen
 import com.runningcoach.app.ui.screens.StatsScreen
 import com.runningcoach.app.ui.screens.WorkoutScreen
 import com.runningcoach.app.ui.screens.parseRoutePoints
@@ -265,6 +266,12 @@ fun AppScaffold(app: RunningCoachApp) {
                         onBack = { navController.popBackStack() },
                     )
                 }
+                composable("shoes") {
+                    ShoesScreen(
+                        repository = app.repository,
+                        onBack = { navController.popBackStack() },
+                    )
+                }
                 composable("heatmap") {
                     HeatmapScreen(
                         repository = app.repository,
@@ -362,6 +369,9 @@ fun AppScaffold(app: RunningCoachApp) {
                         onSaveTheme = settingsVm::saveTheme,
                         stravaStatus = stravaStatus,
                         onRefreshStrava = settingsVm::loadStravaStatus,
+                        onOpenShoes = {
+                            navController.navigate("shoes") { launchSingleTop = true }
+                        },
                     )
                 }
             }

@@ -17,10 +17,12 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Analytics
+import androidx.compose.material.icons.filled.CheckCircle
 import androidx.compose.material.icons.filled.ChevronRight
 import androidx.compose.material.icons.filled.ExpandLess
 import androidx.compose.material.icons.filled.ExpandMore
 import androidx.compose.material.icons.filled.Sync
+import androidx.compose.material.icons.outlined.Circle
 import androidx.compose.material3.Button
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Icon
@@ -80,6 +82,14 @@ fun HomeScreen(
             }
         }
         Spacer(Modifier.height(16.dp))
+
+        // ── Onboarding checklist (Roadmap #4) ───────────────────────────────
+        ov?.onboarding?.let { onboarding ->
+            if (!onboarding.complete) {
+                OnboardingCard(onboarding = onboarding)
+                Spacer(Modifier.height(14.dp))
+            }
+        }
 
         if (ov != null) {
             val prIds = ov.prActivityIds.toSet()
@@ -241,5 +251,82 @@ private fun EmptyHint() {
             style = MaterialTheme.typography.bodyMedium,
             color = MaterialTheme.colorScheme.onSurfaceVariant,
         )
+    }
+}
+
+@Composable
+private fun OnboardingCard(onboarding: com.runningcoach.app.data.model.OnboardingStatus) {
+    val steps = listOf(
+        onboarding.connectData to "Collega i dati",
+        onboarding.setGoal to "Imposta obiettivo",
+        onboarding.firstCheckin to "Primo check-in",
+        onboarding.generatePlan to "Genera piano",
+        onboarding.firstRecommendation to "Prima raccomandazione",
+    )
+    val completed = steps.count { (isDone, _) -> isDone }
+
+    androidx.compose.material3.Card(
+        modifier = Modifier.fillMaxWidth(),
+        colors = androidx.compose.material3.CardDefaults.cardColors(
+            containerColor = MaterialTheme.colorScheme.primaryContainer,
+        )
+    ) {
+        Column(Modifier.padding(16.dp)) {
+            Row(
+                Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Text(
+                    "Configurazione in corso",
+                    style = MaterialTheme.typography.titleMedium,
+                    fontWeight = FontWeight.Bold
+                )
+                Text(
+                    "$completed/${steps.size}",
+                    style = MaterialTheme.typography.labelLarge,
+                    color = MaterialTheme.colorScheme.primary
+                )
+            }
+            Spacer(Modifier.height(12.dp))
+            steps.forEach { (isDone, label) ->
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    modifier = Modifier.padding(vertical = 4.dp)
+                ) {
+                    Icon(
+                        imageVector = if (isDone) Icons.Default.CheckCircle else Icons.Outlined.Circle,
+                        contentDescription = null,
+                        tint = if (isDone) BrandGreen else MaterialTheme.colorScheme.onSurfaceVariant,
+                        modifier = Modifier.width(20.dp)
+                    )
+                    Spacer(Modifier.width(12.dp))
+                    Text(
+                        label,
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = if (isDone) MaterialTheme.colorScheme.onSurface else MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                }
+            }
+            onboarding.nextStep?.let { next ->
+                Spacer(Modifier.height(12.dp))
+                val nextLabel = when (next) {
+                    "connect_data" -> "Collega i dati"
+                    "set_goal" -> "Imposta obiettivo"
+                    "first_checkin" -> "Primo check-in"
+                    "generate_plan" -> "Genera piano"
+                    "first_recommendation" -> "Prima raccomandazione"
+                    else -> null
+                }
+                nextLabel?.let {
+                    Text(
+                        "Prossimo passo: $it",
+                        style = MaterialTheme.typography.labelSmall,
+                        color = MaterialTheme.colorScheme.primary,
+                        fontWeight = FontWeight.SemiBold
+                    )
+                }
+            }
+        }
     }
 }

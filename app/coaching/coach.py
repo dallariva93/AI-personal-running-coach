@@ -173,9 +173,11 @@ class AICoach:
                 exc, self._fallback.analyze_run, run, history, metrics, profile
             )
         analysis, next_workout = _split_sections(text)
+        confidence, missing = self._fallback._assess_confidence(run, metrics, profile)
         return CoachingResult(
             scope="single", model=self.settings.coach_model,
             analysis=analysis, next_workout=next_workout,
+            confidence=confidence, missing_data=missing,
         )
 
     def plan_week(
@@ -198,8 +200,10 @@ class AICoach:
                 exc, self._fallback.plan_week, runs, metrics, weekly, profile, snapshot
             )
         analysis, next_workout = _split_sections(text)
+        confidence, missing = self._fallback._assess_confidence(None, metrics, profile)
         return CoachingResult(
             scope="weekly", model=model, analysis=analysis, next_workout=next_workout,
+            confidence=confidence, missing_data=missing,
         )
 
     def plan_multiweek(
@@ -392,8 +396,10 @@ class OfflineCoach:
     ) -> CoachingResult:
         analysis = self._analyze_run_text(run, metrics)
         next_workout = self._suggest_next(run, metrics)
+        confidence, missing = self._assess_confidence(run, metrics, profile)
         return CoachingResult(
-            scope="single", model=self.MODEL, analysis=analysis, next_workout=next_workout
+            scope="single", model=self.MODEL, analysis=analysis,
+            next_workout=next_workout, confidence=confidence, missing_data=missing,
         )
 
     def plan_week(
@@ -407,9 +413,42 @@ class OfflineCoach:
         analysis = self._analyze_week_text(metrics, weekly, profile)
         available = profile.available_days if profile else None
         next_workout = self._suggest_week(metrics, available)
+        confidence, missing = self._assess_confidence(None, metrics, profile)
         return CoachingResult(
-            scope="weekly", model=self.MODEL, analysis=analysis, next_workout=next_workout
+            scope="weekly", model=self.MODEL, analysis=analysis,
+            next_workout=next_workout, confidence=confidence, missing_data=missing,
         )
+
+    @staticmethod
+    def _assess_confidence(
+        run: RunSummary | None,
+        metrics: TrainingMetrics,
+        profile: AthleteProfile | None,
+    ) -> tuple[str, list[str]]:
+        """Determine confidence level and list missing data (Roadmap #5)."""
+        missing: list[str] = []
+        if run is not None:
+            if run.avg_hr is None:
+                missing.append("Frequenza cardiaca")
+            if run.rpe is None:
+                missing.append("RPE")
+            if run.elevation_gain_m is None:
+                missing.append("Dislivello")
+        if metrics.ctl is None:
+            missing.append("CTL (carico cronico)")
+        if metrics.tsb is None:
+            missing.append("TSB (forma)")
+        if profile is None:
+            missing.append("Profilo atleta")
+        elif profile.goal is None or not profile.goal.target_date:
+            missing.append("Obiettivo gara")
+        if len(missing) >= 3:
+            level = "low"
+        elif len(missing) >= 1:
+            level = "medium"
+        else:
+            level = "high"
+        return level, missing
 
     # -- helpers ------------------------------------------------------------
     def _analyze_run_text(self, run: RunSummary, m: TrainingMetrics) -> str:

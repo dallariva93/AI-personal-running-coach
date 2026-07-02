@@ -95,6 +95,8 @@ data class Activity(
     @SerializedName("anaerobic_te_message") val anaerobicTeMessage: String? = null,
     @SerializedName("altitude_profile") val altitudeProfile: List<Double>? = null,
     @SerializedName("route_polyline") val routePolyline: String? = null,
+    // Optional shoe reference for mileage tracking (Roadmap #6).
+    @SerializedName("shoe_id") val shoeId: Int? = null,
 )
 
 /** A coaching report (single-run analysis or weekly plan). */
@@ -106,6 +108,9 @@ data class Report(
     @SerializedName("analysis") val analysis: String,
     @SerializedName("next_workout") val nextWorkout: String,
     @SerializedName("created_at") val createdAt: String? = null,
+    // Confidence and missing data for AI report transparency (Roadmap #5).
+    @SerializedName("confidence") val confidence: String = "medium",
+    @SerializedName("missing_data") val missingData: List<String>? = null,
 )
 
 /** Predicted finish time and target probability for the goal race. */
@@ -405,6 +410,44 @@ data class Vo2maxHistory(
     @SerializedName("trend") val trend: String = "insufficient_data",
 )
 
+// ── Shoe tracking models (Roadmap #6) ───────────────────────────────────────
+
+data class ShoeIn(
+    @SerializedName("name") val name: String,
+    @SerializedName("brand") val brand: String? = null,
+    @SerializedName("model") val model: String? = null,
+    @SerializedName("purchase_date") val purchaseDate: String? = null,
+    @SerializedName("max_km") val maxKm: Double = 800.0,
+    @SerializedName("retired") val retired: Boolean = false,
+    @SerializedName("notes") val notes: String? = null,
+)
+
+data class Shoe(
+    val id: Int = 0,
+    @SerializedName("name") val name: String,
+    @SerializedName("brand") val brand: String? = null,
+    @SerializedName("model") val model: String? = null,
+    @SerializedName("purchase_date") val purchaseDate: String? = null,
+    @SerializedName("max_km") val maxKm: Double = 800.0,
+    @SerializedName("retired") val retired: Boolean = false,
+    @SerializedName("notes") val notes: String? = null,
+    @SerializedName("total_km") val totalKm: Double = 0.0,
+    @SerializedName("wear_pct") val wearPct: Double = 0.0,
+    @SerializedName("replacement_due") val replacementDue: Boolean = false,
+)
+
+// ── Onboarding status model (Roadmap #4) ─────────────────────────────────────
+
+data class OnboardingStatus(
+    @SerializedName("connect_data") val connectData: Boolean = false,
+    @SerializedName("set_goal") val setGoal: Boolean = false,
+    @SerializedName("first_checkin") val firstCheckin: Boolean = false,
+    @SerializedName("generate_plan") val generatePlan: Boolean = false,
+    @SerializedName("first_recommendation") val firstRecommendation: Boolean = false,
+    @SerializedName("complete") val complete: Boolean = false,
+    @SerializedName("next_step") val nextStep: String? = null,
+)
+
 /** The dominant "what to do today" decision from the Coach Decision Engine. */
 data class CoachDecision(
     @SerializedName("date") val date: String = "",
@@ -479,4 +522,8 @@ data class Overview(
     @SerializedName("active_plan") val activePlan: TrainingPlan? = null,
     @SerializedName("today_decision") val todayDecision: CoachDecision? = null,
     @SerializedName("notifications") val notifications: List<AppNotification> = emptyList(),
+    // Onboarding checklist (Roadmap #4).
+    @SerializedName("onboarding") val onboarding: OnboardingStatus? = null,
+    // Shoe tracking (Roadmap #6).
+    @SerializedName("shoes") val shoes: List<Shoe> = emptyList(),
 )

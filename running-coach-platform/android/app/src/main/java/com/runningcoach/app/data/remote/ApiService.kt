@@ -14,6 +14,9 @@ import com.runningcoach.app.data.model.CoachEvent
 import com.runningcoach.app.data.model.DailyCheckin
 import com.runningcoach.app.data.model.NotificationAck
 import com.runningcoach.app.data.model.HeatmapResponse
+import com.runningcoach.app.data.model.OnboardingStatus
+import com.runningcoach.app.data.model.Shoe
+import com.runningcoach.app.data.model.ShoeIn
 import com.runningcoach.app.data.model.Vo2maxHistory
 import com.runningcoach.app.data.model.Overview
 import com.runningcoach.app.data.model.PeriodStats
@@ -145,4 +148,26 @@ interface ApiService {
 
     @GET("api/vo2max/history")
     suspend fun getVo2maxHistory(): Vo2maxHistory
+
+    // ── Onboarding (Roadmap #4) ───────────────────────────────────────────────
+
+    @GET("api/onboarding")
+    suspend fun getOnboarding(): OnboardingStatus
+
+    // ── Shoe tracking (Roadmap #6) ───────────────────────────────────────────────
+
+    @GET("api/shoes")
+    suspend fun getShoes(@Query("include_retired") includeRetired: Boolean = true): List<Shoe>
+
+    @POST("api/shoes")
+    suspend fun createShoe(@Body shoe: ShoeIn): Shoe
+
+    @PUT("api/shoes/{id}")
+    suspend fun updateShoe(@Path("id") id: Int, @Body shoe: ShoeIn): Shoe
+
+    @DELETE("api/shoes/{id}")
+    suspend fun deleteShoe(@Path("id") id: Int): Map<String, Boolean>
+
+    @PATCH("api/activities/{id}/shoe")
+    suspend fun assignShoe(@Path("id") id: Int, @Body body: Map<String, Int?>): Activity
 }

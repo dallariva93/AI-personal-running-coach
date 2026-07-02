@@ -54,6 +54,8 @@ def _latest_report(session: Session, scope: str) -> ReportOut | None:
         analysis=report.analysis,
         next_workout=report.next_workout,
         metrics=report.metrics,
+        confidence=report.confidence or "medium",
+        missing_data=report.missing_data,
         created_at=report.created_at.isoformat() if report.created_at else None,
     )
 
@@ -117,6 +119,13 @@ def overview(session: Session = Depends(get_session)) -> dict:
     saved_workouts = list_workouts(session)
     saved_workout_count = len(saved_workouts)
 
+    # Onboarding checklist (Roadmap #4)
+    from app.services.onboarding import get_onboarding_status
+    from app.services.shoe_service import list_shoes
+
+    onboarding = get_onboarding_status(session)
+    shoes = [s.model_dump() for s in list_shoes(session)]
+
     return {
         "version": __version__,
         "mode": "garmin" if settings.garmin_enabled else "demo",
@@ -138,4 +147,6 @@ def overview(session: Session = Depends(get_session)) -> dict:
         "saved_workout_count": saved_workout_count,
         "today_decision": today_decision.model_dump(),
         "notifications": [n.model_dump() for n in notifications],
+        "onboarding": onboarding,
+        "shoes": shoes,
     }

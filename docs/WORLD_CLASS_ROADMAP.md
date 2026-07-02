@@ -172,9 +172,11 @@ Messaggio quotidiano personalizzato basato su carico, readiness, piano e ultima 
 - ROI: alto
 - Tempo stimato: 2-3 giorni
 
-### 4. Onboarding checklist
+### 4. Onboarding checklist ✅ FATTO
 
 Percorso guidato: collega dati, imposta obiettivo, check-in, genera piano, prima raccomandazione.
+
+**Implementato:** `app/services/onboarding.py` (`get_onboarding_status`) determina lo stato di completamento di ogni step (connect_data, set_goal, first_checkin, generate_plan, first_recommendation) interrogando il database. API: `GET /api/onboarding`; incluso in `/api/mobile/overview` come campo `onboarding`. Android: OnboardingCard nella home mostra progresso e prossimo passo, nascosta quando completo.
 
 - Impatto utente: 9
 - Complessità tecnica: 3
@@ -183,9 +185,11 @@ Percorso guidato: collega dati, imposta obiettivo, check-in, genera piano, prima
 - ROI: altissimo
 - Tempo stimato: 3-5 giorni
 
-### 5. Confidence e missing data nei report AI
+### 5. Confidence e missing data nei report AI ✅ FATTO
 
 Ogni analisi deve indicare livello di confidenza e dati mancanti.
+
+**Implementato:** `CoachingResult` esteso con `confidence` (low/medium/high) e `missing_data` (lista stringhe). `OfflineCoach._assess_confidence` calcola la confidenza basandosi su dati mancanti (FC, RPE, dislivello, CTL, TSB, profilo, obiettivo). `AICoach` usa lo stesso assessment del fallback. Database: colonne `confidence` e `missing_data` su `coaching_reports`. Schemi: `ReportOut` include i campi. Android: modello `Report` con `confidence` e `missingData`.
 
 - Impatto utente: 8
 - Complessità tecnica: 3
@@ -194,9 +198,11 @@ Ogni analisi deve indicare livello di confidenza e dati mancanti.
 - ROI: alto
 - Tempo stimato: 2-4 giorni
 
-### 6. Shoe tracking MVP
+### 6. Shoe tracking MVP ✅ FATTO
 
 Gestione scarpe, chilometri accumulati e avviso sostituzione.
+
+**Implementato:** `app/db/models.py`: nuovo modello `Shoe` (name, brand, model, purchase_date, max_km, retired, notes). `Activity.shoe_id` opzionale per collegare attività a scarpe. `app/services/shoe_service.py`: CRUD (`list_shoes`, `create_shoe`, `update_shoe`, `delete_shoe`, `assign_activity_shoe`) con calcolo automatico `total_km` e `wear_pct` dalle attività associate. API: `GET/POST/PUT/DELETE /api/shoes`, `PATCH /api/activities/{id}/shoe`. Migration: `f7a8b9c0d1e2_onboarding_confidence_shoes.py`. Android: modelli `ShoeIn`, `Shoe`, `ShoesScreen` (UI gestione scarpe), accesso da Settings. Inserito in `/api/mobile/overview` come campo `shoes`.
 
 - Impatto utente: 7
 - Complessità tecnica: 3

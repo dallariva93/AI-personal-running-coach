@@ -46,12 +46,15 @@ from app.schemas import (
     ManualActivityIn,
     NotificationAck,
     NotificationOut,
+    OnboardingStatus,
     PeriodizationPlan,
     PeriodStats,
     PersonalRecord,
     RacePrediction,
     ReportOut,
     RunSummary,
+    ShoeIn,
+    ShoeOut,
     TrailMetrics,
     TrainingMetrics,
     Vo2maxHistory,
@@ -636,5 +639,79 @@ def _report_to_out(report) -> ReportOut:
         analysis=report.analysis,
         next_workout=report.next_workout,
         metrics=report.metrics,
+        confidence=report.confidence or "medium",
+        missing_data=report.missing_data,
         created_at=report.created_at.isoformat() if report.created_at else None,
     )
+
+
+# ── Onboarding checklist (Roadmap #4) ─────────────────────────────────────────
+
+
+@router.get("/onboarding", response_model=OnboardingStatus)
+def get_onboarding(session: Session = Depends(get_session)) -> OnboardingStatus:
+    """Onboarding checklist status: which steps the athlete has completed."""
+    from app.services.onboarding import get_onboarding_status
+
+    return OnboardingStatus(**get_onboarding_status(session))
+
+
+# ── Shoe tracking (Roadmap #6) ────────────────────────────────────────────────
+
+
+@router.get("/shoes", response_model=list[ShoeOut])
+def get_shoes(
+    include_retired: bool = True, session: Session = Depends(get_session)
+) -> list[ShoeOut]:
+    from app.services.shoe_service import list_shoes
+
+    return list_shoes(session, include_retired=include_retired)
+
+
+@router.post("/shoes", response_model=ShoeOut, status_code=201)
+def create_shoe(payload: ShoeIn, session: Session = Depends(get_session)) -> ShoeOut:
+    from app.services.shoe_service import create_shoe
+
+    shoe = create_shoe(session, payload)
+    _commit(session)
+    return shoe
+
+
+@router.put("/shoes/{shoe_id}", response_model=ShoeOut)
+def update_shoe(
+    shoe_id: int, payload: ShoeIn, session: Session = Depends(get_session)
+) -> ShoeOut:
+    from app.services.shoe_service import update_shoe
+
+    shoe = update_shoe(session, shoe_id, payload)
+    if shoe is None:
+        raise HTTPException(status_code=404, detail="Scarpa non trovata.")
+    _commit(session)
+    return shoe
+
+
+@router.delete("/shoes/{shoe_id}")
+def delete_shoe_endpoint(shoe_id: int, session: Session = Depends(get_session)) -> dict:
+    from app.services.shoe_service import delete_shoe
+
+    ok = delete_shoe(session, shoe_id)
+    if not ok:
+        raise HTTPException(status_code=404, detail="Scarpa non trovata.")
+    _commit(session)
+    return {"deleted": True}
+
+
+@router.patch("/activities/{activity_id}/shoe", response_model=ActivityOut)
+def assign_shoe(
+    activity_id: int,
+    shoe_id: int | None = None,
+    session: Session = Depends(get_session),
+) -> Activity:
+    from app.services.shoe_service import assign_activity_shoe
+
+    ok = assign_activity_shoe(session, activity_id, shoe_id)
+    if not ok:
+        raise HTTPException(status_code=404, detail="Attività o scarpa non trovata.")
+    _commit(session)
+    session.refresh(session.get(Activity, activity_id))
+    return session.get(Activity, activity_id)

@@ -11,9 +11,12 @@ import com.runningcoach.app.data.model.ChatSession
 import com.runningcoach.app.data.model.CoachActionRequest
 import com.runningcoach.app.data.model.CoachDecision
 import com.runningcoach.app.data.model.CoachEvent
-import com.runningcoach.app.data.model.NotificationAck
 import com.runningcoach.app.data.model.DailyCheckin
 import com.runningcoach.app.data.model.HeatmapResponse
+import com.runningcoach.app.data.model.OnboardingStatus
+import com.runningcoach.app.data.model.Shoe
+import com.runningcoach.app.data.model.ShoeIn
+import com.runningcoach.app.data.model.NotificationAck
 import com.runningcoach.app.data.model.Vo2maxHistory
 import com.runningcoach.app.data.model.Overview
 import com.runningcoach.app.data.model.PeriodStats
@@ -137,4 +140,24 @@ class CoachRepository(private val settings: SettingsStore) {
     suspend fun getHeatmap(): HeatmapResponse = api().getHeatmap()
 
     suspend fun getVo2maxHistory(): Vo2maxHistory = api().getVo2maxHistory()
+
+    // ── Onboarding (Roadmap #4) ───────────────────────────────────────────────
+
+    suspend fun getOnboarding(): OnboardingStatus = api().getOnboarding()
+
+    // ── Shoe tracking (Roadmap #6) ───────────────────────────────────────────────
+
+    suspend fun getShoes(includeRetired: Boolean = true): List<Shoe> =
+        api().getShoes(includeRetired)
+
+    suspend fun createShoe(shoe: ShoeIn): Shoe = api().createShoe(shoe)
+
+    suspend fun updateShoe(id: Int, shoe: ShoeIn): Shoe = api().updateShoe(id, shoe)
+
+    suspend fun deleteShoe(id: Int) {
+        api().deleteShoe(id)
+    }
+
+    suspend fun assignShoe(activityId: Int, shoeId: Int?): Activity =
+        api().assignShoe(activityId, mapOf("shoe_id" to shoeId))
 }

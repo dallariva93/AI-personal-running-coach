@@ -68,6 +68,7 @@ def _activity_to_summary(a: Activity) -> RunSummary:
         anaerobic_te_message=a.anaerobic_te_message,
         altitude_profile=a.altitude_profile,
         route_polyline=a.route_polyline,
+        shoe_id=a.shoe_id,
     )
 
 
@@ -153,6 +154,8 @@ def upsert_activity(session: Session, run: RunSummary) -> Activity:
         existing.altitude_profile = run.altitude_profile
     if run.route_polyline is not None:
         existing.route_polyline = run.route_polyline
+    if run.shoe_id is not None:
+        existing.shoe_id = run.shoe_id
     return existing
 
 
@@ -456,6 +459,8 @@ def _persist_report(
         analysis=result.analysis,
         next_workout=result.next_workout,
         metrics=metrics.model_dump(),
+        confidence=result.confidence,
+        missing_data=result.missing_data or None,
     )
     session.add(report)
     session.flush()
