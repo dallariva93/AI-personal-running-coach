@@ -40,6 +40,10 @@ class Activity(Base):
     strava_activity_id: Mapped[str | None] = mapped_column(String(64), nullable=True, index=True)
 
     date: Mapped[str] = mapped_column(String(10), index=True)  # ISO date YYYY-MM-DD
+    # Local start time "HH:MM" when the payload carries it (Q6: weather-window
+    # optimizer + learning the athlete's habitual running hours). Nullable:
+    # manual entries and older rows won't have it.
+    start_time: Mapped[str | None] = mapped_column(String(5), nullable=True)
     # Sport discipline. "run" (default) feeds the running coaching pipeline;
     # "bike"/"swim"/"strength" are cross-training, tracked but excluded from
     # running load/form/PR/streak metrics. See Feature 24 (multi-sport).

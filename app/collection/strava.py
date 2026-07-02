@@ -25,6 +25,7 @@ from app.collection.synthesize import (
     _format_pace,
     _match_name_hint,
     _num,
+    extract_start_time,
 )
 from app.config import Settings, get_settings
 from app.exceptions import CollectionError
@@ -199,6 +200,7 @@ def synthesize_cross_training_strava(activity: dict[str, Any], sport: str) -> Ru
     return RunSummary(
         strava_activity_id=str(activity.get("id")) if activity.get("id") else None,
         date=date,
+        start_time=extract_start_time(start_local),
         sport=sport,
         activity_type=sport,
         duration_min=duration_min,
@@ -254,6 +256,7 @@ def synthesize_strava(activity: dict[str, Any]) -> RunSummary:
     return RunSummary(
         strava_activity_id=str(activity.get("id")) if activity.get("id") else None,
         date=date,
+        start_time=extract_start_time(start_local),
         activity_type=_infer_strava_type(activity),
         duration_min=duration_min,
         distance_km=round(distance_m / 1000.0, 2),

@@ -98,6 +98,7 @@ def test_synthesize_captures_weather_and_descent():
     assert run.temperature_c == 28.0
     assert run.humidity_pct == 75
     assert run.elevation_loss_m == 220
+    assert run.start_time == "07:00"  # Q6: local start time captured
 
 
 def test_offline_run_analysis_flags_heat():

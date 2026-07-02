@@ -64,6 +64,14 @@ class Settings(BaseSettings):
     athlete_profile: str = "Runner amatoriale, 4-5 uscite a settimana."
     rolling_window_days: int = 14
 
+    # -- Weather-window optimizer (Q6) --------------------------------------
+    # Off by default so the general test suite and offline runs never touch the
+    # network. Turn on in production (WEATHER_ENABLED=true); open-meteo needs no
+    # key. Home lat/lon override the location otherwise inferred from GPS runs.
+    weather_enabled: bool = False
+    home_lat: float | None = None
+    home_lon: float | None = None
+
     # -- Security / web ------------------------------------------------------
     # When set, the dashboard and API require this bearer token (or ?token=).
     # Leave empty for local/personal use behind localhost.

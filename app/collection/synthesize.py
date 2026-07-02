@@ -95,6 +95,29 @@ def _num(value: Any) -> float | None:
         return None
 
 
+def extract_start_time(raw: Any) -> str | None:
+    """Pull a local ``HH:MM`` start time from a timestamp string (Q6).
+
+    Handles both Garmin ``"2026-06-24 07:05:00"`` and Strava/ISO
+    ``"2026-06-24T07:05:00Z"``. Returns None when there is no usable time part.
+    """
+    if not raw:
+        return None
+    text = str(raw)
+    sep = "T" if "T" in text else " "
+    parts = text.split(sep, 1)
+    if len(parts) < 2:
+        return None
+    time_part = parts[1].strip()
+    if len(time_part) < 5 or time_part[2] != ":":
+        return None
+    hhmm = time_part[:5]
+    hh, mm = hhmm[:2], hhmm[3:5]
+    if not (hh.isdigit() and mm.isdigit() and 0 <= int(hh) <= 23 and 0 <= int(mm) <= 59):
+        return None
+    return hhmm
+
+
 def _format_pace(distance_m: float, duration_s: float) -> str | None:
     """Return average pace as ``M:SS/km`` from distance (m) and duration (s)."""
     if not distance_m or not duration_s:
@@ -622,6 +645,7 @@ def synthesize_cross_training(activity: dict[str, Any], sport: str) -> RunSummar
             str(activity["activityId"]) if activity.get("activityId") is not None else None
         ),
         date=str(activity.get("startTimeLocal", ""))[:10],
+        start_time=extract_start_time(activity.get("startTimeLocal")),
         sport=sport,
         activity_type=sport,
         duration_min=duration_min,
@@ -653,6 +677,7 @@ def synthesize(activity: dict[str, Any]) -> RunSummary:
             str(activity["activityId"]) if activity.get("activityId") is not None else None
         ),
         date=str(activity.get("startTimeLocal", ""))[:10],
+        start_time=extract_start_time(activity.get("startTimeLocal")),
         activity_type=_infer_type(activity, hr_zones=hr_zones, duration_min=duration_min),
         duration_min=duration_min,
         distance_km=round(distance_m / 1000.0, 2),

@@ -28,6 +28,15 @@ def test_ingest_is_idempotent(session, demo_source):
     assert len(list_activities(session, limit=100)) == 9
 
 
+def test_ingest_persists_start_time(session, demo_source):
+    """Q6 prerequisite: the local start time survives synth → upsert → DB."""
+    ingest_runs(session, limit=20, source=demo_source)
+    session.commit()
+    runs = list_activities(session, limit=100)
+    assert all(a.start_time for a in runs)  # demo fixture carries startTimeLocal
+    assert all(len(a.start_time) == 5 and a.start_time[2] == ":" for a in runs)
+
+
 def test_single_analysis_creates_report(session, demo_source):
     ingest_runs(session, limit=20, source=demo_source)
     session.commit()

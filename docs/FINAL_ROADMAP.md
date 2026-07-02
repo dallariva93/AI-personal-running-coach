@@ -447,7 +447,34 @@ segnale corretto e i due restano complementari (nessuna doppia penalità: `distr
 
 ---
 
-#### Passo 6 — Q6 · Weather-window optimizer
+#### Passo 6 — Q6 · Weather-window optimizer ✅ FATTO — 2026-07-02
+
+**Implementato:**
+- **Prerequisito `start_time`:** colonna `start_time` (String(5) "HH:MM", nullable) su
+  `Activity` + migrazione `f6a7b8c9d0e1`; `RunSummary.start_time`; helper puro
+  `extract_start_time()` (gestisce Garmin `"... 07:05:00"` e Strava/ISO `"...T18:40:12Z"`),
+  cablato in tutte e 4 le `synthesize*` (run/cross, Garmin/Strava) + round-trip via
+  `upsert_activity`/`_activity_to_summary`. Verificato: le 9 corse demo arrivano con
+  start_time popolato.
+- **`app/services/weather.py`:** `best_window(hours, prefs) -> BestWindow` puro (score
+  06-21: banda ideale 8-16°C, penalità pioggia dominante, vento >20 km/h, afa; bonus
+  ore abituali) + `parse_open_meteo()` puro + `WeatherClient` (open-meteo, no key,
+  iniettabile). `maybe_suggest_weather_window()`: once/day via `dedupe_key=weather:<data>`,
+  skip su `rest`, skip senza location, best-effort (ingoia errori rete). Location da
+  `home_lat/home_lon` in settings o dal primo punto GPS dell'ultima corsa; ore abituali
+  dai `start_time` recenti. Cablato in `_adapt_after_change` (pipeline post-sync): genera
+  al più un evento notifiable priority=low al giorno, consegnato dal canale notifiche
+  esistente (nessuna modifica Android).
+
+**Accettazione** (coperta): canicola → mattina presto; pioggia a fasce → buco asciutto;
+evento creato una sola volta/giorno (dedupe, **nessuna** seconda fetch); zero chiamate
+rete nei test (client fake iniettato + gate `weather_enabled=False` di default).
+
+**Deviazioni/note:** aggiunto `weather_enabled` (default **off**) così la suite generale e
+gli usi offline non toccano mai la rete; in produzione si abilita con `WEATHER_ENABLED=true`
+(open-meteo non richiede chiave). `fetch_hourly` (la vera chiamata rete) non è coperto dai
+test per contratto — dichiarato. Nessun tocco Android: l'evento "weather" fluisce nel
+`NotificationOut` generico esistente.
 
 **Obiettivo.** Push mattutino: "Corri alle 18:40: 21°C, vento in calo". Prima feature *proattiva* visibile.
 

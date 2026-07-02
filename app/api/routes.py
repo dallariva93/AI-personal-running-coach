@@ -187,6 +187,12 @@ def _adapt_after_change(session: Session, run_analysis: bool = False) -> None:
                 pass  # no running activity to analyse yet
         decision = build_today_decision(session, persist=True)
         record_decision_notification(session, decision)
+        # Weather-window suggestion (Q6): once/day, low-priority, best-effort.
+        # Guarded by its own dedupe + weather_enabled gate, so this is a no-op
+        # (no network) unless configured. Never breaks the pipeline.
+        from app.services.weather import maybe_suggest_weather_window
+
+        maybe_suggest_weather_window(session, decision.decision)
         _commit(session)
 
     try:

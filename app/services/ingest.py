@@ -39,6 +39,7 @@ def _activity_to_summary(a: Activity) -> RunSummary:
         garmin_activity_id=a.garmin_activity_id,
         strava_activity_id=a.strava_activity_id,
         date=a.date,
+        start_time=a.start_time,
         sport=a.sport,
         activity_type=a.activity_type,
         duration_min=a.duration_min,
@@ -98,6 +99,8 @@ def upsert_activity(session: Session, run: RunSummary) -> Activity:
         existing.strava_activity_id = run.strava_activity_id
 
     existing.date = run.date
+    if run.start_time is not None:
+        existing.start_time = run.start_time
     existing.sport = run.sport
     existing.activity_type = run.activity_type
     existing.duration_min = run.duration_min

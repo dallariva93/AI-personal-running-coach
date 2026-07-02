@@ -33,6 +33,7 @@ class RunSummary(BaseModel):
     garmin_activity_id: str | None = None
     strava_activity_id: str | None = None
     date: str  # ISO YYYY-MM-DD
+    start_time: str | None = None  # local start "HH:MM" (Q6 weather + habitual hours)
     sport: str = "run"  # run | bike | swim | strength (Feature 24)
     activity_type: str = "easy"
     duration_min: float = 0.0
