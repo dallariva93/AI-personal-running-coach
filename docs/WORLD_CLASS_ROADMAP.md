@@ -213,6 +213,8 @@ Output strutturato per ogni decisione: decisione, prescrizione, evidenze, confid
 
 **Implementato:** `app/processing/decision.py` (`decide_today`, funzione pura e deterministica) produce un `CoachDecision` strutturato combinando piano del giorno, readiness, rischio infortuni, TSB e ACWR. Le decisioni sono persistite come entità queryable (tabella `coach_decisions`, una per data) via `decision_service`. API: `GET /api/coach/today`, `GET /api/coach/decisions`; incluso in `/api/mobile/overview`. Rule-based per essere offline, a costo zero, testabile e spiegabile.
 
+**v2:** soglie tarate su livello e risk_tolerance del profilo; confidenza reale basata sul disaccordo tra i segnali (non solo sui dati mancanti); lookahead sulle sedute imminenti e sui giorni alla gara; consapevolezza del taper (la qualità non viene declassata a facile); expected outcome testabile per ogni decisione; DailyNote 2.0 contestuale e race-aware.
+
 - Impatto utente: 10
 - Complessità tecnica: 6
 - Costo: medio
@@ -224,7 +226,7 @@ Output strutturato per ogni decisione: decisione, prescrizione, evidenze, confid
 
 Dopo ogni nuova attività o check-in, il sistema valuta compliance e modifica automaticamente i prossimi 3-7 giorni.
 
-**Implementato:** `app/services/adaptive_plan.py` (`adapt_plan_after_sync`) viene richiamato automaticamente dopo `POST /api/ingest`, `/api/ingest/cross-training` e `/api/checkin`. Ripiega i segnali live (rischio infortuni, readiness, forma, carico acuto) sui prossimi 7 giorni del piano attivo: scala il volume e, quando l'atleta è compromesso, alleggerisce le sedute di qualità imminenti. Idempotente: la prescrizione originale è salvata in colonne `base_*` e ogni run ricalcola dalla base (nessun accumulo, ripristino automatico quando i segnali migliorano). Solo sedute future e non completate entro l'orizzonte vengono toccate.
+**Implementato:** `app/services/adaptive_plan.py` (`adapt_plan_after_sync`) viene richiamato automaticamente dopo `POST /api/ingest`, `/api/ingest/cross-training` e `/api/checkin`. Ripiega i segnali live (rischio infortuni, readiness, forma, carico acuto) sui prossimi 7 giorni del piano attivo: scala il volume e, quando l'atleta è compromesso, alleggerisce le sedute di qualità imminenti. Idempotente: la prescrizione originale è salvata in colonne `base_*` e ogni run ricalcola dalla base (nessun accumulo, ripristino automatico quando i segnali migliorano). Solo sedute future e non completate entro l'orizzonte vengono toccate. Il pipeline post-sync ha retry con backoff (niente fallimenti silenziosi). Ogni modifica è scritta nell'audit log con before/after e segnali.
 
 - Impatto utente: 10
 - Complessità tecnica: 7
@@ -238,6 +240,8 @@ Dopo ogni nuova attività o check-in, il sistema valuta compliance e modifica au
 Misura quanto la seduta eseguita rispetta quella prescritta: volume, intensità, distribuzione, passo, frequenza cardiaca e RPE.
 
 **Implementato:** `app/processing/execution.py` (`score_execution`, funzione pura) confronta l'attività reale con la sessione prescritta — distanza, durata, tipo, intensità, con RPE/passo quando presenti — e produce `execution_score` (0-100), `execution_status` (completed_well | too_hard | too_short | skipped | turned_easy | quality_missed | volume_excess), note ed evidenze. `execution_service.evaluate_plan_executions` collega attività↔sessione per data, salva il punteggio sulla sessione e auto-completa la seduta quando l'attività combacia. Gira nel pipeline post-sync (prima dell'adattamento, così la compliance reale guida l'adattamento). API: `GET /api/plan/executions`. Android: badge esito+score sulle righe delle sedute del piano.
+
+**v2:** sotto-punteggi separati (volume, intensità, passo, struttura, distribuzione) e validazione del tempo in zona FC (Z3+ per le sedute di qualità, Z1-Z2 per le facili); riscrittura della priorità degli status.
 
 - Impatto utente: 9
 - Complessità tecnica: 6
@@ -459,7 +463,7 @@ Sistema di test con atleti sintetici e scenari reali per validare sicurezza, qua
 
 - Mobile cache locale per overview, piani, attività e decisioni.
 - Sync queue per modifiche offline.
-- ✅ Notifiche basate su eventi coach (Priorità 6). **FATTO**: le notifiche derivano solo da decisioni/adattamenti notabili (mai generiche). Sorgente = `coach_events` con flag `notifiable`. API `GET /api/notifications` + `POST /api/notifications/ack`. Android: `NotificationSyncWorker` (WorkManager, ogni ~3h) consegna a app chiusa; consegna in-app all'apertura; canale + permesso POST_NOTIFICATIONS.
+- ✅ Notifiche basate su eventi coach (Priorità 6). **FATTO**: le notifiche derivano solo da decisioni/adattamenti notabili (mai generiche). Sorgente = `coach_events` con flag `notifiable`. API `GET /api/notifications` + `POST /api/notifications/ack`. Android: `NotificationSyncWorker` (WorkManager, ogni ~3h) consegna a app chiusa; consegna in-app all'apertura; canale + permesso POST_NOTIFICATIONS. **v2:** livelli di priorità (high/medium/low), finestre orarie di consegna e cooldown per non ripetere lo stesso tipo entro breve.
 - Observability prodotto: activation, retention, usage delle feature.
 
 ### Lungo termine
