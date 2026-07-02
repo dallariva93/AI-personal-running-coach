@@ -234,6 +234,355 @@ Verdetti: **TIENI** (funziona, serve) · **RIPARA** (serve ma è rotta/incomplet
 
 **Sequenza critica:** Q1-Q8 → A1/A2/A3 (il coach diventa vivo e senza-Garmin) → G1/G2 (il coach entra nella corsa) → G4 (diventa un prodotto) → V1/V2 (prende il mercato). N7 (life-aware) è il jolly da anticipare appena possibile: costo medio, impatto 10, concorrenza zero.
 
+**L'ordine operativo completo, con i brief di sviluppo per ogni passo, è nella sezione 5-bis.**
+
+---
+
+## 5-bis. SEQUENZA DI ESECUZIONE — brief di sviluppo
+
+Le tabelle del §5 sono bucket per orizzonte; questa sezione è **l'ordine in cui sviluppare**, con un brief per passo pronto per chi implementa. Dipendenze dure da rispettare: **A1←A3, A5←Q1, G2/G3←G1, G1↔G5, V4/V5←G4**. Tutto ciò che non ha frecce è riordinabile o parallelizzabile.
+
+---
+
+### FASE 0 — Fondamenta (settimane 1-2, quasi tutto parallelizzabile)
+
+#### Passo 1 — Q1 · HRV baseline individuale
+
+**Obiettivo.** Sostituire le soglie HRV assolute (25/55 ms) con la baseline personale: media mobile 7 giorni di ln(rMSSD) confrontata con media±0.75·SD dei 28 giorni precedenti.
+
+**Stato attuale.** `app/processing/recovery.py`: `hrv_status()` classifica con costanti; `readiness()` somma bonus/malus da soglie fisse. I valori storici esistono in `daily_checkins.hrv_rmssd`.
+
+**Da costruire.**
+- Nuova funzione pura `hrv_baseline(history: list[tuple[date, float]]) -> HrvBaseline` in `recovery.py`: calcola `ln_mean_7d`, `ln_mean_28d`, `ln_sd_28d`; stato = `low` se 7d < 28d−0.75·SD, `high` se > +0.75·SD, altrimenti `normal`; `learning=True` se <21 giorni di dati (in quel caso fallback alle soglie attuali E flag esposto).
+- `compute_metrics` (in `app/processing/metrics.py`) riceve la history HRV (nuovo parametro, caricata dal chiamante con una query su `DailyCheckinRow` degli ultimi 35 giorni) e popola `hrv_status` + nuovo campo `hrv_learning: bool` su `TrainingMetrics`.
+- `readiness()`: i contributi HRV diventano relativi alla banda (fuori banda bassa −15, dentro 0, sopra +10) invece che ai ms assoluti.
+- Android: nel `HrvCard` mostrare "Sto ancora imparando la tua baseline (giorno X/21)" quando `hrv_learning`.
+
+**Accettazione.** Unit test: baseline con 28 punti sintetici, stato low/normal/high per costruzione; <21 punti → learning; il decision engine con HRV 45ms e baseline personale alta (media 60) segnala `low` (le vecchie soglie avrebbero detto normal). Nessuna regressione sui 418 test.
+
+**Rischi/edge.** Giorni mancanti (usare i punti disponibili, non interpolare); rMSSD=0 o >200 → scartare come outlier (>3 SD).
+
+---
+
+#### Passo 2 — Q2 · Morte dei bottoni Sincronizza/Analizza
+
+**Obiettivo.** L'utente non lavora per l'app: sync in background, analisi automatica, home senza bottoni-lavoro.
+
+**Stato attuale.** `HomeScreen` ha `onSync`/`onAnalyze` → `OverviewViewModel.sync()/analyze()` → `POST /api/ingest` e `POST /api/analyze`. Il pipeline post-sync (`_adapt_after_change` in `app/api/routes.py`) già concatena execution→adaptive→decisione→notifiche.
+
+**Da costruire.**
+- Android: `SyncWorker` (WorkManager, periodic ~1h + expedited one-shot all'apertura app da `RunningCoachApp.onCreate`/`onResume` della MainActivity) che chiama `repository.sync()`; rimuovere i due bottoni da `HomeScreen`; sostituirli con una riga di stato passiva ("Ultimo sync 08:12 · 2 nuove corse") alimentata da un timestamp salvato in `SettingsStore`.
+- Backend: `POST /api/ingest` deve diventare idempotente-friendly per chiamate frequenti: aggiungere guardia "skip se ultimo ingest <10 min fa" (nuova colonna o riga chiave-valore; più semplice: tabella `sync_state(key, value)` o riuso `CoachEvent` con dedupe) e far girare `run_single_analysis` automaticamente quando il sync porta ≥1 attività nuova (dentro `_adapt_after_change`, best-effort, così l'ultima corsa ha sempre il report senza tap).
+- Il pull-to-refresh in home resta come sync manuale d'emergenza.
+
+**Accettazione.** Aprendo l'app con una corsa nuova su Garmin: entro il primo refresh appaiono corsa + report + decisione aggiornata, zero tap. Due sync ravvicinati non duplicano lavoro (log "skipped, recent"). UI senza i due bottoni; test integrazione su auto-analisi post-ingest.
+
+**Rischi.** Rate-limit Garmin: mantenere il backoff esistente; l'expedited work non deve girare più di 1×/10min.
+
+---
+
+#### Passo 3 — Q4 · Streak di aderenza (+ Q8 · Undo nel calendario)
+
+**Q4 Obiettivo.** Lo streak premia l'aderenza al piano (riposo prescritto incluso), non il correre tutti i giorni.
+
+**Stato attuale.** `compute_streak(activities, rest_dates=None)` in `app/processing/gamification.py` — il parametro `rest_dates` esiste già ma i chiamanti (`app/api/routes.py` gamification, `app/api/mobile.py`) non lo passano.
+
+**Da costruire.** Nuova `compute_adherence_streak(days: list[AdherenceDay]) -> tuple[int,int]` pura: un giorno è "aderente" se (a) c'era una seduta prescritta e l'execution status non è `skipped`, oppure (b) era riposo prescritto e non c'è una corsa hard (una corsa easy nel giorno di riposo non rompe — tolleranza), oppure (c) nessun piano attivo → fallback allo streak attuale. Il servizio costruisce la lista dagli ultimi 60 giorni di plan sessions (+execution) e attività. Esporre in `GamificationData` come `streak_days` (sostituzione, non affiancamento) + `streak_kind: "adherence"|"runs"` per la label Android ("giorni di piano rispettato").
+
+**Q8 Obiettivo.** Undo dello spostamento seduta: lo swap è l'inverso di sé stesso.
+
+**Da costruire.** Android-only: in `AppScaffold`, quando `successMessage` proviene da un move (il `PlanViewModel.moveSession` valorizza anche `lastMove: Pair<Int,String>?` con id e data sorgente), la snackbar mostra azione "Annulla" → richiama `moveSession(id, sourceDate)`. Il backend non cambia (audit registrerà due move, corretto così).
+
+**Accettazione.** Q4: unit test con piano+execution sintetici (riposo prescritto non rompe; skipped rompe; senza piano = comportamento legacy). Q8: move+undo riporta il piano identico (test manuale UI + l'integrazione backend già copre lo swap inverso).
+
+---
+
+#### Passo 4 — Q5 · Cache dell'overview + heatmap precomputata
+
+**Obiettivo.** Apertura app <100ms percepiti: `/api/mobile/overview` oggi ricalcola tutto (metriche, PR, badge, snapshot, prediction, decisione) su tutte le attività a ogni chiamata.
+
+**Da costruire.**
+- Modulo `app/services/cache.py`: cache in-process `{key: (version, payload)}` dove `version = (max(Activity.id), count(Activity), latest_checkin.date, active_plan.id, oggi)`. `overview()` calcola la version con 3 query leggere; hit → risposta pronta; miss → compute e store. Invalidazione implicita via version (niente hook sparsi). Stessa tecnica per `GET /api/activities/heatmap`: payload serializzato precomputato con version = (max id attività con GPS).
+- La decisione del giorno dipende anche dal checkin → è nella version. `persist=True` della decisione resta nel pipeline post-sync, non nell'overview.
+
+**Accettazione.** Due chiamate consecutive: la seconda non esegue `compute_metrics` (assert con spy/counter nel test); dopo un ingest la cache si rigenera. Benchmark locale: overview cached <30ms.
+
+**Rischi.** Processo singolo (uvicorn worker=1, è così): nessun problema di coerenza. Documentare che con più worker serve store condiviso (non ora).
+
+---
+
+#### Passo 5 — Q3 · Execution score: multi-corsa/giorno e per-lap v0
+
+**Obiettivo.** (a) Warm-up separato + seduta di qualità nello stesso giorno non devono più essere giudicati prendendo "la corsa più lunga"; (b) le ripetute si giudicano sui giri, non sulla media.
+
+**Stato attuale.** `execution_service._best_activity_for()` prende la corsa più lunga del giorno. `score_execution` v2 ha già sub-score e time-in-zone; `Activity.splits_km` contiene i passi per km come stringhe.
+
+**Da costruire.**
+- **Merge multi-corsa:** `_best_activity_for` → `_activities_for(db, target) -> list[Activity]`; se >1 corsa: per sedute di qualità scegli quella con `activity_type` più intenso (usa `_RANK` di `execution.py`) e somma distanza/durata delle altre come "volume accessorio" (nuovo campo evidence: "riscaldamento separato 3.2 km incluso"); il confronto distanza usa il totale del giorno, il confronto intensità usa la corsa principale.
+- **Per-lap v0 (da `splits_km`):** in `score_execution`, per sedute `intervals`: parse dei passi/km, individuare i "km veloci" (sotto la mediana −5%) → `detected_reps`, `avg_rep_pace`; confronto con `target_pace` (±5% ok); evidenze tipo "5 km veloci rilevati @ 4:22 (target 4:15)". Non è lap-perfetto (i giri veri sono in `raw_activity_assets` `typed_splits`, che richiede S3): dichiararlo `v0` nel docstring e predisporre l'interfaccia `rep_analysis(splits) -> RepStats` per sostituire la fonte dopo.
+
+**Accettazione.** Test: giorno con easy 3km + intervalli 8km → status calcolato sugli intervalli, volume 11km in evidenza; splits alternati 4:20/5:40 → detected_reps corretti; splits uniformi su seduta intervals → `quality_missed` con evidenza "nessun cambio ritmo rilevato".
+
+---
+
+#### Passo 6 — Q6 · Weather-window optimizer
+
+**Obiettivo.** Push mattutino: "Corri alle 18:40: 21°C, vento in calo". Prima feature *proattiva* visibile.
+
+**Vincolo scoperto in analisi:** non persistiamo l'orario di inizio delle corse (solo `date`) → v0 non può imparare le tue ore abituali. Due sotto-task:
+1. **(prerequisito piccolo)** aggiungere colonna `start_time` (String HH:MM, nullable) ad `Activity` + migrazione; `synthesize()`/`synthesize_strava()` la popolano da `startTimeLocal`/`start_date_local`. Servirà anche a G7/N12.
+2. `app/services/weather.py`: client open-meteo (`https://api.open-meteo.com/v1/forecast`, no key) con lat/lon medi dalle ultime corse con GPS (dal primo punto della polyline) o da settings; funzione pura `best_window(hourly, prefs) -> BestWindow` che score-a le ore 06-21 (temperatura ideale 8-16°C, penalità pioggia/vento/afa, bonus vicino alle tue ore abituali quando `start_time` avrà dati). Il pipeline mattutino: nel primo sync del giorno (Q2 l'ha reso automatico) se la decisione non è `rest`, `log_event(notifiable, priority=low)` con il suggerimento; il canale notifiche esistente consegna.
+
+**Accettazione.** Unit su `best_window` con forecast sintetici (canicola → mattina presto; pioggia a fasce → buco asciutto). Integrazione: evento creato una sola volta/giorno (dedupe_key `date:weather`). Zero chiamate rete nei test (client mockato).
+
+---
+
+#### Passo 7 — Q7 · Accessibility & i18n pass
+
+**Obiettivo.** Rilascio firmabile da un Accessibility Specialist; stringhe pronte per mercati non-italiani.
+
+**Da costruire.**
+- Estrazione di tutte le stringhe UI hardcoded in `res/values/strings.xml` (+`values-it/`; default inglese). È meccanico ma vasto: farlo per schermata, iniziando da Home/Plan/Today card.
+- `contentDescription` su ogni `Icon` informativa; le emoji-glifi in `ActivityRow`/`CrossTrainingScreen` sostituite da icone Material con description (le emoji restano solo decorative).
+- Touch target ≥48dp: day-cell dei calendari (oggi ~44) → `Modifier.sizeIn(minWidth=48.dp, minHeight=48.dp)`.
+- Contrasto: verificare i Pill colorati su `surfaceVariant` con formula WCAG (scriptino una-tantum sui valori di `Color.kt`); dove <4.5:1 usare la variante `*Deep` per il testo.
+- TalkBack pass manuale sulle 4 schermate principali con checklist in `docs/ACCESSIBILITY.md`.
+
+**Accettazione.** Lint Android senza warning `HardcodedText`/`ContentDescription` sulle schermate toccate; checklist compilata.
+
+---
+
+### FASE 1 — Il coach diventa vivo (mesi 1-2)
+
+#### Passo 8 — A10 · Sicurezza & GDPR (prima di crescere)
+
+**Obiettivo.** Trattiamo dati sanitari in Italia: cifratura dei segreti, diritto all'oblio, rate limiting. Va fatto **prima** di aumentare utenti e dati.
+
+**Da costruire.**
+- **Cifratura at rest dei token:** `app/security/crypto.py` con Fernet (`cryptography`), chiave da env `DATA_ENCRYPTION_KEY` (generata al bootstrap se assente, con warning). Cifrare `StravaAccount.access_token/refresh_token` (proprietà ibrida: setter cifra, getter decifra → nessun cambio nei chiamanti) + migrazione che cifra i valori esistenti. I dati HRV restano in chiaro per ora (servono alle query/calcoli): documentare il trade-off e pianificare SQLCipher/at-rest completo in G4.
+- **Diritto all'oblio:** `DELETE /api/me/data` che svuota tutte le tabelle utente (activities, checkins, plans, decisions, events, chat, shoes, strava, raw assets +oggetti S3 best-effort) in transazione; protetto da conferma (`?confirm=DELETE`).
+- **Rate limiting:** middleware token-bucket in-process su `/api/*` (es. 120 req/min) e più severo su webhook Strava (30/min) — `app/middleware.py` ha già la catena middleware dove inserirlo.
+- **Rotazione token API:** endpoint `POST /api/auth/rotate` che rigenera `API_TOKEN` (persistito in `sync_state`/settings runtime) e lo restituisce una sola volta.
+
+**Accettazione.** Test: token Strava non appare in chiaro con query SQL diretta; delete-my-data lascia il DB alle sole tabelle vuote + alembic_version; 429 oltre soglia; rotate invalida il token vecchio.
+
+---
+
+#### Passo 9 — A9 · Eval harness del coach (prima di ritoccare i prompt)
+
+**Obiettivo.** Da qui in avanti nessuna modifica a prompt/engine passa senza superare scenari di sicurezza. È il prerequisito di A1.
+
+**Da costruire.**
+- `tests/eval/` con generatore di **atleti sintetici** (dataclass: livello, storia carichi, HRV pattern, infortuni) e simulatore: dato un atleta e N giorni, produce checkin+attività sintetiche giorno per giorno e fa girare il pipeline reale (decision engine, adaptive, execution) su DB temporaneo.
+- **Asserzioni di sicurezza** (sempre attive, deterministiche): mai ramp >10% prescritto dal piano adattato; mai qualità prescritta con readiness red; mai hard back-to-back generato dall'enforcement; taper mai cancellato dall'adaptive; comeback (quando esisterà) mai saltato.
+- **Golden test per i prompt LLM:** con `ANTHROPIC_API_KEY` presente (job nightly, non nel CI PR), 20 conversazioni pre-piano registrate → asserzioni strutturali sull'output (§CTX valido, week_structure coerente col dialogo, budget conferme ≤2). Senza key: skip con marker `@pytest.mark.eval_llm`.
+- CI: nuovo job `eval` che gira gli scenari deterministici (target: 50 scenari <60s).
+
+**Accettazione.** 50 scenari verdi in CI; una modifica volutamente rotta (es. togliere il cap del ramp) fa fallire l'harness.
+
+---
+
+#### Passo 10 — A3 · Push reali (FCM) — prima di A1
+
+**Obiettivo.** Notifiche in secondi, non entro 3 ore. Senza questo i trigger proattivi (A1) non hanno senso.
+
+**Da costruire.**
+- **Backend:** tabella `devices(id, fcm_token, platform, created_at)` + `POST /api/devices` (upsert) e `DELETE`. `app/services/push.py`: invio FCM HTTP v1 (service-account JSON da env `FCM_CREDENTIALS_PATH`, httpx, retry). Hook: in `event_service.log_event`, quando `notifiable=True` → `push.send_to_all(title, body, priority)` best-effort (mai bloccare la transazione: fire-and-forget con try/except, come il pipeline). Rispettare le finestre orarie/priority già implementate spostando il filtro `_in_time_window` anche sull'invio push.
+- **Android:** dipendenza `firebase-messaging` + `google-services.json` (progetto Firebase gratuito); `CoachFirebaseService : FirebaseMessagingService` che su messaggio chiama `CoachNotifications.post` e su `onNewToken` fa upload; registrazione token al boot app. Il `NotificationSyncWorker` resta come fallback (periodo allungabile a 6h).
+- **Demo/self-host senza Firebase:** se `FCM_CREDENTIALS_PATH` assente → no-op con log, il polling continua a coprire.
+
+**Accettazione.** Evento notifiable creato → push ricevuta sul device di test in <10s; ack flow invariato; senza credenziali FCM tutti i test passano (no-op).
+
+---
+
+#### Passo 11 — A1 · Voce LLM + trigger proattivi (dipende da A3, gate da A9)
+
+**Obiettivo.** Uccidere il difetto 3: i fatti restano deterministici, la superficie verbale diventa generativa e non si ripete; il coach prende iniziativa sui pattern comportamentali.
+
+**Da costruire.**
+- **Verbalizer:** `app/coaching/verbalizer.py` con `verbalize_decision(decision: CoachDecision, recent_notes: list[str]) -> str`: prompt Haiku che riscrive `daily_note` e ammorbidisce `rationale` con vincoli (max 2 frasi; vietate le formulazioni in `recent_notes`, ultimi 14 giorni da `coach_decisions.daily_note`; non inventare numeri: può citare SOLO i valori presenti nel JSON della decisione). Chiamato nel pipeline post-sync (non nell'overview: latenza), risultato persistito sulla riga della decisione. Fallback totale al template attuale su errore/timeout 3s/assenza API key. Config: `verbalizer_enabled` in settings.
+- **Trigger comportamentali:** `app/services/triggers.py`, `evaluate_triggers(db, ref) -> list[eventi]` chiamata in coda a `_adapt_after_change`: (1) seduta prescritta ieri `skipped` e oggi nessuna attività → evento "Ci sei? Riorganizzo la settimana?" con deep-link alle azioni defer/reduce; (2) ≥3 execution `too_hard` in 10 giorni → "I tuoi ritmi target sembrano stretti: li ricalibro?" (l'azione applica +5s/km ai target futuri via adaptive); (3) HRV 7d sotto baseline per ≥5 giorni consecutivi (usa Q1) → intervento pre-red. Tutti con `dedupe_key` settimanale e `priority`.
+- **Gate:** ogni trigger passa dall'eval harness (scenari: atleta che salta 2 giorni → trigger 1 esattamente una volta).
+
+**Accettazione.** 14 giorni simulati → 14 daily note tutte diverse (assert di non-ripetizione stringa); API key assente → note template, zero errori; i 3 trigger scattano sugli scenari sintetici e MAI più di una volta per finestra di dedupe.
+
+---
+
+#### Passo 12 — A4 · Voice debrief post-corsa
+
+**Obiettivo.** Sostituire i proxy crudi (stress→fatica, body-battery→motivazione) con 20 secondi di voce dell'atleta dopo la corsa.
+
+**Da costruire.**
+- **Android:** dopo il push dell'execution score (A3) l'apertura della notifica porta a un bottom-sheet "Com'è andata?" con mic (SpeechRecognizer on-device, gratuito, no rete) + fallback campo testo; invio a `POST /api/debrief`.
+- **Backend:** `POST /api/debrief {text, activity_id?}` → Haiku con schema di estrazione JSON `{rpe:1-10|null, soreness:1-10|null, pain_location:str|null, mood:str|null, notes:str}` (prompt in `prompts.py`, parse difensivo) → aggiorna `Activity.rpe/notes` + upsert `DailyCheckin` del giorno (fatigue/soreness) **marcando la fonte**: nuova colonna `checkins.source` (`garmin_proxy|voice|manual`) così i proxy Garmin non sovrascrivono mai un debrief vocale (precedenza voice>manual>proxy in `ingest_wellness`).
+- `pain_location` non nullo → evento notifiable priority high ("Sento che hai indicato dolore al …: vuoi dirmi di più?") — ponte verso G6.
+
+**Accettazione.** Test con testi italiani reali ("fatta dura, polpaccio destro un po' teso, 7 di fatica") → estrazione corretta; proxy che non sovrascrive; offline → coda locale (riusa il meccanismo di G5 quando arriva, per ora retry semplice).
+
+---
+
+#### Passo 13 — A5 · Digital Twin v0 (dipende da Q1)
+
+**Obiettivo.** Le prime tre costanti che diventano variabili apprese: tolleranza al ramp, emivita di recupero, sensibilità al caldo.
+
+**Da costruire.**
+- `app/processing/athlete_model.py`, funzioni pure + orchestratore `estimate_athlete_model(db) -> AthleteModel`:
+  - `ramp_tolerance`: max incremento % settimana-su-settimana storicamente assorbito senza (injury_level high ∨ execution collapse ∨ readiness red nei 7gg successivi); clamp [5%, 15%]; default 10% con <8 settimane di storia.
+  - `recovery_halflife_days`: mediana dei giorni tra una seduta `too_hard`/gara e il ritorno dell'execution score ≥80 o readiness green; default 2.
+  - `heat_sensitivity`: regressione lineare passo-GAP vs `temperature_c` sulle corse easy (sec/km per °C sopra 15°C); default da letteratura (~1.5 s/km/°C) con <10 corse calde.
+  - Ogni stima con `confidence` (n campioni) — sotto soglia si usa il default e si espone `learning`.
+- Persistenza: tabella `athlete_model(key, value, confidence, computed_at)` ricalcolata nel pipeline post-sync (throttle 1×/giorno).
+- **Consumo:** `decision.py` e `adaptive.py` leggono ramp/recovery dal modello al posto delle costanti quando confidence sufficiente; il prompt di generazione piano riceve il ramp personale.
+
+**Accettazione.** Unit: storie sintetiche con ramp-crollo al 12% → tolleranza stimata <12%; atleta che recupera in 3 giorni → halflife 3 e il decision engine non ripropone qualità al giorno 2. Eval harness esteso con 5 scenari twin.
+
+---
+
+#### Passo 14 — A2 · Health Connect MVP (track parallelo, indipendente)
+
+**Obiettivo.** Corse, FC, sonno, HRV senza Garmin: apre il TAM. Sviluppabile in parallelo a 9-13 (tocca superfici diverse).
+
+**Da costruire.**
+- **Android:** dipendenza `androidx.health.connect:connect-client`; permessi READ per ExerciseSession/HeartRateSeries/SleepSession/HeartRateVariabilityRmssd; screen di consenso nell'onboarding ("Non hai Garmin? Collega Health Connect"); `HealthConnectSyncWorker` che legge le sessioni running dall'ultimo sync, costruisce payload compatto (durata, distanza, serie HR campionata, route se presente) e POSTa.
+- **Backend:** colonna `health_connect_id` su `Activity` (+unique, migrazione) e ramo in `upsert_activity`; endpoint `POST /api/import/health-connect` (batch) che riusa `RunSummary` + un derive server-side di splits/pace da distanza+durata (v0 senza per-km reali); wellness (sonno/HRV) → upsert `DailyCheckin` con `source='health_connect'` rispettando la precedenza di A4.
+- Classificazione tipo-seduta: riusare `_infer_type` con i campi disponibili (mancherà il training effect → cascata degrada su nome/distanza, già previsto).
+
+**Accettazione.** Device di test senza Garmin: corsa registrata con altra app HC-compatibile → appare nell'app con decisione aggiornata; dedupe con Strava (stessa corsa da due fonti) documentato: v0 accetta il duplicato se non c'è id comune, con nota nel doc — fix euristico (match data+durata±2%) in backlog.
+
+---
+
+#### Passo 15 — A6 · Race recap + weekly recap condivisibili
+
+**Obiettivo.** Il motore del passaparola: card visuale post-gara e recap domenicale emozionale.
+
+**Da costruire.**
+- **Backend:** `GET /api/recap/weekly` (aggregati settimana: km, aderenza %, execution medio, momento migliore — dal diario eventi) e generazione narrativa via verbalizer (A1) con i fatti nel prompt; trigger domenicale sera nel pipeline (evento notifiable "Il tuo riassunto della settimana è pronto"). Race recap: quando un'attività `gara` viene ingerita → `GET /api/recap/race/{activity_id}` con confronto prediction-vs-reale (i dati ci sono: `race_prediction` + splits) e narrativa.
+- **Android:** `RecapCard` composable renderizzata off-screen (`Picture`/`graphicsLayer` → Bitmap) con brand, numeri chiave e mappa del percorso; share sheet (`FileProvider` già configurato per l'export). Un template, due varianti (week/race).
+
+**Accettazione.** Gara demo → recap con delta prediction corretto; bitmap 1080×1350 generata <500ms; share intent funzionante.
+
+---
+
+#### Passo 16 — A7 · What-if counterfactual sul piano
+
+**Obiettivo.** Il piano da documento a simulatore: "cosa succede se salto il lungo / mi ammalo una settimana / aggiungo un giorno".
+
+**Da costruire.**
+- **Backend:** `POST /api/plan/whatif {scenario}` con 3 scenari v0 enumerati (`skip_next_long`, `sick_one_week`, `add_training_day`): funzione pura `simulate_scenario(plan, activities, scenario)` che clona il piano in memoria, applica la modifica, ricalcola metriche proiettate (CTL/TSB futuri con le stesse EWMA di `fitness_fatigue` estese in avanti) e `predict_race_time` sul volume risultante → `{race_time_delta, tsb_at_race, risk_notes[]}`. **Zero persistenza.**
+- **Android:** bottom-sheet "E se…?" nel PlanScreen con i 3 scenari e risultato a confronto (prima→dopo, verde/rosso).
+
+**Accettazione.** Unit: sick_one_week su piano 12 settimane → delta previsione peggiorativo e TSB più alto; nessuna scrittura DB (assert). La proiezione EWMA in avanti testata contro il calcolo esistente su storia nota.
+
+---
+
+#### Passo 17 — A8 · Chat unificata + 4 tab
+
+**Obiettivo.** Un solo coach con cui parlare, che sa tutto; via la chat pre-piano separata e il form-dialog; 6 tab → 4.
+
+**Da costruire.**
+- **Backend:** `build_chat_system` (in `prompts.py`) arricchito con: ultime 5 decisioni (data+esito), ultimi 10 eventi del diario, execution recenti, estratto memoria episodica v0 (nuova tabella `coach_memory(fact, updated_at)` aggiornata post-conversazione da un estrattore Haiku: "fatti duraturi sull'atleta" — ponte verso N10). **Modalità piano:** la sessione chat acquisisce `mode` (`general|plan_negotiation`); in plan-mode il system prompt diventa quello negoziale attuale e il flusso §CTX§/§READY§ resta identico — cambia solo la superficie (stessa UI chat, banner "Stiamo costruendo il piano").
+- **Android:** rimozione della chat dentro `GeneratePlanDialog` (il dialog si riduce a data-gara+conferma finale, prendendo tutto il resto dal §CTX§); "Crea piano" apre la chat in plan-mode. Tab: fondere Stats dentro Corse (tab "Corse" con segmented control Lista/Statistiche); Impostazioni → icona ingranaggio nella top bar di Oggi. `Dest` enum → 4 voci.
+- Migrazione dolce: route legacy mantenute (deep link), solo la NavigationBar cambia.
+
+**Accettazione.** Il flusso piano end-to-end (chat→§READY§→generazione→enforcement) passa i test esistenti attraverso la nuova superficie; la chat generale risponde citando una decisione recente (test con fixture); 4 tab, zero regressioni di navigazione.
+
+---
+
+### FASE 2 — Il coach entra nella corsa (mesi 3-5)
+
+#### Passo 18 — G1+G5 · Live GPS tracking + fondamenta offline-first (inseparabili)
+
+**Obiettivo.** Registrare una corsa dal telefono, con guida a schermo, robusta senza rete. G5 non è una feature separata: il live tracking È scrittura locale + sync differita.
+
+**Architettura richiesta.**
+- **Android:** modulo `tracking/`: `ForegroundService` (type=location) + FusedLocationProvider (1s, batch 5s), permessi FINE+BACKGROUND con flusso UX corretto; **Room** entra nel progetto: entità `RunRecording(id, startedAt, points[], laps[], state)` scritta ogni batch (crash-safe); filtro Kalman leggero/outlier GPS; auto-pause (velocità <1.4 km/h per >10s); schermo live (distanza, passo istantaneo lisciato 15s, passo medio, durata, lap manuale) con la **seduta del giorno caricata** (target visibili). Al termine: schermata conferma → upload.
+- **Upload/offline:** `POST /api/activities/live` (polyline, laps, serie campionata) → server sintetizza splits/pace e riusa `upsert_activity` (source `live`); coda Room `PendingUpload` con WorkManager e retry esponenziale — la corsa NON si perde mai (accettazione chiave).
+- **Cache offline (G5):** Room `CachedOverview/CachedPlan` con render cached-first in tutta l'app + coda azioni (Today card actions, move calendario) con replay. Da fare nello stesso ciclo perché condivide Room+queue infra.
+- **Onboarding nuovo:** "Corri adesso col telefono" come primo percorso senza hardware (aggancio al difetto 2).
+
+**Accettazione.** Corsa reale 5km in aereo-mode: traccia completa, upload al ritorno rete, decisione aggiornata; kill dell'app a metà corsa → recovery del recording; consumo batteria <7%/h su device medio; overview consultabile offline con banner "dati di ieri".
+
+**Rischi.** Doze/OEM killer (testare su Samsung/Xiaomi); GPS urbano (il filtro è essenziale); è il passo più grosso del piano — prevedere 2 iterazioni.
+
+---
+
+#### Passo 19 — G2 · Audio coach adattivo (dipende da G1)
+
+**Obiettivo.** La seduta del piano *eseguita e parlata*: il workout builder finalmente collegato all'esecuzione.
+
+**Da costruire.** Motore a stati in `tracking/`: la struttura della seduta (i `WorkoutSegment` esistono già!) diventa timeline di fasi; TTS Android (`TextToSpeech`, it-IT) con cue: inizio/fine ripetuta, delta passo vs target ("5 secondi sotto, tieni così"), split km, incoraggiamenti dal verbalizer pre-generati a inizio corsa (batch di frasi contestuali scaricate prima, così offline funziona). Ducking audio su musica. Le sedute senza struttura usano template semplice (km + passo).
+
+**Accettazione.** Seduta 6×400 dal builder: cue corretti a ogni transizione con GPS simulato (mock location in test strumentato); tutte le stringhe TTS da risorse (Q7).
+
+---
+
+#### Passo 20 — G7 · Life-aware planning (jolly, indipendente)
+
+**Obiettivo.** Il piano che vede la tua vita: nessun competitor lo fa.
+
+**Da costruire.** **On-device, niente OAuth:** Android `CalendarContract` (permesso READ_CALENDAR) → il device calcola per i prossimi 7 giorni le "finestre libere" per fascia (mattina/pranzo/sera, solo busy/free — **mai i dettagli degli eventi**, privacy by design) → `POST /api/availability {date, slots}` → l'adaptive engine acquisisce un nuovo segnale: giorno senza finestre → propone lo swap (riusa `move_session`!) con evento notifiable "Giovedì sei pieno: sposto le ripetute a mercoledì?" e azione one-tap.
+
+**Accettazione.** Scenario sintetico: giorno di qualità con zero slot → proposta di move corretta (rispetta le regole di sicurezza esistenti sugli hard adiacenti); nessun titolo evento lascia mai il device (assert sul payload).
+
+---
+
+#### Passo 21 — G3 · Race Day Mode (dipende da G1+G2)
+
+**Obiettivo.** Il giorno per cui esiste tutto: pacing live ricalcolato, non "banked time".
+
+**Da costruire.** Modalità dedicata sopra il tracking: pre-gara (warm-up guidato, strategia dal twin: negative split calcolato su profilo GPX del percorso caricato + meteo); in gara: re-pacing ad ogni km (algoritmo: tempo rimanente ridistribuito sui km restanti pesati per pendenza, cap sulla variazione ±3%/km — pure function ben testabile `repace(remaining_km_profiles, elapsed, target) -> next_km_pace`); alert vocali sobri; post: race recap (A6) automatico.
+
+**Accettazione.** Simulazione: partenza 10s/km troppo veloce → il re-pacer riporta al target senza richiedere splits negativi impossibili; profilo collinare → target per-km variabili sensati.
+
+---
+
+#### Passo 22 — G4 · Multi-user cloud (parte in parallelo, gate per il lancio)
+
+**Obiettivo.** Da self-host a prodotto: account, isolamento, Postgres.
+
+**Da costruire (fasi interne).** (1) `users` + auth (email/password argon2 + sessioni JWT breve+refresh; social login dopo); (2) `user_id` FK su TUTTE le tabelle dati — migrazione grande ma meccanica (default user 1 per il self-host); dependency `get_current_user` che filtra ogni query (ripasso completo dei servizi: nessuna query senza scope utente — checklist file-per-file); (3) supporto Postgres (già SQLAlchemy: sistemare i JSON column types e le migrazioni batch SQLite-only con guardie dialect) + config `DATABASE_URL`; (4) la cache Q5 diventa per-utente; (5) cifratura at rest completa (ritiro del debito di A10 sui campi sanitari). Il self-host single-user resta supportato (profilo "solo" con auth disattivabile).
+
+**Accettazione.** Due utenti di test: isolamento verificato su ogni endpoint (test parametrico automatico che itera le route autenticate); suite completa verde su SQLite E Postgres in CI.
+
+---
+
+#### Passo 23 — G6 · Pain & comeback workflows
+
+**Obiettivo.** Il momento a più alto rischio (dolore e rientro) gestito con protocolli, non con l'adaptive generico.
+
+**Da costruire.** (1) **Pain journal:** body-map SVG tappabile (fronte/retro), intensità 0-10, trend per zona; red flags hardcoded (dolore notturno, gonfiore, >7/10, peggioramento 3 sedute) → messaggio "fermati e senti un medico" NON negoziabile (il coach non diagnostica mai — disclaimers espliciti); il dolore entra nel decision engine come safety flag con la zona. (2) **Comeback protocol:** trigger = gap ≥10 giorni o dolore risolto; generatore ladder deterministico (walk-run → continuo → volume → qualità, gate di avanzamento su dolore+HRV) che **sostituisce** le settimane del piano via l'infrastruttura enforcement/adaptive esistente; eval harness esteso (mai qualità durante ladder).
+
+**Accettazione.** Scenario: 14 giorni di stop → il piano al rientro è la ladder, non la settimana 8 originale; red flag → decisione `caution` con blocco qualità e messaggio medico.
+
+---
+
+#### Passo 24 — G9 · Carico sistemico multi-sport + invisible testing
+
+**Da costruire.** (1) Le attività bike/swim/strength con `avg_hr` producono TRIMP (riuso `internal_load` con pesi per sport ~0.7 bike / 0.8 swim) che entra in ATL/readiness ma NON nei km running (etichettato "carico sistemico" nelle spiegazioni). (2) Invisible testing: le sedute generate includono periodicamente micro-blocchi marcati (`segment.kind='probe'`: 4×20s strides, 10' a decoupling controllato); post-corsa l'analisi per-lap (Q3) estrae i probe e aggiorna `estimate_thresholds` con smoothing — soglie sempre fresche senza test day.
+
+**Accettazione.** 3h bici sabato → readiness domenica ridotta con spiegazione esplicita; 4 settimane simulate con probe → soglia stimata converge al valore sintetico impostato.
+
+---
+
+#### Passo 25 — G8 · Route generator per seduta
+
+**Da costruire (v0 pragmatico).** Dai percorsi storici (polylines heatmap) estrarre i "loop noti" (clustering start/end + distanza); per la seduta di oggi proporre il percorso storico più adatto (distanza ±10%, dislivello coerente col tipo) con export GPX (`GET /api/routes/suggested.gpx`). La generazione da grafo OSM (percorsi mai corsi) è v1, dietro lo stesso endpoint.
+
+**Accettazione.** Con 30 corse GPS demo: seduta 8km easy → proposta di un loop reale da ~8km piatto; GPX importabile su Garmin Connect.
+
+---
+
+### FASE 3 — Visione (mesi 6-12) — brief direzionali
+
+Questi passi si specificano a ridosso (dipendono dagli esiti delle fasi 1-2); qui direzione e vincoli.
+
+- **V1 · iOS + Apple Health.** Decisione architetturale da prendere DOPO G1: se il tracking Android è stabile, valutare KMP (condivisione layer dati/logic) vs Swift nativo (miglior HealthKit/WorkoutKit). Il backend è già pronto; il costo è tutto client. Gate: G4 in produzione.
+- **V2 · Companion watch + export workout (#16).** Prima l'export FIT/strutturato ai device Garmin (copre i possessori senza companion), poi WearOS standalone-tracking, poi watchOS insieme a V1.
+- **V3 · Twin completo + Monte Carlo.** Estende A5: modello di risposta al carico individuale (impulse-response fit sui dati propri), simulazione gara a distribuzione (N14) — la previsione diventa "68% sub-3:50". Richiede lo storico accumulato dalle fasi precedenti; da validare sull'eval harness con atleti sintetici di risposta nota.
+- **V4 · Club sync + circles (richiede G4).** Il workout del run club come `fixed_session` condivisa; classifica di *aderenza*, mai di velocità; inviti via link. Primo loop virale nativo.
+- **V5 · Marketplace co-sign (richiede G4 + trazione).** L'AI prepara il dossier settimanale, il coach umano rivede/firma in 5 minuti; revenue share. Da non iniziare prima di avere >1000 utenti attivi: il marketplace vuoto è peggio di niente.
+- **V6 · Privacy on-device + Coach Quality Index.** Il twin gira sul device (TFLite/ONNX per i modelli, regole già portabili); pubblicazione benchmark harness ("0 prescrizioni pericolose su 10.000 scenari") come pagina pubblica versionata. Fiducia come prodotto.
+
 ---
 
 ## 6. COSA ELIMINARE O CONGELARE
