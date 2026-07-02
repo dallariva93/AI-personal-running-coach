@@ -89,6 +89,7 @@ fun AppScaffold(app: RunningCoachApp) {
     val chatVm: ChatViewModel = viewModel(factory = factory)
 
     val state by overviewVm.state.collectAsState()
+    val syncStatus by overviewVm.syncStatus.collectAsState()
     val settings by settingsVm.settings.collectAsState()
     val exportState by settingsVm.exportState.collectAsState()
     val stravaStatus by settingsVm.stravaStatus.collectAsState()
@@ -227,8 +228,8 @@ fun AppScaffold(app: RunningCoachApp) {
                 composable(Dest.Home.route) {
                     HomeScreen(
                         state = state,
+                        syncStatus = syncStatus,
                         onSync = overviewVm::sync,
-                        onAnalyze = overviewVm::analyze,
                         onOpenActivity = openActivity,
                         onCoachAction = overviewVm::coachAction,
                         onOpenCoachLog = {

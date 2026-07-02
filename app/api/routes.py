@@ -11,12 +11,14 @@ import json as _json
 
 from fastapi import APIRouter, Depends, HTTPException
 from fastapi.responses import JSONResponse, StreamingResponse
+from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
 from app import __version__
 from app.config import get_settings
 from app.db.database import db_healthy, get_session
 from app.db.models import Activity
+from app.logging_config import get_logger
 from app.processing import (
     aerobic_efficiency,
     build_periodization,
@@ -79,6 +81,7 @@ from app.services import (
 from app.services.ingest import _all_summaries
 
 router = APIRouter(prefix="/api", tags=["api"])
+logger = get_logger("app.api")
 
 
 def _commit(session: Session) -> None:
@@ -154,18 +157,21 @@ def patch_activity(
     return activity
 
 
-def _adapt_after_change(session: Session) -> None:
+def _adapt_after_change(session: Session, run_analysis: bool = False) -> None:
     """Best-effort post-sync pipeline: score executions, then adapt the plan.
 
     Compliance (Roadmap #9) is evaluated first so the adaptive engine (#8) can
     reason over what was actually executed. Never propagates: a failure here must
     not break the ingest/check-in call. Retries once with a short backoff before
     giving up (P0-9: no more silent failure).
-    """
-    from app.logging_config import get_logger
-    from app.utils import retry_call
 
-    logger = get_logger("app.api")
+    ``run_analysis=True`` (set when a sync brought >=1 new activity, Roadmap
+    Q2) also generates the single-run coaching report, so the latest run
+    always has one without the athlete tapping "Analizza". Its own Garmin
+    pre-sync is skipped (``presync=False``): the ingest that triggered this
+    already fetched everything fresh.
+    """
+    from app.utils import retry_call
 
     def _pipeline() -> None:
         from app.services.adaptive_plan import adapt_plan_after_sync
@@ -177,6 +183,11 @@ def _adapt_after_change(session: Session) -> None:
 
         evaluate_plan_executions(session)
         adapt_plan_after_sync(session)
+        if run_analysis:
+            try:
+                run_single_analysis(session, presync=False)
+            except ValueError:
+                pass  # no running activity to analyse yet
         decision = build_today_decision(session, persist=True)
         record_decision_notification(session, decision)
         _commit(session)
@@ -190,11 +201,21 @@ def _adapt_after_change(session: Session) -> None:
 
 @router.post("/ingest", response_model=list[ActivityOut])
 def post_ingest(limit: int | None = None, session: Session = Depends(get_session)):
+    from app.services.sync_state import record_ingest, should_skip_ingest
+
+    if should_skip_ingest(session):
+        logger.info("ingest skipped, recent")
+        return list_activities(session, limit=limit or get_settings().fetch_limit)
+
+    before_count = session.scalar(select(func.count()).select_from(Activity)) or 0
     saved = ingest_runs(session, limit=limit)
     _commit(session)
     for a in saved:
         session.refresh(a)
-    _adapt_after_change(session)
+    after_count = session.scalar(select(func.count()).select_from(Activity)) or 0
+    record_ingest(session)
+    _commit(session)
+    _adapt_after_change(session, run_analysis=after_count > before_count)
     return saved
 
 

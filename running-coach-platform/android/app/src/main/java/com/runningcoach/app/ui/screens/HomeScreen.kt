@@ -5,7 +5,6 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
@@ -16,18 +15,16 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.Analytics
 import androidx.compose.material.icons.filled.CheckCircle
 import androidx.compose.material.icons.filled.ChevronRight
 import androidx.compose.material.icons.filled.ExpandLess
 import androidx.compose.material.icons.filled.ExpandMore
 import androidx.compose.material.icons.filled.Sync
 import androidx.compose.material.icons.outlined.Circle
-import androidx.compose.material3.Button
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
@@ -39,6 +36,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import com.runningcoach.app.data.model.Overview
+import com.runningcoach.app.data.settings.SyncStatus
 import com.runningcoach.app.ui.components.ActivityRow
 import com.runningcoach.app.ui.components.FormStateCard
 import com.runningcoach.app.ui.components.HrvCard
@@ -53,12 +51,15 @@ import com.runningcoach.app.ui.components.WeeklyChart
 import com.runningcoach.app.ui.theme.BrandGreen
 import com.runningcoach.app.ui.theme.Coral
 import com.runningcoach.app.ui.viewmodel.OverviewUiState
+import java.time.Instant
+import java.time.ZoneId
+import java.time.format.DateTimeFormatter
 
 @Composable
 fun HomeScreen(
     state: OverviewUiState,
+    syncStatus: SyncStatus = SyncStatus(),
     onSync: () -> Unit,
-    onAnalyze: () -> Unit,
     onOpenActivity: (Int) -> Unit = {},
     onCoachAction: (String, String?) -> Unit = { _, _ -> },
     onOpenCoachLog: () -> Unit = {},
@@ -108,32 +109,11 @@ fun HomeScreen(
 
             Spacer(Modifier.height(14.dp))
 
-            // ── 2. Primary actions ──────────────────────────────────────────
-            // Tight content padding + single-line labels keep "Sincronizza"
-            // on one line in a half-width button even on small phones.
-            val actionPad = PaddingValues(horizontal = 12.dp, vertical = 10.dp)
-            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-                Button(
-                    onClick = onSync,
-                    enabled = !state.working,
-                    modifier = Modifier.weight(1f),
-                    contentPadding = actionPad,
-                ) {
-                    Icon(Icons.Filled.Sync, contentDescription = null, Modifier.height(18.dp))
-                    Spacer(Modifier.width(6.dp))
-                    Text("Sincronizza", maxLines = 1, softWrap = false)
-                }
-                OutlinedButton(
-                    onClick = onAnalyze,
-                    enabled = !state.working,
-                    modifier = Modifier.weight(1f),
-                    contentPadding = actionPad,
-                ) {
-                    Icon(Icons.Filled.Analytics, contentDescription = null, Modifier.height(18.dp))
-                    Spacer(Modifier.width(6.dp))
-                    Text("Analizza", maxLines = 1, softWrap = false)
-                }
-            }
+            // ── 2. Passive sync status ───────────────────────────────────────
+            // Sync + analysis now run in the background (Roadmap Q2): no more
+            // "Sincronizza"/"Analizza" buttons, just a quiet status line with a
+            // small manual-sync escape hatch for when the athlete can't wait.
+            SyncStatusRow(syncStatus = syncStatus, working = state.working, onSyncNow = onSync)
             if (state.working) {
                 Spacer(Modifier.height(10.dp))
                 Row(verticalAlignment = Alignment.CenterVertically) {
@@ -183,6 +163,38 @@ fun HomeScreen(
             Spacer(Modifier.height(16.dp))
         } else {
             EmptyHint()
+        }
+    }
+}
+
+/**
+ * Passive status line replacing the old Sincronizza/Analizza buttons
+ * (Roadmap Q2): sync + analysis already run in the background, so this is
+ * read-only except for a small icon that still lets the athlete force a sync
+ * (the pull-to-refresh escape hatch) if they don't want to wait.
+ */
+@Composable
+private fun SyncStatusRow(syncStatus: SyncStatus, working: Boolean, onSyncNow: () -> Unit) {
+    val label = syncStatus.lastSyncAtMillis?.let { millis ->
+        val time = Instant.ofEpochMilli(millis).atZone(ZoneId.systemDefault())
+            .format(DateTimeFormatter.ofPattern("HH:mm"))
+        if (syncStatus.newActivities > 0) {
+            val corse = if (syncStatus.newActivities == 1) "corsa" else "corse"
+            "Ultimo sync $time · ${syncStatus.newActivities} nuove $corse"
+        } else {
+            "Ultimo sync $time"
+        }
+    } ?: "In attesa del primo sync…"
+
+    Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+        Text(
+            label,
+            style = MaterialTheme.typography.bodySmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+            modifier = Modifier.weight(1f),
+        )
+        IconButton(onClick = onSyncNow, enabled = !working) {
+            Icon(Icons.Filled.Sync, contentDescription = "Sincronizza ora")
         }
     }
 }
@@ -247,7 +259,7 @@ private fun DetailsToggle(ov: Overview, prIds: Set<Int>) {
 private fun EmptyHint() {
     Column {
         Text(
-            "Collega il backend in Impostazioni, poi premi Sincronizza.",
+            "Collega il backend in Impostazioni: il sync parte da solo.",
             style = MaterialTheme.typography.bodyMedium,
             color = MaterialTheme.colorScheme.onSurfaceVariant,
         )

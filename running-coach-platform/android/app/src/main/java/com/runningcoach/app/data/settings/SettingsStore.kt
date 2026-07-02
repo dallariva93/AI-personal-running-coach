@@ -2,6 +2,8 @@ package com.runningcoach.app.data.settings
 
 import android.content.Context
 import androidx.datastore.preferences.core.edit
+import androidx.datastore.preferences.core.intPreferencesKey
+import androidx.datastore.preferences.core.longPreferencesKey
 import androidx.datastore.preferences.core.stringPreferencesKey
 import androidx.datastore.preferences.preferencesDataStore
 import com.runningcoach.app.BuildConfig
@@ -17,17 +19,33 @@ data class AppSettings(
     val themeMode: String = "system", // "system" | "dark" | "light"
 )
 
+/** Passive status line data for the home screen (Roadmap Q2: no more sync buttons). */
+data class SyncStatus(
+    val lastSyncAtMillis: Long? = null,
+    val newActivities: Int = 0,
+)
+
 class SettingsStore(private val context: Context) {
 
     private val baseUrlKey = stringPreferencesKey("base_url")
     private val tokenKey = stringPreferencesKey("token")
     private val themeModeKey = stringPreferencesKey("theme_mode")
+    private val lastSyncAtKey = longPreferencesKey("last_sync_at_millis")
+    private val lastSyncNewCountKey = intPreferencesKey("last_sync_new_count")
+    private val lastMaxActivityIdKey = intPreferencesKey("last_max_activity_id")
 
     val settings: Flow<AppSettings> = context.dataStore.data.map { prefs ->
         AppSettings(
             baseUrl = prefs[baseUrlKey]?.takeIf { it.isNotBlank() } ?: BuildConfig.DEFAULT_BASE_URL,
             token = prefs[tokenKey].orEmpty(),
             themeMode = prefs[themeModeKey] ?: "system",
+        )
+    }
+
+    val syncStatus: Flow<SyncStatus> = context.dataStore.data.map { prefs ->
+        SyncStatus(
+            lastSyncAtMillis = prefs[lastSyncAtKey],
+            newActivities = prefs[lastSyncNewCountKey] ?: 0,
         )
     }
 
@@ -40,6 +58,29 @@ class SettingsStore(private val context: Context) {
 
     suspend fun updateTheme(themeMode: String) {
         context.dataStore.edit { prefs -> prefs[themeModeKey] = themeMode }
+    }
+
+    /** Record the outcome of a background/foreground sync for the passive status line. */
+    suspend fun recordSync(atMillis: Long, newActivities: Int) {
+        context.dataStore.edit { prefs ->
+            prefs[lastSyncAtKey] = atMillis
+            prefs[lastSyncNewCountKey] = newActivities
+        }
+    }
+
+    /**
+     * Atomically swaps in the highest activity id seen so far, returning the
+     * previous value. Lets the sync worker detect how many activities in a
+     * sync response are new (id monotonically increases) without a local
+     * activity cache.
+     */
+    suspend fun swapMaxActivityId(candidate: Int): Int {
+        var previous = 0
+        context.dataStore.edit { prefs ->
+            previous = prefs[lastMaxActivityIdKey] ?: 0
+            if (candidate > previous) prefs[lastMaxActivityIdKey] = candidate
+        }
+        return previous
     }
 
     private fun normalizeUrl(url: String): String {

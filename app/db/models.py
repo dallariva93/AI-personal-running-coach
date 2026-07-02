@@ -567,3 +567,21 @@ class Shoe(Base):
 
     def __repr__(self) -> str:  # pragma: no cover
         return f"<Shoe {self.id} {self.name!r} retired={self.retired}>"
+
+
+class SyncState(Base):
+    """Tiny key-value store for background-sync bookkeeping (Roadmap Q2).
+
+    One row per key, e.g. ``last_ingest_at`` — lets ``POST /api/ingest`` skip
+    redundant work when called again within a few minutes (app open + the
+    periodic WorkManager sync landing close together).
+    """
+
+    __tablename__ = "sync_state"
+
+    key: Mapped[str] = mapped_column(String(64), primary_key=True)
+    value: Mapped[str] = mapped_column(String(256))
+    updated_at: Mapped[datetime] = mapped_column(DateTime, default=_utcnow, onupdate=_utcnow)
+
+    def __repr__(self) -> str:  # pragma: no cover
+        return f"<SyncState {self.key}={self.value!r}>"

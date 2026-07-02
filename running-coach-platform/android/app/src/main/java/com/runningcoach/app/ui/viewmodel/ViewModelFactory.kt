@@ -10,7 +10,7 @@ class ViewModelFactory(private val app: RunningCoachApp) : ViewModelProvider.Fac
     @Suppress("UNCHECKED_CAST")
     override fun <T : ViewModel> create(modelClass: Class<T>): T = when {
         modelClass.isAssignableFrom(OverviewViewModel::class.java) ->
-            OverviewViewModel(app.repository) as T
+            OverviewViewModel(app.repository, app.settingsStore) as T
         modelClass.isAssignableFrom(SettingsViewModel::class.java) ->
             SettingsViewModel(app.settingsStore, app.repository) as T
         modelClass.isAssignableFrom(StatsViewModel::class.java) ->

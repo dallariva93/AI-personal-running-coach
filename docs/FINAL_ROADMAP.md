@@ -280,7 +280,32 @@ per rendere possibile il testo "giorno X/21" lato Android senza inventare un num
 
 ---
 
-#### Passo 2 — Q2 · Morte dei bottoni Sincronizza/Analizza
+#### Passo 2 — Q2 · Morte dei bottoni Sincronizza/Analizza ✅ FATTO — 2026-07-02
+
+**Implementato:** tabella `sync_state(key, value)` (migrazione `e5f6a7b8c9d0`) +
+`app/services/sync_state.py` (`should_skip_ingest`/`record_ingest`, finestra 10 min).
+`POST /api/ingest` salta il fetch reale se l'ultimo ingest è <10 min fa (log
+"ingest skipped, recent", ritorna comunque le attività note via `list_activities`).
+Quando l'ingest porta ≥1 attività nuova (contate via diff del count `Activity`
+prima/dopo), `_adapt_after_change` gira anche `run_single_analysis(presync=False)`
+best-effort: la corsa più recente ha sempre un report senza tap. Nuovo parametro
+`presync` su `run_single_analysis` per evitare un secondo fetch Garmin ridondante
+dentro la stessa richiesta (rischio non menzionato nel brief, scoperto leggendo
+`sync_before_analysis`). Android: `SyncWorker` (WorkManager) con sync periodico
+1h + one-shot expedited da `RunningCoachApp.onCreate` e `MainActivity.onResume`
+(dedup via `ExistingWorkPolicy.KEEP`); i due bottoni Sincronizza/Analizza sono
+spariti da `HomeScreen`, sostituiti da una riga passiva "Ultimo sync HH:mm · N
+nuove corse" (`SettingsStore.syncStatus`/`recordSync`/`swapMaxActivityId`).
+Build Android non eseguita (niente SDK in questo ambiente), verificata solo per
+bilanciamento sintassi/import e coerenza con i pattern esistenti (`NotificationSyncWorker`).
+**Deviazioni dal brief:** (1) niente vero gesture di pull-to-refresh — il compose-bom
+del progetto (2024.06.00 → material3 ~1.2) non ha `PullToRefreshBox` stabile e un
+bump non è verificabile in questo ambiente senza SDK; lo "sync manuale d'emergenza"
+è invece una piccola icona nella riga di stato, stesso effetto pratico, rischio
+molto più basso. (2) il conteggio "nuove corse" lato Android usa il confronto tra
+il massimo `Activity.id` prima/dopo il sync (salvato in `SettingsStore`), non un
+elenco esplicito di id dal backend: sufficiente perché gli id sono monotoni
+crescenti e non richiede un nuovo contratto API.
 
 **Obiettivo.** L'utente non lavora per l'app: sync in background, analisi automatica, home senza bottoni-lavoro.
 

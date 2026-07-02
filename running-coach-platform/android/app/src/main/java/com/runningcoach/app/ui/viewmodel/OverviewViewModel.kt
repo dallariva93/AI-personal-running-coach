@@ -6,24 +6,35 @@ import com.runningcoach.app.data.model.AthleteProfile
 import com.runningcoach.app.data.model.Goal
 import com.runningcoach.app.data.model.Overview
 import com.runningcoach.app.data.repository.CoachRepository
+import com.runningcoach.app.data.settings.SettingsStore
+import com.runningcoach.app.data.settings.SyncStatus
 import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 
 data class OverviewUiState(
     val loading: Boolean = false,
-    val working: Boolean = false, // a sync/analyze/plan action in progress
+    val working: Boolean = false, // a manual sync/plan/coach action in progress
     val overview: Overview? = null,
     val error: String? = null,
     val message: String? = null,
 )
 
-class OverviewViewModel(private val repository: CoachRepository) : ViewModel() {
+class OverviewViewModel(
+    private val repository: CoachRepository,
+    private val settingsStore: SettingsStore,
+) : ViewModel() {
 
     private val _state = MutableStateFlow(OverviewUiState(loading = true))
     val state: StateFlow<OverviewUiState> = _state.asStateFlow()
+
+    /** Passive "Ultimo sync HH:mm · N nuove corse" line (Roadmap Q2). */
+    val syncStatus: StateFlow<SyncStatus> =
+        settingsStore.syncStatus.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), SyncStatus())
 
     init {
         refresh()
@@ -39,9 +50,30 @@ class OverviewViewModel(private val repository: CoachRepository) : ViewModel() {
         }
     }
 
-    fun sync() = action("Sincronizzazione completata") { repository.sync() }
-
-    fun analyze() = action("Analisi generata") { repository.analyze() }
+    /**
+     * Manual "emergency" sync (Roadmap Q2 keeps this as the pull-to-refresh
+     * escape hatch once the Sincronizza/Analizza buttons are gone). Records
+     * the outcome the same way the background [com.runningcoach.app.notify.SyncWorker] does,
+     * so the passive status line stays accurate regardless of who triggered it.
+     */
+    fun sync() {
+        viewModelScope.launch {
+            _state.update { it.copy(working = true, error = null, message = null) }
+            runCatching {
+                val synced = repository.sync()
+                val maxId = synced.maxOfOrNull { activity -> activity.id } ?: 0
+                val previousMaxId = settingsStore.swapMaxActivityId(maxId)
+                settingsStore.recordSync(System.currentTimeMillis(), synced.count { it.id > previousMaxId })
+            }
+                .onSuccess {
+                    val ov = runCatching { repository.overview() }.getOrNull()
+                    _state.update {
+                        it.copy(working = false, overview = ov ?: it.overview, message = "Sincronizzazione completata")
+                    }
+                }
+                .onFailure { e -> _state.update { it.copy(working = false, error = friendly(e)) } }
+        }
+    }
 
     fun planWeekly() = action("Piano settimanale generato") { repository.planWeekly() }
 

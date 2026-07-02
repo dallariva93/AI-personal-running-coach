@@ -391,13 +391,18 @@ def run_single_analysis(
     coach: Coach | None = None,
     ref: date | None = None,
     source: ActivitySource | None = None,
+    presync: bool = True,
 ) -> CoachingReport:
     """Analyse one run (most recent by default) and persist the report.
 
     Triggers a Garmin sync first so any new activities and rich metrics
     that have appeared since the last ingest are reflected in the analysis.
+    ``presync=False`` skips that sync — used right after an ingest already
+    ran in the same request, so the auto-analysis doesn't trigger a second
+    redundant Garmin fetch (Roadmap Q2).
     """
-    sync_before_analysis(session, source=source)
+    if presync:
+        sync_before_analysis(session, source=source)
     summaries = _all_summaries(session)
     if not summaries:
         raise ValueError("Nessuna attività disponibile: esegui prima un ingest.")
