@@ -29,7 +29,7 @@ from app.processing import (
     weekly_buckets,
 )
 from app.schemas import ActivityOut, ReportOut, TrainingMetrics, WeeklyBucket
-from app.services import get_profile, latest_checkin, list_activities
+from app.services import get_profile, hrv_history, latest_checkin, list_activities
 from app.services.ingest import _all_summaries
 from app.services.plan_service import get_current_plan
 from app.services.workout_service import list_workouts
@@ -80,7 +80,9 @@ def overview(session: Session = Depends(get_session)) -> dict:
     )
     profile = get_profile(session)
     checkin = latest_checkin(session)
-    metrics: TrainingMetrics = compute_metrics(summaries, profile=profile, checkin=checkin)
+    metrics: TrainingMetrics = compute_metrics(
+        summaries, profile=profile, checkin=checkin, hrv_history=hrv_history(session)
+    )
     weekly: list[WeeklyBucket] = weekly_buckets(summaries, weeks=8)
     activities = [ActivityOut.model_validate(a) for a in list_activities(session, limit=30)]
     snapshot = build_snapshot(summaries)

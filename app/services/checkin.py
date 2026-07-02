@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from datetime import date, timedelta
+
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
@@ -45,3 +47,27 @@ def latest_checkin(session: Session, within_days: int = 2) -> DailyCheckin | Non
         select(DailyCheckinRow).order_by(DailyCheckinRow.date.desc()).limit(1)
     )
     return _row_to_schema(row) if row else None
+
+
+def hrv_history(
+    session: Session, ref: date | None = None, days: int = 35
+) -> list[tuple[date, float]]:
+    """Return ``(date, rmssd)`` pairs for the last ``days`` up to ``ref``.
+
+    Feeds :func:`app.processing.recovery.hrv_baseline` (GAP Q1).
+    """
+    ref = ref or date.today()
+    since = (ref - timedelta(days=days - 1)).isoformat()
+    rows = session.scalars(
+        select(DailyCheckinRow)
+        .where(DailyCheckinRow.date >= since, DailyCheckinRow.date <= ref.isoformat())
+        .where(DailyCheckinRow.hrv_rmssd.is_not(None))
+    ).all()
+    out: list[tuple[date, float]] = []
+    for row in rows:
+        try:
+            d = date.fromisoformat(row.date)
+        except ValueError:
+            continue
+        out.append((d, row.hrv_rmssd))
+    return out

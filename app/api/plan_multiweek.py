@@ -17,7 +17,7 @@ from app.schemas import (
     PlanSessionOut,
     TrainingPlanOut,
 )
-from app.services.checkin import latest_checkin
+from app.services.checkin import hrv_history, latest_checkin
 from app.services.ingest import _all_summaries
 from app.services.plan_service import (
     archive_plan,
@@ -59,7 +59,8 @@ def post_generate_plan(
     profile = get_profile(session)
     summaries = _all_summaries(session)
     metrics = compute_metrics(
-        summaries, profile=profile, checkin=latest_checkin(session)
+        summaries, profile=profile, checkin=latest_checkin(session),
+        hrv_history=hrv_history(session),
     ) if summaries else None
     coach = get_coach()
     try:

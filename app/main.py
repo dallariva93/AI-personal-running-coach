@@ -34,6 +34,7 @@ from app.processing import (
 from app.schemas import AthletePhysiology, AthleteProfile, DailyCheckin, Goal, HRZones
 from app.services import (
     get_profile,
+    hrv_history,
     ingest_runs,
     latest_checkin,
     list_activities,
@@ -106,7 +107,9 @@ def _dashboard_context(session: Session, request: Request, flash: str | None = N
     summaries = _all_summaries(session)
     profile = get_profile(session)
     checkin = latest_checkin(session)
-    metrics = compute_metrics(summaries, profile=profile, checkin=checkin)
+    metrics = compute_metrics(
+        summaries, profile=profile, checkin=checkin, hrv_history=hrv_history(session)
+    )
     weekly = weekly_buckets(summaries, weeks=8)
     max_week = max((w.distance_km for w in weekly), default=0.0) or 1.0
     goal = profile.goal if profile else None

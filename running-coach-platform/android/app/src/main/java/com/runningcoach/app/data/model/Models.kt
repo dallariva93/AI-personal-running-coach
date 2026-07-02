@@ -41,6 +41,8 @@ data class TrainingMetrics(
     @SerializedName("readiness_state") val readinessState: String? = null,
     @SerializedName("hrv_rmssd") val hrvRmssd: Double? = null,
     @SerializedName("hrv_status") val hrvStatus: String? = null,
+    @SerializedName("hrv_learning") val hrvLearning: Boolean = false,
+    @SerializedName("hrv_days_tracked") val hrvDaysTracked: Int? = null,
     // Goal-race forecast.
     @SerializedName("predicted_race_time") val predictedRaceTime: String? = null,
     @SerializedName("race_probability") val raceProbability: Double? = null,

@@ -225,7 +225,7 @@ private fun DetailsToggle(ov: Overview, prIds: Set<Int>) {
             }
             ov.checkin?.hrvRmssd?.let { hrv ->
                 Spacer(Modifier.height(12.dp))
-                HrvCard(hrv, ov.metrics.hrvStatus)
+                HrvCard(hrv, ov.metrics.hrvStatus, ov.metrics.hrvLearning, ov.metrics.hrvDaysTracked)
             }
             ov.gamification?.let { gam ->
                 if (gam.streakDays > 0 || gam.totalBadgesEarned > 0) {

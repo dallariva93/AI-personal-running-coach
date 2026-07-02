@@ -27,7 +27,7 @@ from app.processing import (
     weekly_buckets,
 )
 from app.schemas import CoachingResult, RunSummary
-from app.services.checkin import latest_checkin
+from app.services.checkin import hrv_history, latest_checkin
 from app.services.profile import get_profile, save_profile
 from app.storage import ObjectStore, get_object_store
 
@@ -414,7 +414,8 @@ def run_single_analysis(
     history = [s for s in summaries if s.date < target_summary.date or s != target_summary][:10]
     profile = get_profile(session)
     metrics = compute_metrics(
-        summaries, ref=ref, profile=profile, checkin=latest_checkin(session)
+        summaries, ref=ref, profile=profile, checkin=latest_checkin(session),
+        hrv_history=hrv_history(session, ref=ref),
     )
 
     coach = coach or get_coach()
@@ -440,7 +441,8 @@ def run_weekly_plan(
 
     profile = get_profile(session)
     metrics = compute_metrics(
-        summaries, ref=ref, profile=profile, checkin=latest_checkin(session)
+        summaries, ref=ref, profile=profile, checkin=latest_checkin(session),
+        hrv_history=hrv_history(session, ref=ref),
     )
     weekly = [b.model_dump() for b in weekly_buckets(summaries)]
     snapshot = build_snapshot(summaries, ref=ref)

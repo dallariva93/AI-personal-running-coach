@@ -63,6 +63,7 @@ from app.schemas import (
 )
 from app.services import (
     get_profile,
+    hrv_history,
     ingest_cross_training,
     ingest_runs,
     latest_checkin,
@@ -388,6 +389,7 @@ def get_metrics(session: Session = Depends(get_session)) -> TrainingMetrics:
         _all_summaries(session),
         profile=get_profile(session),
         checkin=latest_checkin(session),
+        hrv_history=hrv_history(session),
     )
 
 

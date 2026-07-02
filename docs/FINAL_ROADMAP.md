@@ -246,7 +246,23 @@ Le tabelle del §5 sono bucket per orizzonte; questa sezione è **l'ordine in cu
 
 ### FASE 0 — Fondamenta (settimane 1-2, quasi tutto parallelizzabile)
 
-#### Passo 1 — Q1 · HRV baseline individuale
+#### Passo 1 — Q1 · HRV baseline individuale ✅ FATTO — 2026-07-02
+
+**Implementato:** `hrv_baseline()` puro in `app/processing/recovery.py` (media ln(rMSSD)
+7gg vs media±0.75·SD dei 28gg precedenti, outlier <=0/>200ms scartati, `learning=True`
+sotto 21 giorni con fallback alle soglie assolute). `compute_metrics` accetta
+`hrv_history` (opzionale, retrocompatibile) e popola `hrv_status`/`hrv_learning`/
+`hrv_days_tracked` su `TrainingMetrics`; `readiness()` usa la banda relativa
+(-15/0/+10) quando la baseline è nota, altrimenti le soglie assolute di prima.
+Nuovo helper `hrv_history(session, ref, days=35)` in `app/services/checkin.py`,
+cablato in tutti i chiamanti di `compute_metrics` che hanno accesso alla sessione
+DB (decision_service, adaptive_plan, main.py, api/mobile.py, api/routes.py,
+api/plan_multiweek.py, services/ingest.py). Android: `HrvCard` mostra "Sto ancora
+imparando la tua baseline (giorno X/21)" quando `hrvLearning` è vero (nuovi campi
+`hrv_learning`/`hrv_days_tracked` nel DTO `TrainingMetrics`); build non eseguita
+(niente SDK in questo ambiente), verificata solo per bilanciamento sintassi/import.
+**Deviazione dal brief:** aggiunto `hrv_days_tracked` (non richiesto esplicitamente)
+per rendere possibile il testo "giorno X/21" lato Android senza inventare un numero.
 
 **Obiettivo.** Sostituire le soglie HRV assolute (25/55 ms) con la baseline personale: media mobile 7 giorni di ln(rMSSD) confrontata con media±0.75·SD dei 28 giorni precedenti.
 

@@ -540,7 +540,13 @@ fun ReportCard(title: String, report: Report?, modifier: Modifier = Modifier) {
 
 /** HRV RMSSD readiness card: big value + status pill + explanation. */
 @Composable
-fun HrvCard(hrvRmssd: Double, hrvStatus: String?, modifier: Modifier = Modifier) {
+fun HrvCard(
+    hrvRmssd: Double,
+    hrvStatus: String?,
+    hrvLearning: Boolean = false,
+    hrvDaysTracked: Int? = null,
+    modifier: Modifier = Modifier,
+) {
     val (color, label, explanation) = when (hrvStatus) {
         "high" -> Triple(BrandGreen, "HRV ALTO", "Ottimo recupero: il tuo sistema nervoso è riposato, puoi spingere oggi.")
         "low" -> Triple(Coral, "HRV BASSO", "Recupero insufficiente: allenamento leggero o riposo consigliato.")
@@ -548,31 +554,42 @@ fun HrvCard(hrvRmssd: Double, hrvStatus: String?, modifier: Modifier = Modifier)
     }
     var showTooltip by remember { mutableStateOf(false) }
     SurfaceCard(modifier) {
-        Row(verticalAlignment = Alignment.CenterVertically) {
-            // Big HRV value — long press for explanation
-            Column(
-                horizontalAlignment = Alignment.CenterHorizontally,
-                modifier = Modifier
-                    .width(72.dp)
-                    .pointerInput(Unit) { detectTapGestures(onLongPress = { showTooltip = true }) },
-            ) {
+        Column {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                // Big HRV value — long press for explanation
+                Column(
+                    horizontalAlignment = Alignment.CenterHorizontally,
+                    modifier = Modifier
+                        .width(72.dp)
+                        .pointerInput(Unit) { detectTapGestures(onLongPress = { showTooltip = true }) },
+                ) {
+                    Text(
+                        text = "${hrvRmssd.roundToInt()}",
+                        style = MaterialTheme.typography.headlineMedium,
+                        color = color,
+                        fontWeight = FontWeight.Bold,
+                    )
+                    Text(
+                        "ms RMSSD",
+                        style = MaterialTheme.typography.labelSmall.copy(textDecoration = TextDecoration.Underline),
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                }
+                Spacer(Modifier.width(16.dp))
+                Column(Modifier.weight(1f)) {
+                    Pill(label, color)
+                    Spacer(Modifier.height(8.dp))
+                    Text(explanation, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                }
+            }
+            if (hrvLearning) {
+                Spacer(Modifier.height(8.dp))
+                val day = hrvDaysTracked?.coerceAtMost(21) ?: 0
                 Text(
-                    text = "${hrvRmssd.roundToInt()}",
-                    style = MaterialTheme.typography.headlineMedium,
-                    color = color,
-                    fontWeight = FontWeight.Bold,
-                )
-                Text(
-                    "ms RMSSD",
-                    style = MaterialTheme.typography.labelSmall.copy(textDecoration = TextDecoration.Underline),
+                    "Sto ancora imparando la tua baseline (giorno $day/21)",
+                    style = MaterialTheme.typography.labelSmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
-            }
-            Spacer(Modifier.width(16.dp))
-            Column(Modifier.weight(1f)) {
-                Pill(label, color)
-                Spacer(Modifier.height(8.dp))
-                Text(explanation, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
             }
         }
     }

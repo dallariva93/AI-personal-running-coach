@@ -300,6 +300,8 @@ class TrainingMetrics(BaseModel):
     readiness_state: str | None = None  # green | amber | red | unknown
     hrv_rmssd: float | None = None
     hrv_status: str | None = None  # "low" | "normal" | "high" | "unknown"
+    hrv_learning: bool = False  # <21 days of history: baseline uses absolute fallback
+    hrv_days_tracked: int | None = None  # valid HRV days seen, for "day X/21" UI copy
     # Goal-race forecast (Fase 4): predicted finish + probability of the target.
     predicted_race_time: str | None = None
     race_probability: float | None = None  # 0-1

@@ -1,6 +1,6 @@
 """Service layer: orchestration across the independent modules."""
 
-from app.services.checkin import latest_checkin, save_checkin
+from app.services.checkin import hrv_history, latest_checkin, save_checkin
 from app.services.ingest import (
     ingest_cross_training,
     ingest_runs,
@@ -25,5 +25,6 @@ __all__ = [
     "get_profile",
     "save_profile",
     "latest_checkin",
+    "hrv_history",
     "save_checkin",
 ]

@@ -36,7 +36,7 @@ from app.logging_config import get_logger
 from app.processing import adapt_plan, compute_metrics
 from app.processing.decision import _HARD_TYPES, _REST_TYPES
 from app.schemas import TrainingMetrics
-from app.services.checkin import latest_checkin
+from app.services.checkin import hrv_history, latest_checkin
 from app.services.event_service import log_event, signal_list
 from app.services.ingest import _all_summaries
 from app.services.profile import get_profile
@@ -128,7 +128,10 @@ def adapt_plan_after_sync(db: Session, ref: date | None = None) -> dict:
     summaries = _all_summaries(db)
     profile = get_profile(db)
     checkin = latest_checkin(db)
-    metrics = compute_metrics(summaries, ref=ref, profile=profile, checkin=checkin)
+    metrics = compute_metrics(
+        summaries, ref=ref, profile=profile, checkin=checkin,
+        hrv_history=hrv_history(db, ref=ref),
+    )
 
     factor, notes = adapt_plan(metrics)
     ease = _should_ease(metrics)

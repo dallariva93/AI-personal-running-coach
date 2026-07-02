@@ -28,8 +28,8 @@ from app.processing.injury import injury_risk
 from app.processing.load import calibrate_garmin_factor, intensity_class, internal_load
 from app.processing.performance import predict_race_time
 from app.processing.periodization import build_periodization, phase_for
+from app.processing.recovery import hrv_baseline, readiness
 from app.processing.recovery import hrv_status as _hrv_status
-from app.processing.recovery import readiness
 from app.processing.snapshot import build_snapshot
 from app.processing.tuning import tsb_fatigue_threshold, tsb_overreach_threshold
 from app.schemas import (
@@ -219,12 +219,15 @@ def compute_metrics(
     ref: date | None = None,
     profile: AthleteProfile | None = None,
     checkin: DailyCheckin | None = None,
+    hrv_history: list[tuple[date, float]] | None = None,
 ) -> TrainingMetrics:
     """Compute the full :class:`TrainingMetrics` snapshot for the given runs.
 
     ``profile`` (optional) personalises internal load and the easy/hard split
     via the athlete's HR zones and thresholds. ``checkin`` (optional) adds a
-    subjective readiness signal.
+    subjective readiness signal. ``hrv_history`` (optional, ideally the last
+    35 days including today) enables the personal HRV baseline (GAP Q1);
+    without it HRV falls back to the absolute-threshold classification.
     """
     ref = ref or date.today()
     if not runs:
@@ -349,9 +352,16 @@ def compute_metrics(
     m.injury_level = risk.level
     m.injury_factors = risk.factors
     m.aerobic_efficiency, m.efficiency_trend = aerobic_efficiency(runs, ref=ref)
-    m.readiness, m.readiness_state = readiness(checkin)
     m.hrv_rmssd = checkin.hrv_rmssd if checkin else None
-    m.hrv_status = _hrv_status(m.hrv_rmssd)
+    if hrv_history:
+        baseline = hrv_baseline(hrv_history)
+        m.hrv_status = baseline.status
+        m.hrv_learning = baseline.learning
+        m.hrv_days_tracked = baseline.days_tracked
+        m.readiness, m.readiness_state = readiness(checkin, m.hrv_status)
+    else:
+        m.hrv_status = _hrv_status(m.hrv_rmssd)
+        m.readiness, m.readiness_state = readiness(checkin)
 
     # Latest available Garmin VO2max (most recent run that carries it).
     for r in sorted(runs, key=lambda x: x.date, reverse=True):

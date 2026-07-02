@@ -16,7 +16,7 @@ from app.db.models import CoachDecisionRow
 from app.logging_config import get_logger
 from app.processing import compute_metrics, decide_today
 from app.schemas import CoachDecision, PlanSessionOut, TrainingPlanOut
-from app.services.checkin import latest_checkin
+from app.services.checkin import hrv_history, latest_checkin
 from app.services.ingest import _all_summaries
 from app.services.plan_service import get_current_plan
 from app.services.profile import get_profile
@@ -56,7 +56,10 @@ def build_today_decision(
     summaries = _all_summaries(db)
     profile = get_profile(db)
     checkin = latest_checkin(db)
-    metrics = compute_metrics(summaries, ref=ref, profile=profile, checkin=checkin)
+    metrics = compute_metrics(
+        summaries, ref=ref, profile=profile, checkin=checkin,
+        hrv_history=hrv_history(db, ref=ref),
+    )
     plan = get_current_plan(db)
     today_session = session_on_date(plan, ref)
 
