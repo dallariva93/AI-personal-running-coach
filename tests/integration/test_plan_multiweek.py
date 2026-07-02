@@ -221,3 +221,44 @@ def test_session_complete_toggle_404_on_bad_id(client):
 def test_delete_plan_404_on_bad_id(client):
     resp = client.delete("/api/plan/99999")
     assert resp.status_code == 404
+
+
+def test_generate_plan_honors_chat_agreed_week_structure(client):
+    """The app plan must match the week agreed in the pre-plan chat.
+
+    In tests the coach is the offline fallback, which ignores the runner
+    context entirely — exactly the worst case. The deterministic enforcement
+    pass must still reshape the plan to the agreed structure.
+    """
+    import json as _json
+
+    runner_context = _json.dumps(
+        {
+            "weekly_km": 45,
+            "threshold_pace": "4:30/km",
+            "week_structure": [
+                {"day": "mar", "type": "intervals", "note": "Ripetute col gruppo"},
+                {"day": "gio", "type": "tempo", "pace": "4:30/km"},
+                {"day": "dom", "type": "long"},
+                {"day": "lun", "type": "rest"},
+            ],
+        }
+    )
+    payload = dict(_GENERATE_PAYLOAD, runner_context=runner_context)
+    resp = client.post("/api/plan/generate", json=payload)
+    assert resp.status_code == 201, resp.text
+    body = resp.json()
+
+    checked = 0
+    for week in body["weeks"]:
+        by_day = {s["day_of_week"]: s for s in week["sessions"]}
+        # The goal-race week keeps its own structure.
+        if any(s["session_type"] == "race" for s in week["sessions"]):
+            continue
+        assert by_day[1]["session_type"] == "intervals", f"week {week['week_number']}"
+        assert by_day[3]["session_type"] == "tempo", f"week {week['week_number']}"
+        assert by_day[3]["target_pace"] == "4:30/km"
+        assert by_day[6]["session_type"] == "long", f"week {week['week_number']}"
+        assert by_day[0]["session_type"] == "rest", f"week {week['week_number']}"
+        checked += 1
+    assert checked > 0

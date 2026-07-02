@@ -41,6 +41,21 @@ def generate_plan(
     # Generate plan data from coach
     plan_data = coach.plan_multiweek(request, profile, metrics)
 
+    # Guarantee the plan matches what was agreed in the pre-plan chat: the
+    # generator is a separate model call (with an offline fallback) and can
+    # drift from the agreed week. This deterministic pass reshapes every week
+    # to the agreed day → session-type skeleton from the runner context.
+    from app.processing import enforce_week_structure
+
+    plan_data, enforcement_notes = enforce_week_structure(
+        plan_data, request.runner_context
+    )
+    if enforcement_notes:
+        logger.info(
+            "Plan reshaped to honor the chat agreement: %s",
+            "; ".join(enforcement_notes),
+        )
+
     weeks_list = plan_data.get("weeks", [])
     weeks_total = len(weeks_list)
     start_date = plan_data.get("start_date", date.today().isoformat())

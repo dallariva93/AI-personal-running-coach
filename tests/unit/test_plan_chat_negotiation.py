@@ -19,8 +19,8 @@ def test_plan_chat_prompt_has_negotiation_and_categories():
     # Safety rules gate the closure, and the heavy-week explicit confirmation exists.
     assert "REGOLE DI SICUREZZA" in p
     assert "conferma esplicita" in p
-    # Token-efficient batching directive.
-    assert "UN SOLO MESSAGGIO" in p or "un unico messaggio" in p
+    # Token-efficient batching directive (superseded by the confirmation budget).
+    assert "Accorpa TUTTO" in p
     # Sentinels + the new structured context fields the fix introduces.
     assert "§CTX§" in p and "§/CTX§" in p and "§READY§" in p
     assert "fixed_sessions" in p
@@ -28,11 +28,26 @@ def test_plan_chat_prompt_has_negotiation_and_categories():
     assert "overrides" in p
 
 
+def test_plan_chat_prompt_batches_confirmations_and_contracts_week():
+    p = prompts.PLAN_CHAT_SYSTEM_PROMPT
+    # Hard confirmation budget: at most two confirmation messages, batched.
+    assert "BUDGET DI CONFERME" in p
+    assert "MASSIMO" in p and "DUE" in p
+    assert "CHIUDI SUBITO" in p
+    # The agreed week is a contract mirrored into the context verbatim.
+    assert "week_structure" in p
+    assert "GIORNO PER GIORNO" in p
+    assert '"rest"' in p  # rest days are explicit in the 7-day structure
+
+
 def test_multiweek_prompt_honors_fixed_sessions():
     p = prompts.MULTIWEEK_PLAN_SYSTEM_PROMPT
     assert "VINCOLI DELL'ATLETA" in p
     assert "fixed_sessions" in p
     assert "NON spostarle" in p or "non spostarle" in p.lower()
+    # The agreed week is a per-week contract for the generator too.
+    assert "week_structure" in p
+    assert "CONTRATTO" in p
 
 
 def test_build_message_injects_fixed_sessions_as_hard_constraints():

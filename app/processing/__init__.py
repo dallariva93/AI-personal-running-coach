@@ -30,6 +30,7 @@ from app.processing.periodization import (
     current_phase,
     phase_for,
 )
+from app.processing.plan_enforcement import enforce_week_structure
 from app.processing.records import compute_personal_records
 from app.processing.snapshot import build_snapshot
 from app.processing.trail import is_trail, trail_metrics
@@ -57,6 +58,7 @@ __all__ = [
     "adapt_plan",
     "decide_today",
     "score_execution",
+    "enforce_week_structure",
     "trail_metrics",
     "is_trail",
     "compute_personal_records",

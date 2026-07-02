@@ -294,29 +294,42 @@ vincoli di categoria 1 che l'atleta non può cambiare, NON bloccare e NON genera
 silenzio: CHIEDI una conferma esplicita ("La settimana è impegnativa per gli eventi \
 fissi: procedo così?").
 
-UN SOLO MESSAGGIO: quando devi riepilogare, sollevare dubbi di sicurezza (con la loro \
-alternativa), chiedere la conferma per la settimana pesante o domande residue, METTI \
-TUTTO in un unico messaggio. Rispecchia sempre ciò che hai capito, così l'atleta può \
-correggerti (es. "Ho segnato: martedì ripetute col gruppo, giovedì gara 4:30, domenica \
-lungo 14-18. Confermi?").
+BUDGET DI CONFERME (regola dura): nell'INTERA conversazione puoi mandare AL MASSIMO \
+DUE messaggi che chiedono conferma — idealmente UNO. Accorpa TUTTO in quel messaggio: \
+riepilogo di ciò che hai capito, dubbi di sicurezza con la loro alternativa, conferma \
+per settimana pesante, domande residue. NON chiedere conferma di cose già confermate o \
+già dette. Quando l'atleta risponde "ok/va bene/confermo/procedi", CHIUDI SUBITO in \
+quello stesso turno: niente altre domande, niente secondo riepilogo.
+
+Esempio di messaggio unico di conferma: "Ho segnato: martedì ripetute col gruppo, \
+giovedì gara 4:30, domenica lungo 14-18; gli altri giorni facile o riposo. Unico punto: \
+la settimana è intensa per gli eventi fissi — procedo così? (sì/no)".
 
 CHIUSURA: chiudi SOLO quando (a) hai la fisiologia minima (volume + soglia o easy + \
 stato fisico) e la struttura; (b) nessun problema di sicurezza aperto (risolto o \
 correttivo accettato); (c) se serviva la conferma per settimana pesante, l'hai ottenuta. \
-Allora scrivi un breve riepilogo e AGGIUNGI in fondo, su righe separate, ESATTAMENTE:
+Allora scrivi il riepilogo FINALE con la settimana tipo GIORNO PER GIORNO (lun→dom) — \
+sarà esattamente la settimana del piano creato nell'app — e AGGIUNGI in fondo, su righe \
+separate, ESATTAMENTE:
 
 §CTX§
 {"weekly_km":<num|null>,"long_run_km":<num|null>,"threshold_pace":"<M:SS/km|null>",\
 "easy_pace":"<M:SS/km|null>","race_pbs":{"5k":<|null>,"10k":<|null>,"half":<|null>,\
 "marathon":<|null>},"injuries":<"testo"|null>,"training_days":<num|null>,\
-"fixed_sessions":[{"day":"lun|mar|mer|gio|ven|sab|dom","type":"easy|long|tempo|intervals|race|cross",\
-"pace":"<M:SS/km|null>","note":"<testo|null>"}],\
+"week_structure":[{"day":"lun|mar|mer|gio|ven|sab|dom","type":"easy|long|tempo|intervals|race|cross|rest",\
+"pace":"<M:SS/km|null>","distance_km":<num|null>,"note":"<testo|null>"}],\
+"fixed_sessions":[{"day":"...","type":"...","pace":"<|null>","note":"<|null>"}],\
 "constraints":["<testo>"],"overrides":["<testo>"],"notes":"<testo|>"}
 §/CTX§
 §READY§
 
+REGOLA CRITICA su `week_structure`: deve rispecchiare ESATTAMENTE, giorno per giorno, \
+la settimana che hai appena descritto nel riepilogo visibile (tutti i 7 giorni, riposo \
+incluso come type "rest"). Il piano nell'app verrà costruito ALLA LETTERA da questo \
+campo: qualsiasi differenza tra riepilogo e week_structure è un errore grave.
+
 Usa null per gli sconosciuti e liste vuote [] se non applicabile. In `fixed_sessions` \
-metti gli impegni fissi (categoria 1), in `constraints` disponibilità/preferenze \
+metti solo gli impegni fissi (categoria 1), in `constraints` disponibilità/preferenze \
 (categoria 2), in `overrides` ciò che l'atleta ha scelto nonostante un tuo avviso. \
 NON includere §CTX§/§READY§ nei messaggi intermedi.
 """
@@ -335,6 +348,10 @@ senza commenti, senza testo aggiuntivo prima o dopo. Il tuo output inizia con \
 { e termina con }. Qualsiasi testo fuori dal JSON invalida la risposta.
 
 VINCOLI DELL'ATLETA (PRIORITÀ MASSIMA — se presenti nel contesto runner):
+- week_structure: la settimana tipo CONCORDATA in chat con l'atleta. È un CONTRATTO:
+  ogni settimana del piano (tranne quella della gara obiettivo) deve seguire ESATTAMENTE
+  questa mappa giorno → tipo seduta (e passo se indicato). La periodizzazione varia SOLO
+  volumi, distanze e dettagli delle sedute, MAI i giorni o i tipi.
 - fixed_sessions: sedute FISSE su giorni specifici (gruppo corsa, eventi, gare).
   Posizionale ESATTAMENTE su quel day_of_week con il session_type indicato (e il
   passo se dato); NON spostarle né cambiarne il tipo. Costruisci il resto della
@@ -471,6 +488,9 @@ def build_multiweek_plan_message(
         runner_context_section = (
             "\nPROFILO E VINCOLI DA CHAT PRELIMINARE (PRIORITÀ MASSIMA):\n"
             f"{request.runner_context}\n"
+            "→ week_structure: è la settimana CONCORDATA con l'atleta — ogni settimana "
+            "del piano (tranne quella della gara) deve seguirla ESATTAMENTE, giorno per "
+            "giorno e tipo per tipo. La periodizzazione varia solo volumi e dettagli.\n"
             "→ fixed_sessions: posizionale ESATTAMENTE nei giorni indicati con quel "
             "tipo/passo; sono impegni fissi, NON spostarle. Costruisci il resto della "
             "settimana attorno ad esse (≥48h tra le sedute di qualità).\n"
