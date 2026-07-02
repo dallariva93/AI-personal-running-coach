@@ -67,7 +67,17 @@ def overview(session: Session = Depends(get_session)) -> dict:
     injury, readiness and intensity signals, and the response also bundles the
     athlete profile, the 6-month snapshot, the goal-race prediction and the
     periodization plan so the app can render the coaching screens natively.
+
+    Cached (Roadmap Q5): the full payload is O(all activities) to build, so it
+    is memoised and only rebuilt after a write (or a new day). See
+    ``app.services.cache``.
     """
+    from app.services.cache import get_or_compute
+
+    return get_or_compute("mobile_overview", lambda: _build_overview(session))
+
+
+def _build_overview(session: Session) -> dict:
     from sqlalchemy import select as sa_select
 
     settings = get_settings()

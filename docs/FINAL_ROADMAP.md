@@ -370,7 +370,30 @@ richiama `moveSession` con id+data sorgente per invertire lo swap.
 
 ---
 
-#### Passo 4 — Q5 · Cache dell'overview + heatmap precomputata
+#### Passo 4 — Q5 · Cache dell'overview + heatmap precomputata ✅ FATTO — 2026-07-02
+
+**Implementato:** `app/services/cache.py` con `get_or_compute(key, compute)` e
+invalidazione basata su versione `(generation, oggi)`. `/api/mobile/overview` e
+`GET /api/activities/heatmap` ora costruiscono il payload dietro la cache; hit →
+payload servito verbatim, miss → ricompute (prima chiamata, dopo una scrittura,
+o cambio giorno). Benchmark locale (dataset demo, 9 corse): cached **~3.5 ms** vs
+recompute **~11 ms** — sotto il target di 30 ms, e il divario cresce con lo storico
+(il recompute è O(N attività), la cache è piatta). Test: seconda chiamata overview
+non riesegue `compute_metrics` (spy), una scrittura rigenera, i read puri non
+invalidano, heatmap cached.
+
+**Deviazione dal brief (documentata):** il brief proponeva una versione-fingerprint
+`(max(Activity.id), count(Activity), latest_checkin.date, active_plan.id, oggi)`.
+Quel fingerprint è **cieco agli update in-place** che non toccano id/count — modifica
+RPE/note, re-check-in dello stesso giorno, cambio `execution_status` di una seduta,
+tweak del piano adattivo — e servirebbe un overview stantìo dopo ognuno di essi.
+Sostituito con un **contatore di generazione** bumpato da **un solo** listener
+SQLAlchemy `after_flush` (nessun hook sparso, l'obiettivo del brief): cattura ogni
+mutazione a costo ~zero, senza colonne/migrazioni aggiuntive. Caveat multi-worker
+documentato nel docstring: il contatore è per-processo, quindi un deploy multi-worker
+dovrà passare a uno store condiviso (Redis) + fingerprint da DB. La coerenza è
+garantita perché il deploy attuale è single-worker (uvicorn workers=1). Le fixture di
+test resettano la cache tra database (`invalidate_all` in `db_env`).
 
 **Obiettivo.** Apertura app <100ms percepiti: `/api/mobile/overview` oggi ricalcola tutto (metriche, PR, badge, snapshot, prediction, decisione) su tutte le attività a ogni chiamata.
 

@@ -21,6 +21,7 @@ def db_env(tmp_path, monkeypatch):
     """Point the app at a fresh temporary SQLite database for each test."""
     from app.config import get_settings
     from app.db.database import init_db, reset_engine
+    from app.services.cache import invalidate_all
 
     db_file = tmp_path / "test.db"
     monkeypatch.setenv("DATABASE_URL", f"sqlite:///{db_file}")
@@ -29,6 +30,9 @@ def db_env(tmp_path, monkeypatch):
     monkeypatch.setenv("GARMIN_PASSWORD", "")
     get_settings.cache_clear()
     reset_engine()
+    # The Q5 in-process cache is a module global: drop it so a fresh test DB
+    # can't be served a payload cached against the previous one.
+    invalidate_all()
     init_db()
     yield
     reset_engine()

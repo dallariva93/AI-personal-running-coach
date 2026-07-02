@@ -597,6 +597,13 @@ def get_vo2max_history(session: Session = Depends(get_session)) -> Vo2maxHistory
 
 @router.get("/activities/heatmap", response_model=HeatmapResponse)
 def get_heatmap(session: Session = Depends(get_session)) -> HeatmapResponse:
+    """Cached (Roadmap Q5): parsing 500 polylines is redone only after a write."""
+    from app.services.cache import get_or_compute
+
+    return get_or_compute("heatmap", lambda: _build_heatmap(session))
+
+
+def _build_heatmap(session: Session) -> HeatmapResponse:
     rows = session.query(Activity).filter(
         Activity.route_polyline.isnot(None),
         Activity.sport == "run",
