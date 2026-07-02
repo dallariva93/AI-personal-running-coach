@@ -179,6 +179,7 @@ fun PlanScreen(
     onDismissDialog: () -> Unit,
     onSendChatMessage: (String) -> Unit = {},
     onOpenWorkouts: () -> Unit = {},
+    onOpenCalendar: () -> Unit = {},
 ) {
     Box(
         Modifier
@@ -210,6 +211,15 @@ fun PlanScreen(
                     CurrentWeekCard(plan, onToggleSession)
                     Spacer(Modifier.height(12.dp))
                     FullPlanView(plan, onToggleSession)
+                    Spacer(Modifier.height(12.dp))
+                    OutlinedButton(
+                        onClick = onOpenCalendar,
+                        modifier = Modifier.fillMaxWidth(),
+                    ) {
+                        Icon(Icons.Filled.CalendarMonth, contentDescription = null)
+                        Spacer(Modifier.width(8.dp))
+                        Text("Modifica nel calendario")
+                    }
                     Spacer(Modifier.height(16.dp))
                     Row(
                         Modifier.fillMaxWidth(),

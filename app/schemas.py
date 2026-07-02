@@ -635,6 +635,19 @@ class TrainingPlanOut(BaseModel):
     weeks: list[PlanWeekOut]
 
 
+class PlanSessionMoveRequest(BaseModel):
+    """Move a plan session to another calendar day (Roadmap #12)."""
+
+    target_date: str  # ISO YYYY-MM-DD, within the plan and not in the past
+
+
+class PlanMoveResult(BaseModel):
+    """Outcome of a session move: the recalculated plan plus safety warnings."""
+
+    plan: TrainingPlanOut
+    warnings: list[str] = Field(default_factory=list)
+
+
 class PlanChatMessage(BaseModel):
     """One turn in the pre-plan AI chat."""
 

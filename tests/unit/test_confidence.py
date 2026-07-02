@@ -1,7 +1,7 @@
 """Unit tests for coaching confidence and missing data (Roadmap #5)."""
 
 from app.coaching.coach import OfflineCoach
-from app.schemas import RunSummary, TrainingMetrics, AthleteProfile, Goal
+from app.schemas import AthleteProfile, Goal, RunSummary, TrainingMetrics
 
 
 def test_confidence_high_all_data_present():

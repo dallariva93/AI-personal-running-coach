@@ -24,7 +24,9 @@ import com.runningcoach.app.data.model.PlanChatMessage
 import com.runningcoach.app.data.model.PlanChatRequest
 import com.runningcoach.app.data.model.PlanChatResponse
 import com.runningcoach.app.data.model.PlanGenerateRequest
+import com.runningcoach.app.data.model.PlanMoveResult
 import com.runningcoach.app.data.model.PlanSession
+import com.runningcoach.app.data.model.PlanSessionMoveRequest
 import com.runningcoach.app.data.model.Report
 import com.runningcoach.app.data.model.StravaStatus
 import com.runningcoach.app.data.model.TrainingPlan
@@ -97,6 +99,9 @@ class CoachRepository(private val settings: SettingsStore) {
 
     suspend fun toggleSessionComplete(sessionId: Int): PlanSession =
         api().toggleSessionComplete(sessionId)
+
+    suspend fun movePlanSession(sessionId: Int, targetDate: String): PlanMoveResult =
+        api().movePlanSession(sessionId, PlanSessionMoveRequest(targetDate))
 
     suspend fun archivePlan(planId: Int) {
         api().archivePlan(planId)

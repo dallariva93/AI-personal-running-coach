@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from datetime import UTC, date, datetime
+from datetime import UTC, date, datetime, timedelta
 
 from sqlalchemy import select
 from sqlalchemy.orm import Session
@@ -13,6 +13,7 @@ from app.logging_config import get_logger
 from app.schemas import (
     AthleteProfile,
     PlanGenerateRequest,
+    PlanMoveResult,
     PlanSessionOut,
     PlanWeekOut,
     TrainingMetrics,
@@ -20,6 +21,10 @@ from app.schemas import (
 )
 
 logger = get_logger("app.services.plan_service")
+
+# Quality/hard session types (English + Italian labels) for adjacency warnings.
+_HARD = {"tempo", "intervals", "intervalli", "vo2max", "threshold", "soglia", "race", "gara"}
+_LONG = {"long", "lungo"}
 
 
 def generate_plan(
@@ -155,6 +160,149 @@ def archive_plan(db: Session, plan_id: int) -> bool:
     plan.status = "archived"
     db.flush()
     return True
+
+
+def _session_date(start: date, week_number: int, day_of_week: int) -> date:
+    return start + timedelta(days=(week_number - 1) * 7 + day_of_week)
+
+
+def move_session(
+    db: Session, session_id: int, target_date_str: str, ref: date | None = None
+) -> PlanMoveResult:
+    """Move a plan session to another calendar day (Calendar editor, Roadmap #12).
+
+    Semantics: the moved session and whatever sits on the target day *swap*
+    places (cross-week moves swap the week too), preserving the
+    7-sessions-per-week invariant and the generated volumes/details. Completed
+    sessions and the goal race never move. After the swap the plan is
+    re-checked and safety warnings (quality days back-to-back, long run right
+    after a hard day) are returned so the athlete sees the consequence of the
+    edit — the deterministic "recalc" the roadmap asks for.
+
+    Raises ``LookupError`` when the session doesn't exist and ``ValueError``
+    for invalid moves.
+    """
+    ref = ref or date.today()
+    sess = db.get(TrainingPlanSession, session_id)
+    if sess is None:
+        raise LookupError(f"Sessione {session_id} non trovata.")
+
+    week = db.get(TrainingPlanWeek, sess.week_id)
+    plan = db.get(TrainingPlan, week.plan_id) if week is not None else None
+    if plan is None or plan.status != "active":
+        raise ValueError("La seduta non appartiene a un piano attivo.")
+
+    try:
+        start = date.fromisoformat(plan.start_date)
+        target = date.fromisoformat(target_date_str[:10])
+    except (ValueError, TypeError) as exc:
+        raise ValueError("Data di destinazione non valida (usa YYYY-MM-DD).") from exc
+
+    plan_end = start + timedelta(days=plan.weeks_total * 7 - 1)
+    if not (start <= target <= plan_end):
+        raise ValueError("La data di destinazione è fuori dal piano.")
+    if target < ref:
+        raise ValueError("Non puoi spostare una seduta nel passato.")
+
+    if sess.completed:
+        raise ValueError("La seduta è già completata: non si sposta.")
+    if (sess.session_type or "").lower() in ("race", "gara"):
+        raise ValueError("La gara obiettivo non si sposta dal calendario.")
+
+    source_date = _session_date(start, week.week_number, sess.day_of_week)
+    if target == source_date:
+        return PlanMoveResult(plan=_compute_plan_out(plan), warnings=[])
+
+    target_offset = (target - start).days
+    target_week_no = target_offset // 7 + 1
+    target_dow = target_offset % 7
+    target_week = next(
+        (w for w in plan.weeks if w.week_number == target_week_no), None
+    )
+    if target_week is None:
+        raise ValueError("Settimana di destinazione non trovata nel piano.")
+    other = next(
+        (s for s in target_week.sessions if s.day_of_week == target_dow), None
+    )
+
+    if other is not None:
+        if other.completed:
+            raise ValueError("Il giorno di destinazione ha una seduta già completata.")
+        if (other.session_type or "").lower() in ("race", "gara"):
+            raise ValueError("Il giorno di destinazione è la gara obiettivo.")
+
+    before = {
+        "date": source_date.isoformat(),
+        "session_type": sess.session_type,
+        "title": sess.title,
+    }
+
+    # Swap positions (and weeks, for cross-week moves).
+    source_dow = sess.day_of_week
+    sess.day_of_week = target_dow
+    if other is not None:
+        other.day_of_week = source_dow
+        other.week_id = week.id
+    if target_week.id != week.id:
+        sess.week_id = target_week.id
+    db.flush()
+    # week_id was swapped directly, so the in-memory week.sessions collections
+    # are stale — expire everything and let the ORM reload fresh state.
+    db.expire_all()
+
+    warnings = _move_warnings(plan, start, {source_date, target})
+
+    from app.services.event_service import log_event
+
+    log_event(
+        db,
+        date_str=target.isoformat(),
+        event_type="action",
+        title=f"Seduta spostata: {sess.title}",
+        detail=(
+            f"{sess.title} spostata da {source_date.isoformat()} a {target.isoformat()}"
+            + (f" (scambiata con {other.title})" if other is not None else "")
+        ),
+        before=before,
+        after={"date": target.isoformat(), "session_type": sess.session_type},
+        plan_session_id=sess.id,
+    )
+
+    return PlanMoveResult(plan=_compute_plan_out(plan), warnings=warnings)
+
+
+def _move_warnings(
+    plan: TrainingPlan, start: date, touched: set[date]
+) -> list[str]:
+    """Safety warnings around the days affected by a move."""
+    by_date: dict[date, str] = {}
+    for wk in plan.weeks:
+        for s in wk.sessions:
+            by_date[_session_date(start, wk.week_number, s.day_of_week)] = (
+                s.session_type or ""
+            ).lower()
+
+    warnings: list[str] = []
+    for day in sorted(touched):
+        stype = by_date.get(day, "")
+        for neighbor in (day - timedelta(days=1), day + timedelta(days=1)):
+            ntype = by_date.get(neighbor, "")
+            if stype in _HARD and ntype in _HARD:
+                pair = " e ".join(
+                    d.isoformat() for d in sorted((day, neighbor))
+                )
+                msg = f"Due sedute di qualità in giorni consecutivi ({pair})."
+                if msg not in warnings:
+                    warnings.append(msg)
+        if stype in _LONG and by_date.get(day - timedelta(days=1), "") in _HARD:
+            warnings.append(
+                f"Il lungo del {day.isoformat()} cade il giorno dopo una seduta dura."
+            )
+        if stype in _HARD and by_date.get(day - timedelta(days=1), "") in _LONG:
+            warnings.append(
+                f"Seduta di qualità il {day.isoformat()} subito dopo il lungo."
+            )
+    return warnings
 
 
 def _compute_plan_out(plan: TrainingPlan) -> TrainingPlanOut:

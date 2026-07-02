@@ -146,6 +146,35 @@ class PlanViewModel(private val repository: CoachRepository) : ViewModel() {
         }
     }
 
+    /** Move a plan session to another day (calendar editor, Roadmap #12). */
+    fun moveSession(sessionId: Int, targetDate: String) {
+        viewModelScope.launch {
+            runCatching { repository.movePlanSession(sessionId, targetDate) }
+                .onSuccess { result ->
+                    val msg = if (result.warnings.isEmpty()) {
+                        "Seduta spostata."
+                    } else {
+                        "Spostata — ⚠ " + result.warnings.joinToString(" ")
+                    }
+                    _state.update {
+                        it.copy(plan = result.plan, successMessage = msg, error = null)
+                    }
+                }
+                .onFailure { e ->
+                    // Surface the backend's Italian reason for invalid moves
+                    // (race day, completed session, past date…) instead of a
+                    // generic HTTP error.
+                    val detail = (e as? retrofit2.HttpException)
+                        ?.response()?.errorBody()?.string()
+                        ?.let { body ->
+                            Regex("\"detail\"\\s*:\\s*\"([^\"]+)\"")
+                                .find(body)?.groupValues?.get(1)
+                        }
+                    _state.update { it.copy(error = detail ?: friendly(e)) }
+                }
+        }
+    }
+
     fun archivePlan(planId: Int) {
         viewModelScope.launch {
             _state.update { it.copy(loading = true, error = null) }

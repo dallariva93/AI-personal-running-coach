@@ -278,6 +278,17 @@ data class PlanChatResponse(
     @SerializedName("runner_context") val runnerContext: String? = null,
 )
 
+/** Move a plan session to another calendar day (calendar editor, Roadmap #12). */
+data class PlanSessionMoveRequest(
+    @SerializedName("target_date") val targetDate: String,
+)
+
+/** Result of a session move: the recalculated plan plus safety warnings. */
+data class PlanMoveResult(
+    @SerializedName("plan") val plan: TrainingPlan,
+    @SerializedName("warnings") val warnings: List<String> = emptyList(),
+)
+
 /** Request body for generating a new multi-week training plan. */
 data class PlanGenerateRequest(
     @SerializedName("goal_type") val goalType: String = "marathon",

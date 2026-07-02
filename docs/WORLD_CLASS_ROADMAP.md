@@ -278,9 +278,11 @@ Recap post-gara con risultato, storia, strategia, cosa ha funzionato, cosa migli
 - ROI: altissimo
 - Tempo stimato: 3-4 settimane
 
-### 12. Calendar plan editor
+### 12. Calendar plan editor ✅ FATTO
 
 Calendario con sedute spostabili e ricalcolo AI del piano.
+
+**Implementato:** `PATCH /api/plan/sessions/{id}/move` (`plan_service.move_session`): la seduta e quella del giorno di destinazione si SCAMBIANO posto (anche tra settimane diverse), preservando l'invariante di 7 sessioni/settimana e i volumi generati. Blocchi: sedute completate, gara obiettivo, date fuori piano o nel passato. Dopo lo spostamento il piano viene rivalidato deterministicamente e la risposta include warning di sicurezza (qualità in giorni consecutivi, lungo subito dopo una seduta dura) — il "ricalcolo" del roadmap. Ogni spostamento è registrato nell'audit log con before/after. Android: `PlanCalendarScreen` — calendario mensile con l'intero piano (pallini colorati per tipo, completate attenuate), tap sul giorno → dettaglio seduta → "Sposta" → tocca destinazione → conferma; i warning arrivano via snackbar; navigazione mese limitata alla durata del piano; raggiungibile da "Modifica nel calendario" nel PlanScreen.
 
 - Impatto utente: 9
 - Complessità tecnica: 7

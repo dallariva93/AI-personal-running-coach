@@ -1,15 +1,15 @@
 """Unit tests for shoe tracking service (Roadmap #6)."""
 
+from app.db.models import Activity
+from app.schemas import ShoeIn
 from app.services.shoe_service import (
+    assign_activity_shoe,
     create_shoe,
-    update_shoe,
     delete_shoe,
     get_shoe,
     list_shoes,
-    assign_activity_shoe,
+    update_shoe,
 )
-from app.schemas import ShoeIn
-from app.db.models import Activity, Shoe
 
 
 def test_create_shoe(session):

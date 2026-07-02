@@ -1,7 +1,7 @@
 """Unit tests for onboarding status (Roadmap #4)."""
 
-from app.services.onboarding import get_onboarding_status
 from app.db.models import Activity, CoachDecisionRow, DailyCheckinRow, TrainingPlan
+from app.services.onboarding import get_onboarding_status
 
 
 def test_onboarding_all_empty(session):
@@ -44,8 +44,8 @@ def test_onboarding_set_goal(session):
     )
     session.add(activity)
 
-    from app.services.profile import save_profile
     from app.schemas import AthleteProfile, Goal
+    from app.services.profile import save_profile
 
     profile = AthleteProfile(
         goal=Goal(goal_type="marathon", target_date="2026-12-01", target_time="3:30:00")
@@ -70,8 +70,8 @@ def test_onboarding_first_checkin(session):
     )
     session.add(activity)
 
-    from app.services.profile import save_profile
     from app.schemas import AthleteProfile, Goal
+    from app.services.profile import save_profile
 
     profile = AthleteProfile(
         goal=Goal(goal_type="marathon", target_date="2026-12-01", target_time="3:30:00")
@@ -100,8 +100,8 @@ def test_onboarding_generate_plan(session):
     )
     session.add(activity)
 
-    from app.services.profile import save_profile
     from app.schemas import AthleteProfile, Goal
+    from app.services.profile import save_profile
 
     profile = AthleteProfile(
         goal=Goal(goal_type="marathon", target_date="2026-12-01", target_time="3:30:00")
@@ -141,8 +141,8 @@ def test_onboarding_first_recommendation(session):
     )
     session.add(activity)
 
-    from app.services.profile import save_profile
     from app.schemas import AthleteProfile, Goal
+    from app.services.profile import save_profile
 
     profile = AthleteProfile(
         goal=Goal(goal_type="marathon", target_date="2026-12-01", target_time="3:30:00")
@@ -193,8 +193,8 @@ def test_onboarding_complete_flow(session):
     )
     session.add(activity)
 
-    from app.services.profile import save_profile
     from app.schemas import AthleteProfile, Goal
+    from app.services.profile import save_profile
 
     profile = AthleteProfile(
         goal=Goal(goal_type="marathon", target_date="2026-12-01", target_time="3:30:00")

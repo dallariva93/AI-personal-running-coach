@@ -23,7 +23,9 @@ import com.runningcoach.app.data.model.PeriodStats
 import com.runningcoach.app.data.model.PlanChatRequest
 import com.runningcoach.app.data.model.PlanChatResponse
 import com.runningcoach.app.data.model.PlanGenerateRequest
+import com.runningcoach.app.data.model.PlanMoveResult
 import com.runningcoach.app.data.model.PlanSession
+import com.runningcoach.app.data.model.PlanSessionMoveRequest
 import com.runningcoach.app.data.model.Report
 import com.runningcoach.app.data.model.StravaStatus
 import com.runningcoach.app.data.model.TrainingPlan
@@ -112,6 +114,12 @@ interface ApiService {
 
     @PATCH("api/plan/sessions/{id}/complete")
     suspend fun toggleSessionComplete(@Path("id") id: Int): PlanSession
+
+    @PATCH("api/plan/sessions/{id}/move")
+    suspend fun movePlanSession(
+        @Path("id") id: Int,
+        @Body request: PlanSessionMoveRequest,
+    ): PlanMoveResult
 
     @DELETE("api/plan/{id}")
     suspend fun archivePlan(@Path("id") id: Int): Map<String, Boolean>

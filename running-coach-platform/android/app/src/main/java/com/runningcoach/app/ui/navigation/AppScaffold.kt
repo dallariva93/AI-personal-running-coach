@@ -48,6 +48,7 @@ import com.runningcoach.app.ui.screens.CrossTrainingScreen
 import com.runningcoach.app.ui.screens.HeatmapScreen
 import com.runningcoach.app.ui.screens.HomeScreen
 import com.runningcoach.app.ui.screens.MapFullscreenScreen
+import com.runningcoach.app.ui.screens.PlanCalendarScreen
 import com.runningcoach.app.ui.screens.PlanScreen
 import com.runningcoach.app.ui.screens.SettingsScreen
 import com.runningcoach.app.ui.screens.ShoesScreen
@@ -321,6 +322,16 @@ fun AppScaffold(app: RunningCoachApp) {
                         onOpenWorkouts = {
                             navController.navigate("workouts") { launchSingleTop = true }
                         },
+                        onOpenCalendar = {
+                            navController.navigate("plan-calendar") { launchSingleTop = true }
+                        },
+                    )
+                }
+                composable("plan-calendar") {
+                    PlanCalendarScreen(
+                        plan = planState.plan,
+                        onMoveSession = planVm::moveSession,
+                        onBack = { navController.popBackStack() },
                     )
                 }
                 composable("workouts") {

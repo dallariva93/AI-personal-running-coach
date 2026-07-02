@@ -12,6 +12,8 @@ from app.schemas import (
     PlanChatRequest,
     PlanChatResponse,
     PlanGenerateRequest,
+    PlanMoveResult,
+    PlanSessionMoveRequest,
     PlanSessionOut,
     TrainingPlanOut,
 )
@@ -22,6 +24,7 @@ from app.services.plan_service import (
     generate_plan,
     get_current_plan,
     get_plan,
+    move_session,
     toggle_session_complete,
 )
 from app.services.profile import get_profile
@@ -87,6 +90,23 @@ def get_plan_by_id(
     if plan is None:
         raise HTTPException(status_code=404, detail="Piano non trovato.")
     return plan
+
+
+@router.patch("/plan/sessions/{session_id}/move", response_model=PlanMoveResult)
+def patch_session_move(
+    session_id: int,
+    payload: PlanSessionMoveRequest,
+    session: Session = Depends(get_session),
+) -> PlanMoveResult:
+    """Move a plan session to another day (calendar editor, Roadmap #12)."""
+    try:
+        result = move_session(session, session_id, payload.target_date)
+    except LookupError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    _commit(session)
+    return result
 
 
 @router.patch("/plan/sessions/{session_id}/complete", response_model=PlanSessionOut)
