@@ -16,7 +16,7 @@ from sqlalchemy.orm import Session
 
 from app.db.models import Activity, TrainingPlan, TrainingPlanSession
 from app.logging_config import get_logger
-from app.processing import score_execution
+from app.processing import merge_day_activities, score_execution
 from app.schemas import ExecutionResult
 from app.services.ingest import _activity_to_summary
 
@@ -35,14 +35,14 @@ def _session_date(start: date, week_number: int, day_of_week: int) -> date:
     return start + timedelta(days=(week_number - 1) * 7 + day_of_week)
 
 
-def _best_activity_for(db: Session, target: date) -> Activity | None:
-    """The running activity on ``target`` (longest, if several)."""
-    rows = db.scalars(
-        select(Activity).where(Activity.sport == "run", Activity.date == target.isoformat())
-    ).all()
-    if not rows:
-        return None
-    return max(rows, key=lambda a: a.distance_km or 0.0)
+def _activities_for(db: Session, target: date) -> list[Activity]:
+    """All running activities on ``target`` — a warm-up and a quality run can
+    share a day and must be judged together (Q3), not by "the longest run"."""
+    return list(
+        db.scalars(
+            select(Activity).where(Activity.sport == "run", Activity.date == target.isoformat())
+        ).all()
+    )
 
 
 def evaluate_plan_executions(db: Session, ref: date | None = None) -> list[ExecutionResult]:
@@ -68,14 +68,23 @@ def evaluate_plan_executions(db: Session, ref: date | None = None) -> list[Execu
             if (sess.session_type or "").lower() in ("rest", "riposo"):
                 continue
 
-            activity = _best_activity_for(db, sess_date)
+            activities = _activities_for(db, sess_date)
             session_out = _session_to_out(sess)
-            run = _activity_to_summary(activity) if activity is not None else None
-            result = score_execution(session_out, run, sess_date.isoformat())
-            if activity is not None:
-                result.activity_id = activity.id
+            if not activities:
+                result = score_execution(session_out, None, sess_date.isoformat())
+                principal = None
+            else:
+                summaries = [_activity_to_summary(a) for a in activities]
+                merged, principal_idx, accessory_note = merge_day_activities(
+                    summaries, sess.session_type
+                )
+                result = score_execution(session_out, merged, sess_date.isoformat())
+                if accessory_note:
+                    result.evidence.append(accessory_note)
+                principal = activities[principal_idx]
+                result.activity_id = principal.id
 
-            _apply(sess, result, activity)
+            _apply(sess, result, principal)
             results.append(result)
 
     db.flush()

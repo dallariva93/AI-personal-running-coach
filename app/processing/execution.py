@@ -12,7 +12,13 @@ it returns an :class:`ExecutionResult`. No I/O, no AI.
 
 from __future__ import annotations
 
+import statistics
+from dataclasses import dataclass
+
 from app.schemas import ExecutionResult, PlanSessionOut, RunSummary
+
+# Session types whose execution is judged rep-by-rep, not on the average pace.
+_INTERVAL_TYPES = {"intervals", "intervalli", "vo2max"}
 
 # Intensity rank per session/activity type (0=rest … 4=hard). Accepts both plan
 # session types and the Italian activity labels.
@@ -55,6 +61,91 @@ def _pace_sec(pace: str | None) -> float | None:
     except (ValueError, TypeError):
         return None
     return None
+
+
+def _fmt_pace(sec: float | None) -> str | None:
+    """Format seconds/km back into ``M:SS/km``."""
+    if sec is None or sec <= 0:
+        return None
+    m, s = divmod(int(round(sec)), 60)
+    return f"{m}:{s:02d}/km"
+
+
+@dataclass
+class RepStats:
+    """Approximate interval-rep detection from whole-km splits (Q3 v0)."""
+
+    detected_reps: int
+    avg_rep_pace: str | None       # formatted "M:SS/km"
+    avg_rep_sec: float | None
+    median_sec: float | None
+    changed_pace: bool             # True when a faster-than-median block exists
+
+
+def rep_analysis(splits: list[str] | None) -> RepStats:
+    """Detect interval reps from per-km pace strings (Q3 v0).
+
+    True lap boundaries live in ``raw_activity_assets`` ``typed_splits`` (which
+    needs the S3 archive); this v0 approximates reps from whole-km splits: a km
+    counts as a "rep" when it is at least 5% faster than the day's median km.
+    Uniform splits yield zero reps (``changed_pace=False``) — the tell that an
+    interval session was run as a steady effort. Keep this signature so the
+    source can be swapped for real laps later.
+    """
+    secs = [s for s in (_pace_sec(x) for x in (splits or [])) if s is not None]
+    if len(secs) < 3:
+        return RepStats(0, None, None, None, False)
+    median = statistics.median(secs)
+    fast = [s for s in secs if s < median * 0.95]
+    if not fast:
+        return RepStats(0, None, None, round(median, 1), False)
+    avg = statistics.mean(fast)
+    return RepStats(len(fast), _fmt_pace(avg), round(avg, 1), round(median, 1), True)
+
+
+def merge_day_activities(
+    runs: list[RunSummary], session_type: str | None
+) -> tuple[RunSummary, int, str | None]:
+    """Collapse multiple same-day runs into one summary for scoring (Q3).
+
+    A separate warm-up and a quality session on the same day must not be judged
+    by "the longest run". For a *quality* prescription the principal run — whose
+    intensity, pace and splits are scored — is the most intense one; otherwise
+    it is the longest. Distance and duration become the day's totals so the
+    warm-up still counts as volume; every other field comes from the principal.
+
+    Returns ``(merged, principal_index, accessory_note)``; ``accessory_note`` is
+    ``None`` when there is a single run.
+    """
+    if not runs:
+        raise ValueError("merge_day_activities requires at least one run")
+    if len(runs) == 1:
+        return runs[0], 0, None
+
+    expected = _rank(session_type)
+    if expected >= 3:
+        principal_index = max(
+            range(len(runs)),
+            key=lambda i: (_rank(runs[i].activity_type), runs[i].distance_km or 0.0),
+        )
+    else:
+        principal_index = max(range(len(runs)), key=lambda i: runs[i].distance_km or 0.0)
+
+    principal = runs[principal_index]
+    total_dist = round(sum(r.distance_km or 0.0 for r in runs), 2)
+    total_dur = round(sum(r.duration_min or 0.0 for r in runs), 1)
+    accessory_dist = round(total_dist - (principal.distance_km or 0.0), 2)
+    n_other = len(runs) - 1
+    merged = principal.model_copy(update={"distance_km": total_dist, "duration_min": total_dur})
+
+    if n_other == 1:
+        note = (
+            f"Volume accessorio: {accessory_dist:.1f} km in una corsa separata "
+            "(riscaldamento/defaticamento) incluso"
+        )
+    else:
+        note = f"Volume accessorio: {accessory_dist:.1f} km in {n_other} corse separate incluso"
+    return merged, principal_index, note
 
 
 def score_execution(
@@ -179,6 +270,29 @@ def score_execution(
                 intensity_score -= 10.0
                 intensity_status = intensity_status or "too_hard"
                 evidence.append("Troppo tempo fuori dalla zona facile")
+
+    # -- Per-lap rep analysis for interval sessions (Q3 v0) ------------------
+    # Intervals are judged on the reps, not the average pace: uniform splits on
+    # an interval day mean the workout was run steady (quality missed).
+    if (session.session_type or "").lower() in _INTERVAL_TYPES and run.splits_km:
+        reps = rep_analysis(run.splits_km)
+        if not reps.changed_pace:
+            score -= 15.0
+            intensity_score -= 15.0
+            intensity_status = intensity_status or "quality_missed"
+            evidence.append(
+                "Nessun cambio di ritmo rilevato negli split: ripetute non riconosciute"
+            )
+        else:
+            line = f"{reps.detected_reps} km veloci rilevati @ {reps.avg_rep_pace}"
+            tgt_rep = _pace_sec(session.target_pace)
+            if tgt_rep and reps.avg_rep_sec:
+                line += f" (target {session.target_pace})"
+                if reps.avg_rep_sec > tgt_rep * 1.05:  # >5% slower than prescribed
+                    score -= 8.0
+                    pace_score -= 8.0
+                    intensity_status = intensity_status or "quality_missed"
+            evidence.append(line)
 
     score = max(0.0, min(100.0, round(score, 0)))
 

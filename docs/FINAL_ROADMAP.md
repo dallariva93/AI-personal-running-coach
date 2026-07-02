@@ -407,7 +407,33 @@ test resettano la cache tra database (`invalidate_all` in `db_env`).
 
 ---
 
-#### Passo 5 — Q3 · Execution score: multi-corsa/giorno e per-lap v0
+#### Passo 5 — Q3 · Execution score: multi-corsa/giorno e per-lap v0 ✅ FATTO — 2026-07-02
+
+**Implementato:**
+- **Merge multi-corsa** (`merge_day_activities` puro in `execution.py`, cablato in
+  `execution_service._activities_for`): più corse nello stesso giorno vengono unite.
+  Per una seduta di qualità il principale è la corsa più intensa (`_RANK`), altrimenti
+  la più lunga; distanza/durata diventano il totale del giorno (il riscaldamento conta
+  come volume) mentre intensità/passo/splits vengono dal principale. Evidenza "Volume
+  accessorio: X.X km in una/N corse separate incluso"; `executed_activity_id` punta al
+  principale.
+- **Per-lap v0** (`rep_analysis(splits) -> RepStats` puro + integrazione in
+  `score_execution` per sedute `intervals`/`vo2max`): un km è una "ripetuta" se ≥5% più
+  veloce della mediana del giorno. Splits uniformi → `quality_missed` con evidenza
+  "Nessun cambio di ritmo rilevato"; reps rilevate → evidenza "N km veloci rilevati @
+  4:20 (target 4:15)" e piccola penalità se le reps sono >5% più lente del target.
+  Interfaccia `rep_analysis` pensata per sostituire la fonte con i lap veri
+  (`raw_activity_assets.typed_splits`, richiede S3) senza cambiare i chiamanti.
+
+**Accettazione** (tutti coperti da test): easy 3km + intervalli 8km → giudicato sugli
+intervalli, 11km totali + "Volume accessorio 3.0 km" in evidenza, principale = la corsa
+intervalli; splits alternati 4:20/5:40 → `detected_reps=3` @ 4:20; splits uniformi su
+seduta intervals → `quality_missed` "nessun cambio di ritmo".
+
+**Deviazioni/note:** `distribution_score` (CV dei passi) resta invariato — per gli
+intervalli un CV alto è atteso, quindi la logica lap-based di `rep_analysis` è il
+segnale corretto e i due restano complementari (nessuna doppia penalità: `distribution_score`
+è solo informativo, non sottratto dallo score). Nessuna modifica al DB (niente migrazione).
 
 **Obiettivo.** (a) Warm-up separato + seduta di qualità nello stesso giorno non devono più essere giudicati prendendo "la corsa più lunga"; (b) le ripetute si giudicano sui giri, non sulla media.
 

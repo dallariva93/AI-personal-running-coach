@@ -6,7 +6,7 @@ from datetime import date, timedelta
 from pathlib import Path
 
 from app.collection.sources import DemoSource
-from app.db.models import TrainingPlan, TrainingPlanSession, TrainingPlanWeek
+from app.db.models import Activity, TrainingPlan, TrainingPlanSession, TrainingPlanWeek
 from app.schemas import RunSummary
 from app.services.decision_service import apply_coach_action, build_today_decision
 from app.services.execution_service import evaluate_plan_executions, recent_executions
@@ -68,6 +68,36 @@ def test_execution_scored_and_autocompletes(session):
     # And it surfaces via the recent-executions listing.
     listed = recent_executions(session, days=30)
     assert any(x.plan_session_id == sess.id for x in listed)
+
+
+def test_warmup_plus_quality_scored_on_quality_run(session):
+    """Q3: a separate easy warm-up + the quality run on the same day are judged
+    on the quality run, with the warm-up counted as accessory volume."""
+    start = date(2026, 6, 22)  # Monday
+    _plan_with_session(session, start, dow=0, st="intervals", km=8.0)
+    # Two runs the same day: a short easy warm-up + the real intervals session.
+    upsert_activity(
+        session,
+        RunSummary(date=start.isoformat(), activity_type="easy",
+                   distance_km=3.0, duration_min=18.0, garmin_activity_id="wu-1"),
+    )
+    upsert_activity(
+        session,
+        RunSummary(date=start.isoformat(), activity_type="intervalli",
+                   distance_km=8.0, duration_min=40.0, garmin_activity_id="q-1"),
+    )
+    session.flush()
+
+    results = evaluate_plan_executions(session, ref=start)
+    sess = session.query(TrainingPlanSession).filter_by(day_of_week=0).one()
+    # Judged on the intervals run (not turned_easy) and warm-up in the evidence.
+    assert sess.execution_status != "turned_easy"
+    assert any("Volume accessorio" in e for e in (sess.execution_evidence or []))
+    assert any("11.0" in e for e in (sess.execution_evidence or []))  # 3 + 8 km total
+    # The principal (quality) run is the one linked, not the warm-up.
+    principal = session.get(Activity, sess.executed_activity_id)
+    assert principal is not None and principal.activity_type == "intervalli"
+    assert results
 
 
 def test_missing_activity_marks_skipped(session):

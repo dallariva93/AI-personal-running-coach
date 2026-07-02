@@ -8,7 +8,12 @@ the load trend. This is the quantitative input the coaching layer reasons over.
 from app.processing.adaptive import adapt_plan
 from app.processing.decision import decide_today
 from app.processing.efficiency import aerobic_efficiency, decoupling
-from app.processing.execution import score_execution
+from app.processing.execution import (
+    RepStats,
+    merge_day_activities,
+    rep_analysis,
+    score_execution,
+)
 from app.processing.gamification import (
     AdherenceDay,
     compute_adherence_streak,
@@ -63,6 +68,9 @@ __all__ = [
     "adapt_plan",
     "decide_today",
     "score_execution",
+    "rep_analysis",
+    "merge_day_activities",
+    "RepStats",
     "enforce_week_structure",
     "trail_metrics",
     "is_trail",

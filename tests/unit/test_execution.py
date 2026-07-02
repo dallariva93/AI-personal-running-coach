@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from app.processing import score_execution
+from app.processing import merge_day_activities, rep_analysis, score_execution
 from app.schemas import PlanSessionOut, RunSummary
 
 
@@ -233,3 +233,74 @@ def test_status_quality_missed_as_fallback():
         "2026-06-22",
     )
     assert r.execution_status in ("completed_well", "quality_missed")
+
+
+# ── Q3: per-lap rep analysis (v0) ────────────────────────────────────────────
+
+def test_rep_analysis_detects_alternating_reps():
+    stats = rep_analysis(["5:40", "4:20", "5:40", "4:20", "5:40", "4:20"])
+    assert stats.changed_pace is True
+    assert stats.detected_reps == 3
+    assert stats.avg_rep_pace == "4:20/km"
+
+
+def test_rep_analysis_uniform_splits_no_reps():
+    stats = rep_analysis(["5:00", "5:01", "4:59", "5:00", "5:02", "4:58"])
+    assert stats.changed_pace is False
+    assert stats.detected_reps == 0
+
+
+def test_rep_analysis_too_few_splits():
+    assert rep_analysis(["4:20", "5:40"]).detected_reps == 0
+
+
+def test_intervals_uniform_splits_flag_quality_missed():
+    """An interval session run at a steady pace is quality_missed (Q3)."""
+    r = score_execution(
+        _sess("intervals", km=8.0),
+        RunSummary(
+            date="2026-06-22", activity_type="intervalli", distance_km=8.0, duration_min=40.0,
+            splits_km=["5:00", "5:01", "4:59", "5:00", "5:02", "4:58", "5:00", "5:01"],
+        ),
+        "2026-06-22",
+    )
+    assert r.execution_status == "quality_missed"
+    assert any("nessun cambio di ritmo" in e.lower() for e in r.evidence)
+
+
+def test_intervals_with_reps_surfaces_detected_reps():
+    r = score_execution(
+        _sess("intervals", km=8.0, pace="4:15"),
+        RunSummary(
+            date="2026-06-22", activity_type="intervalli", distance_km=8.0, duration_min=40.0,
+            splits_km=["5:40", "4:20", "5:40", "4:20", "5:40", "4:20"],
+        ),
+        "2026-06-22",
+    )
+    assert any("km veloci rilevati" in e for e in r.evidence)
+    assert any("target 4:15" in e for e in r.evidence)
+
+
+# ── Q3: multi-run same-day merge ─────────────────────────────────────────────
+
+def test_merge_single_run_is_passthrough():
+    run = _run("easy", km=8.0, dur=48.0)
+    merged, idx, note = merge_day_activities([run], "easy")
+    assert merged is run and idx == 0 and note is None
+
+
+def test_merge_quality_day_picks_most_intense_and_sums_volume():
+    warmup = _run("easy", km=3.0, dur=18.0)
+    quality = _run("intervalli", km=8.0, dur=40.0)
+    merged, idx, note = merge_day_activities([warmup, quality], "intervals")
+    assert idx == 1  # the intervals run is principal, not the longest-by-accident
+    assert merged.activity_type == "intervalli"
+    assert merged.distance_km == 11.0  # day total: warm-up counts as volume
+    assert note is not None and "3.0 km" in note
+
+
+def test_merge_easy_day_picks_longest():
+    short = _run("easy", km=4.0, dur=24.0)
+    long_run = _run("easy", km=9.0, dur=54.0)
+    merged, idx, note = merge_day_activities([short, long_run], "easy")
+    assert idx == 1 and merged.distance_km == 13.0
