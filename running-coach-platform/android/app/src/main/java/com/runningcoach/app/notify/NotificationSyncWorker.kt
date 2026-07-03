@@ -13,6 +13,10 @@ import java.util.concurrent.TimeUnit
  * Background delivery of coach notifications so they reach the athlete without
  * opening the app (Roadmap #6). Periodically pulls pending notifications, posts
  * them and acks them so they aren't shown twice.
+ *
+ * With FCM push (Roadmap A3) this is a fallback, not the primary channel, so
+ * the interval is 6 hours — enough to catch anything FCM missed without
+ * draining the battery.
  */
 class NotificationSyncWorker(
     context: Context,
@@ -41,7 +45,7 @@ class NotificationSyncWorker(
         /** Schedule the recurring background check (idempotent). */
         fun schedule(context: Context) {
             val request = PeriodicWorkRequestBuilder<NotificationSyncWorker>(
-                3, TimeUnit.HOURS,
+                6, TimeUnit.HOURS,
             ).build()
             WorkManager.getInstance(context).enqueueUniquePeriodicWork(
                 UNIQUE_NAME,

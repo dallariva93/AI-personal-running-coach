@@ -12,6 +12,7 @@ import com.runningcoach.app.data.model.CoachActionRequest
 import com.runningcoach.app.data.model.CoachDecision
 import com.runningcoach.app.data.model.CoachEvent
 import com.runningcoach.app.data.model.DailyCheckin
+import com.runningcoach.app.data.model.DeviceIn
 import com.runningcoach.app.data.model.NotificationAck
 import com.runningcoach.app.data.model.HeatmapResponse
 import com.runningcoach.app.data.model.OnboardingStatus
@@ -72,6 +73,14 @@ interface ApiService {
 
     @POST("api/notifications/ack")
     suspend fun ackNotifications(@Body request: NotificationAck): Map<String, Int>
+
+    // ── Push device registration (Roadmap A3) ────────────────────────────────
+
+    @POST("api/devices")
+    suspend fun registerDevice(@Body device: DeviceIn): Map<String, Any>
+
+    @DELETE("api/devices/{fcm_token}")
+    suspend fun unregisterDevice(@Path("fcm_token") fcmToken: String): Map<String, Boolean>
 
     @GET("api/coach/events")
     suspend fun coachEvents(@Query("days") days: Int = 30): List<CoachEvent>

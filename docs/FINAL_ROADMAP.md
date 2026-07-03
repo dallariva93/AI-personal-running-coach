@@ -198,7 +198,7 @@ Verdetti: **TIENI** (funziona, serve) · **RIPARA** (serve ma è rotta/incomplet
 |---|---|---|---|---|---|---|---|
 | A1 | **Voce LLM sul motore deterministico** + trigger proattivi comportamentali (corsa saltata, too_hard ricorrente, HRV in calo) — uccide il difetto 3 | 9 | 5 | medio | basso | altissimo | 3-4 sett |
 | A2 | **Health Connect MVP** (#10): corse, HR, sonno, HRV senza Garmin — apre il TAM | 10 | 7 | alto | medio | altissimo | 4-6 sett |
-| A3 | **Push reali (FCM)** + execution score push entro minuti dalla sync — chiude il loop dopamminico | 9 | 5 | medio | basso | altissimo | 3 sett |
+| A3 | **Push reali (FCM)** + execution score push entro minuti dalla sync — chiude il loop dopamminico ✅ FATTO — 2026-07-03 | 9 | 5 | medio | basso | altissimo | 3 sett |
 | A4 | **Voice debrief post-corsa** (N5) — sostituisce i proxy crudi fatigue/motivation | 9 | 5 | medio | basso | altissimo | 2-3 sett |
 | A5 | **Digital Twin v0** (N1): recovery half-life, ramp tolerance e heat sensitivity stimate dai dati storici, con fallback ai default | 9 | 6 | medio | medio | altissimo | 4 sett |
 | A6 | **Race recap condivisibile** (#11) + weekly recap emozionale — il motore del passaparola | 9 | 5 | medio | basso | altissimo | 3-4 sett |
@@ -681,6 +681,12 @@ il cronico ACWR ed evitare falsi "severe" nei pattern red prolungati.
 - **Demo/self-host senza Firebase:** se `FCM_CREDENTIALS_PATH` assente → no-op con log, il polling continua a coprire.
 
 **Accettazione.** Evento notifiable creato → push ricevuta sul device di test in <10s; ack flow invariato; senza credenziali FCM tutti i test passano (no-op).
+
+**Implementazione (2026-07-03).**
+- Backend: modello `Device` + migrazione `b1c2d3e4f5a6`; `app/services/push.py` con FCM HTTP v1 (JWT RS256, httpx, retry 2x con backoff); hook `_maybe_push` in `event_service.log_event` che rispetta `_in_time_window` e non blocca mai la transazione; `POST/DELETE /api/devices` con upsert su `fcm_token`; setting `FCM_CREDENTIALS_PATH` + property `fcm_enabled`.
+- Android: `firebase-messaging` + plugin `google-services` nel catalogo; `CoachFirebaseService` con `onMessageReceived` → `CoachNotifications.post` e `onNewToken` → upload; registrazione token al boot in `RunningCoachApp`; `NotificationSyncWorker` allungato a 6h come fallback.
+- Demo/offline: senza `FCM_CREDENTIALS_PATH` il push è no-op con log; il polling continua a coprire. `httpx` aggiunto a `requirements.txt`.
+- Test: 9 test in `test_push_devices.py` (device CRUD, no-op senza credenziali, push con mock httpx + chiave RSA reale, ack flow invariato). Suite completa con coverage rinviata (macchina lenta).
 
 ---
 

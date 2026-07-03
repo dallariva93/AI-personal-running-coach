@@ -12,6 +12,7 @@ import com.runningcoach.app.data.model.CoachActionRequest
 import com.runningcoach.app.data.model.CoachDecision
 import com.runningcoach.app.data.model.CoachEvent
 import com.runningcoach.app.data.model.DailyCheckin
+import com.runningcoach.app.data.model.DeviceIn
 import com.runningcoach.app.data.model.HeatmapResponse
 import com.runningcoach.app.data.model.OnboardingStatus
 import com.runningcoach.app.data.model.Shoe
@@ -68,6 +69,16 @@ class CoachRepository(private val settings: SettingsStore) {
 
     suspend fun ackNotifications(ids: List<Int>): Int =
         runCatching { api().ackNotifications(NotificationAck(ids))["acked"] ?: 0 }.getOrDefault(0)
+
+    // ── Push device registration (Roadmap A3) ────────────────────────────────
+
+    suspend fun registerDevice(fcmToken: String, platform: String = "android") {
+        runCatching { api().registerDevice(DeviceIn(fcmToken, platform)) }
+    }
+
+    suspend fun unregisterDevice(fcmToken: String) {
+        runCatching { api().unregisterDevice(fcmToken) }
+    }
 
     suspend fun coachEvents(days: Int = 30): List<CoachEvent> = api().coachEvents(days)
 

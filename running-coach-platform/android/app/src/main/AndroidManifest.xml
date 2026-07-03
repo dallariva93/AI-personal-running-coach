@@ -27,6 +27,15 @@
             </intent-filter>
         </activity>
 
+        <!-- FCM push delivery (Roadmap A3). Inert without google-services.json. -->
+        <service
+            android:name=".notify.CoachFirebaseService"
+            android:exported="false">
+            <intent-filter>
+                <action android:name="com.google.firebase.MESSAGING_EVENT" />
+            </intent-filter>
+        </service>
+
         <receiver
             android:name=".widget.RunningWidgetReceiver"
             android:exported="true">

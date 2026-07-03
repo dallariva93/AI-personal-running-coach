@@ -1,6 +1,7 @@
 plugins {
     alias(libs.plugins.android.application)
     alias(libs.plugins.kotlin.android)
+    alias(libs.plugins.google.services)
 }
 
 android {
@@ -79,4 +80,7 @@ dependencies {
     implementation(libs.osmdroid.android)
     // Background job for delivering coach notifications without opening the app.
     implementation(libs.androidx.work.runtime.ktx)
+    // Real push delivery via FCM (Roadmap A3). Requires google-services.json
+    // in app/ when building with Firebase; without it the FCM service is inert.
+    implementation(libs.firebase.messaging)
 }

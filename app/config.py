@@ -58,6 +58,11 @@ class Settings(BaseSettings):
     # When the AI call fails, fall back to the offline rule-based coach.
     ai_fallback_offline: bool = True
 
+    # -- Push notifications (FCM HTTP v1, Roadmap A3) -----------------------
+    # Path to a Firebase service-account JSON. When empty, push is a no-op
+    # (the NotificationSyncWorker polling continues to cover delivery).
+    fcm_credentials_path: str = ""
+
     # -- Application ---------------------------------------------------------
     database_url: str = "sqlite:///data/running_coach.db"
     fetch_limit: int = 50
@@ -183,6 +188,11 @@ class Settings(BaseSettings):
     @property
     def auth_enabled(self) -> bool:
         return bool(self.api_token)
+
+    @property
+    def fcm_enabled(self) -> bool:
+        """True when Firebase service-account credentials are configured."""
+        return bool(self.fcm_credentials_path)
 
     @property
     def cors_origin_list(self) -> list[str]:

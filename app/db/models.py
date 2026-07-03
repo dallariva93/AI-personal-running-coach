@@ -615,6 +615,24 @@ class Shoe(Base):
         return f"<Shoe {self.id} {self.name!r} retired={self.retired}>"
 
 
+class Device(Base):
+    """A registered FCM push device (Roadmap A3).
+
+    Single-athlete app → effectively one or two rows (phone + maybe tablet).
+    The FCM token is the natural key: ``POST /api/devices`` upserts on it.
+    """
+
+    __tablename__ = "devices"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    fcm_token: Mapped[str] = mapped_column(String(512), unique=True, index=True)
+    platform: Mapped[str] = mapped_column(String(16), default="android")
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=_utcnow)
+
+    def __repr__(self) -> str:  # pragma: no cover
+        return f"<Device {self.id} platform={self.platform!r}>"
+
+
 class SyncState(Base):
     """Tiny key-value store for background-sync bookkeeping (Roadmap Q2).
 

@@ -389,6 +389,23 @@ class NotificationAck(BaseModel):
     ids: list[int] = Field(default_factory=list)
 
 
+class DeviceIn(BaseModel):
+    """FCM token registration payload (Roadmap A3)."""
+
+    fcm_token: str = Field(..., min_length=1, max_length=512)
+    platform: str = "android"
+
+
+class DeviceOut(BaseModel):
+    """Registered device response (Roadmap A3)."""
+
+    model_config = ConfigDict(from_attributes=True)
+
+    id: int
+    fcm_token: str
+    platform: str
+
+
 class ExecutionResult(BaseModel):
     """How faithfully a completed activity matched its prescribed plan session.
 

@@ -27,3 +27,6 @@ boto3==1.35.49
 
 # At-rest encryption of stored secrets (Strava OAuth tokens) - A10
 cryptography==49.0.0
+
+# Push notifications (FCM HTTP v1) - A3
+httpx==0.28.1

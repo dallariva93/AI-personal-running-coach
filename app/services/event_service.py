@@ -17,7 +17,10 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from app.db.models import CoachEvent
+from app.logging_config import get_logger
 from app.schemas import CoachEventOut, NotificationOut, TrainingMetrics
+
+logger = get_logger(__name__)
 
 # Cooldown (hours): don't show a new notification of the same event_type if one
 # was already notified within this window (P3-2).
@@ -47,6 +50,26 @@ def signal_list(m: TrainingMetrics) -> list[str]:
     if m.injury_level in ("moderate", "high"):
         out.append(f"rischio infortuni {m.injury_level}")
     return out
+
+
+def _maybe_push(db: Session, event: CoachEvent) -> None:
+    """Fire-and-forget FCM push for a freshly logged notifiable event.
+
+    Respects the priority time-window (same as ``pending_notifications``) so
+    low-priority events don't buzz the athlete at 3 AM. Never raises: push
+    failure is logged and swallowed so the DB transaction is unaffected.
+    """
+    if not event.notifiable:
+        return
+    priority = event.priority or "medium"
+    if not _in_time_window(priority):
+        return
+    try:
+        from app.services.push import send_to_all
+
+        send_to_all(db, event.title, event.detail or event.title, priority)
+    except Exception:
+        logger.exception("Push delivery failed for event %s (non-fatal)", event.id)
 
 
 def log_event(
@@ -88,6 +111,7 @@ def log_event(
     )
     db.add(event)
     db.flush()
+    _maybe_push(db, event)
     return event
 
 

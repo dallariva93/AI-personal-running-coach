@@ -503,6 +503,12 @@ data class NotificationAck(
     @SerializedName("ids") val ids: List<Int>,
 )
 
+/** FCM token registration payload (Roadmap A3). */
+data class DeviceIn(
+    @SerializedName("fcm_token") val fcmToken: String,
+    @SerializedName("platform") val platform: String = "android",
+)
+
 /** One entry in the coach audit diary (Roadmap #5). */
 data class CoachEvent(
     @SerializedName("id") val id: Int,

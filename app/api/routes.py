@@ -38,6 +38,8 @@ from app.schemas import (
     CoachDecision,
     CoachEventOut,
     DailyCheckin,
+    DeviceIn,
+    DeviceOut,
     ExecutionResult,
     GamificationData,
     HeatmapResponse,
@@ -405,6 +407,38 @@ def ack_notifications(
     n = mark_notified(session, payload.ids)
     _commit(session)
     return {"acked": n}
+
+
+@router.post("/devices", response_model=DeviceOut, status_code=201)
+def register_device(
+    payload: DeviceIn, session: Session = Depends(get_session)
+) -> DeviceOut:
+    """Register or update an FCM push device (Roadmap A3). Upserts on fcm_token."""
+    from app.db.models import Device
+
+    device = session.scalar(select(Device).where(Device.fcm_token == payload.fcm_token))
+    if device is None:
+        device = Device(fcm_token=payload.fcm_token, platform=payload.platform)
+        session.add(device)
+    else:
+        device.platform = payload.platform
+    session.flush()
+    _commit(session)
+    return DeviceOut.model_validate(device)
+
+
+@router.delete("/devices/{fcm_token}")
+def unregister_device(
+    fcm_token: str, session: Session = Depends(get_session)
+) -> dict:
+    """Remove a registered FCM device (Roadmap A3)."""
+    from app.db.models import Device
+
+    device = session.scalar(select(Device).where(Device.fcm_token == fcm_token))
+    if device is not None:
+        session.delete(device)
+        _commit(session)
+    return {"deleted": device is not None}
 
 
 @router.get("/metrics", response_model=TrainingMetrics)
