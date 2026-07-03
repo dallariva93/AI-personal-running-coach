@@ -19,11 +19,14 @@ def upgrade() -> None:
     op.create_table(
         "devices",
         sa.Column("id", sa.Integer(), primary_key=True),
-        sa.Column("fcm_token", sa.String(length=512), nullable=False, unique=True),
+        sa.Column("fcm_token", sa.String(length=512), nullable=False),
         sa.Column("platform", sa.String(length=16), nullable=False, server_default="android"),
         sa.Column("created_at", sa.DateTime(), nullable=False),
     )
-    op.create_index("ix_devices_fcm_token", "devices", ["fcm_token"])
+    # Match the ORM: `mapped_column(unique=True, index=True)` emits one UNIQUE
+    # named index, not a non-unique index + a separate constraint (which left
+    # `alembic check` dirty). Unique because a device's FCM token is its key.
+    op.create_index("ix_devices_fcm_token", "devices", ["fcm_token"], unique=True)
 
 
 def downgrade() -> None:
