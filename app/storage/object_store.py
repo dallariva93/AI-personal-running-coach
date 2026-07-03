@@ -94,6 +94,10 @@ class ObjectStore:
         resp = self.client.get_object(Bucket=self.bucket, Key=key)
         return resp["Body"].read()
 
+    def delete(self, key: str) -> None:
+        """Delete one object (right-to-erasure, A10). Missing keys are a no-op."""
+        self.client.delete_object(Bucket=self.bucket, Key=key)
+
     # Backwards-compatible aliases for the older method names.
     put = put_bytes
     get = get_bytes
@@ -120,6 +124,9 @@ class InMemoryObjectStore:
 
     def exists(self, key: str) -> bool:
         return key in self.objects
+
+    def delete(self, key: str) -> None:
+        self.objects.pop(key, None)
 
 
 def checksum(data: bytes) -> str:

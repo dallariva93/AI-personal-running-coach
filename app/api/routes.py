@@ -720,3 +720,60 @@ def assign_shoe(
     _commit(session)
     session.refresh(session.get(Activity, activity_id))
     return session.get(Activity, activity_id)
+
+
+# ── Security & GDPR (Roadmap A10) ────────────────────────────────────────────
+
+
+@router.delete("/me/data")
+def delete_my_data(
+    confirm: str | None = None, session: Session = Depends(get_session)
+) -> dict:
+    """Right to erasure (GDPR art. 17): wipe every table + archived raw payloads.
+
+    Irreversible; requires the explicit ``?confirm=DELETE`` guard so a stray
+    client call or an over-eager retry can't destroy the athlete's history.
+    Also clears the rotated-API-token hash (it lives in ``sync_state``), so
+    after erasure the ``API_TOKEN`` env var is the active credential again.
+    """
+    if confirm != "DELETE":
+        raise HTTPException(
+            status_code=400,
+            detail="Conferma richiesta: ripeti la chiamata con ?confirm=DELETE. "
+            "L'operazione cancella TUTTI i dati ed è irreversibile.",
+        )
+    from app.services.auth_service import reset_cache as _reset_auth_cache
+    from app.services.cache import invalidate_all as _invalidate_cache
+    from app.services.erasure import delete_all_user_data
+
+    counts = delete_all_user_data(session)
+    _commit(session)
+    # Bulk deletes bypass the ORM flush events the Q5 cache listens to, and
+    # the rotated-token hash just vanished with sync_state.
+    _invalidate_cache()
+    _reset_auth_cache()
+    return {"deleted": counts}
+
+
+@router.post("/auth/rotate")
+def rotate_token(session: Session = Depends(get_session)) -> dict:
+    """Rotate the API bearer token (A10). The new token is shown exactly once.
+
+    Only the SHA-256 hash is persisted (in ``sync_state``); the previous token
+    — env var or earlier rotation — stops working immediately.
+    """
+    from app.services.auth_service import rotate_api_token
+
+    if not get_settings().auth_enabled:
+        raise HTTPException(
+            status_code=400,
+            detail="Autenticazione non attiva (API_TOKEN non configurato): "
+            "niente da ruotare.",
+        )
+    token = rotate_api_token(session)
+    _commit(session)
+    return {
+        "token": token,
+        "note": "Conservalo ora: è mostrato una sola volta e il token "
+        "precedente non è più valido.",
+    }

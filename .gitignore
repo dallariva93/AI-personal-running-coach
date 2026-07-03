@@ -20,6 +20,8 @@ env/
 data/*.db
 data/*.sqlite3
 data/reports/
+# Fernet key generated at bootstrap when DATA_ENCRYPTION_KEY is unset (A10)
+data/.encryption_key
 *.log
 
 # Garmin token store

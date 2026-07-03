@@ -15,6 +15,7 @@ from sqlalchemy import (
     Text,
     UniqueConstraint,
 )
+from sqlalchemy.ext.hybrid import hybrid_property
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.db.database import Base
@@ -218,6 +219,10 @@ class StravaAccount(Base):
     Single-athlete app → effectively one row, keyed on the Strava ``athlete_id``.
     Strava access tokens are short-lived (6 h); ``expires_at`` (epoch seconds)
     drives the refresh, performed lazily before each API call.
+
+    Tokens are encrypted at rest (A10): the hybrid properties below encrypt on
+    assignment and decrypt on read, so callers keep using plain
+    ``account.access_token`` while the DB column only ever sees ciphertext.
     """
 
     __tablename__ = "strava_accounts"
@@ -225,9 +230,46 @@ class StravaAccount(Base):
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True)
     athlete_id: Mapped[int] = mapped_column(Integer, index=True)
-    access_token: Mapped[str] = mapped_column(String(128))
-    refresh_token: Mapped[str] = mapped_column(String(128))
+    # Text, not String(128): Fernet ciphertext of a ~40-char token is ~200 chars.
+    _access_token: Mapped[str] = mapped_column("access_token", Text)
+    _refresh_token: Mapped[str] = mapped_column("refresh_token", Text)
     expires_at: Mapped[int] = mapped_column(Integer, default=0)  # epoch seconds
+
+    @hybrid_property
+    def access_token(self) -> str:  # noqa: D102 - trivial accessor
+        from app.security.crypto import decrypt_secret
+
+        return decrypt_secret(self._access_token)
+
+    @access_token.inplace.setter
+    def _access_token_setter(self, value: str) -> None:
+        from app.security.crypto import encrypt_secret
+
+        self._access_token = encrypt_secret(value)
+
+    @access_token.inplace.expression
+    @classmethod
+    def _access_token_expr(cls):  # noqa: ANN206 - SQL expression
+        # Class-level access (queries, the declarative constructor) must yield
+        # the raw column, not run the Python decryptor on a SQL expression.
+        return cls._access_token
+
+    @hybrid_property
+    def refresh_token(self) -> str:  # noqa: D102 - trivial accessor
+        from app.security.crypto import decrypt_secret
+
+        return decrypt_secret(self._refresh_token)
+
+    @refresh_token.inplace.setter
+    def _refresh_token_setter(self, value: str) -> None:
+        from app.security.crypto import encrypt_secret
+
+        self._refresh_token = encrypt_secret(value)
+
+    @refresh_token.inplace.expression
+    @classmethod
+    def _refresh_token_expr(cls):  # noqa: ANN206 - SQL expression
+        return cls._refresh_token
     scope: Mapped[str | None] = mapped_column(String(128), nullable=True)
     athlete_name: Mapped[str | None] = mapped_column(String(128), nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime, default=_utcnow)

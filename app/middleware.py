@@ -99,7 +99,7 @@ class AuthMiddleware(BaseHTTPMiddleware):
             return await call_next(request)
 
         token = _extract_token(request)
-        if token and _constant_time_eq(token, settings.api_token):
+        if token and _token_valid(token, settings):
             response = await call_next(request)
             # Persist the token as a cookie when supplied via query string.
             if request.query_params.get("token"):
@@ -128,7 +128,77 @@ def _extract_token(request: Request) -> str | None:
     return request.query_params.get("token") or request.cookies.get("coach_token")
 
 
-def _constant_time_eq(a: str, b: str) -> bool:
-    import hmac
+def _token_valid(presented: str, settings) -> bool:
+    """Delegate to the auth service: a rotated token (hash in sync_state)
+    overrides the env token (A10). Constant-time in both paths."""
+    from app.services.auth_service import verify_api_token
 
-    return hmac.compare_digest(a, b)
+    return verify_api_token(presented, settings)
+
+
+class RateLimitMiddleware(BaseHTTPMiddleware):
+    """In-process token-bucket rate limiting on ``/api/*`` (A10).
+
+    One bucket per (client IP, scope): the default scope allows
+    ``rate_limit_per_minute`` requests/min; the Strava webhook gets its own,
+    stricter bucket (``rate_limit_strava_per_minute``) because it is the only
+    unauthenticated write endpoint. Platform probes (health/ready) and
+    non-API paths are exempt. In-process state is enough for the current
+    single-worker deploy — with multiple workers each keeps its own buckets,
+    so the effective limit becomes N× the configured one (documented, like
+    the Q5 cache; a shared store lands with G4).
+    """
+
+    _MAX_BUCKETS = 1024  # hard cap: prune oldest entries to bound memory
+
+    def __init__(self, app) -> None:  # noqa: ANN001 - ASGI app
+        super().__init__(app)
+        # key -> [tokens, last_refill_monotonic]
+        self._buckets: dict[str, list[float]] = {}
+
+    async def dispatch(self, request: Request, call_next):
+        settings = get_settings()
+        path = request.url.path
+        if not settings.rate_limit_enabled or not path.startswith("/api") or _is_public_probe(path):
+            return await call_next(request)
+
+        if path.startswith("/api/strava/webhook"):
+            scope, per_minute = "strava", settings.rate_limit_strava_per_minute
+        else:
+            scope, per_minute = "api", settings.rate_limit_per_minute
+
+        client_ip = request.client.host if request.client else "unknown"
+        if self._acquire(f"{scope}:{client_ip}", per_minute):
+            return await call_next(request)
+
+        logger.warning("Rate limit hit: %s %s (%s)", request.method, path, client_ip)
+        return JSONResponse(
+            {"detail": "Troppe richieste, riprova tra poco."},
+            status_code=429,
+            headers={"Retry-After": "60"},
+        )
+
+    def _acquire(self, key: str, per_minute: int) -> bool:
+        """Classic token bucket: capacity == per_minute, refill per_minute/60 per s."""
+        import time as _time
+
+        now = _time.monotonic()
+        bucket = self._buckets.get(key)
+        if bucket is None:
+            if len(self._buckets) >= self._MAX_BUCKETS:
+                oldest = min(self._buckets, key=lambda k: self._buckets[k][1])
+                del self._buckets[oldest]
+            bucket = [float(per_minute), now]
+            self._buckets[key] = bucket
+        tokens, last = bucket
+        tokens = min(float(per_minute), tokens + (now - last) * per_minute / 60.0)
+        if tokens < 1.0:
+            bucket[0], bucket[1] = tokens, now
+            return False
+        bucket[0], bucket[1] = tokens - 1.0, now
+        return True
+
+
+def _is_public_probe(path: str) -> bool:
+    """Health/readiness must never 429: Fly polls them to keep the app alive."""
+    return path.startswith("/api/health") or path.startswith("/api/ready")

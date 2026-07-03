@@ -21,6 +21,7 @@ def db_env(tmp_path, monkeypatch):
     """Point the app at a fresh temporary SQLite database for each test."""
     from app.config import get_settings
     from app.db.database import init_db, reset_engine
+    from app.services.auth_service import reset_cache as reset_auth_cache
     from app.services.cache import invalidate_all
 
     db_file = tmp_path / "test.db"
@@ -28,11 +29,20 @@ def db_env(tmp_path, monkeypatch):
     # Force demo mode by clearing Garmin credentials
     monkeypatch.setenv("GARMIN_EMAIL", "")
     monkeypatch.setenv("GARMIN_PASSWORD", "")
+    # A10: fixed Fernet key so token encryption is deterministic and no key
+    # file gets written into the repo's data/ dir; rate limiting off so the
+    # suite's rapid-fire requests don't trip 429 (a dedicated test re-enables it).
+    monkeypatch.setenv(
+        "DATA_ENCRYPTION_KEY", "5Fz1E0GDeLDMbpZytc3-BgcTvV6C05DsZ2ollT4YnZY="
+    )
+    monkeypatch.setenv("RATE_LIMIT_ENABLED", "false")
     get_settings.cache_clear()
     reset_engine()
     # The Q5 in-process cache is a module global: drop it so a fresh test DB
-    # can't be served a payload cached against the previous one.
+    # can't be served a payload cached against the previous one. Same for the
+    # A10 rotated-token hash cache.
     invalidate_all()
+    reset_auth_cache()
     init_db()
     yield
     reset_engine()

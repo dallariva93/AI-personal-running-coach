@@ -581,7 +581,45 @@ della Fase 1 dipende da Q7. Ordine consigliato: Passo 8 (A10 sicurezza, da fare
 
 ### FASE 1 — Il coach diventa vivo (mesi 1-2)
 
-#### Passo 8 — A10 · Sicurezza & GDPR (prima di crescere)
+#### Passo 8 — A10 · Sicurezza & GDPR (prima di crescere) ✅ FATTO — 2026-07-03
+
+**Implementato** (dettagli e modello di minaccia in `docs/SECURITY.md`):
+- **Cifratura at rest:** `app/security/crypto.py` (Fernet; chiave da
+  `DATA_ENCRYPTION_KEY` o `data/.encryption_key` generato al bootstrap con
+  warning, chmod 600, in .gitignore). `StravaAccount.access_token/refresh_token`
+  come hybrid property (setter cifra, getter decifra, expression class-level
+  sulla colonna raw — nessun cambio nei chiamanti) + migrazione `a8b9c0d1e2f3`
+  che allarga le colonne a Text e cifra i valori esistenti (idempotente via
+  prefisso `enc:`; verificata end-to-end su un DB con riga plaintext).
+  Decrypt con chiave sbagliata fallisce **rumorosamente** (RuntimeError con
+  spiegazione) invece di passare ciphertext a Strava. Trade-off HRV in chiaro
+  documentato in SECURITY.md, at-rest completo pianificato in G4.
+- **Diritto all'oblio:** `DELETE /api/me/data?confirm=DELETE` →
+  `app/services/erasure.py` svuota tutte le 18 tabelle (figli prima dei padri,
+  una transazione) + oggetti S3 best-effort (nuovo `ObjectStore.delete`);
+  invalida cache Q5 e cache token (i bulk delete bypassano gli eventi ORM).
+- **Rate limiting:** `RateLimitMiddleware` token-bucket per-IP su `/api/*`
+  (120/min) + bucket severo sul webhook Strava (30/min, unico write non
+  autenticato); health/ready esenti (probe Fly); 429 + `Retry-After`.
+  Outermost nella catena: il flood viene tagliato prima del check auth.
+- **Rotazione token:** `POST /api/auth/rotate` → nuovo token mostrato una
+  volta; in `sync_state` va **solo l'hash SHA-256** (un leak del DB non rivela
+  la credenziale — coerente col resto del passo); l'hash override invalida
+  subito il token env precedente; confronti constant-time in entrambi i percorsi.
+
+**Accettazione** (tutti coperti in `tests/integration/test_security_a10.py`):
+token Strava mai in chiaro a query SQL diretta ✓; delete-my-data lascia solo
+tabelle vuote (loop su tutte le tabelle del metadata) ✓; 429 oltre soglia con
+Retry-After e health esente ✓; rotate invalida il vecchio token e nel DB c'è
+solo l'hash ✓. Suite completa: 485 test, coverage 82.9%.
+
+**Deviazioni dal brief:** (1) il brief diceva "persistito in sync_state" per il
+token ruotato — persisto l'**hash**, non il token: salvare il segreto in chiaro
+nel DB avrebbe ricreato esattamente la vulnerabilità che il primo pilastro
+chiude. (2) Colonne token allargate String(128)→Text (il ciphertext Fernet non
+ci stava — scoperto verificando lo stato attuale). (3) Rate limiting spento
+nella suite di test (`RATE_LIMIT_ENABLED=false` in conftest) e testato con
+client dedicati a soglia bassa. Nuova dipendenza: `cryptography==49.0.0`.
 
 **Obiettivo.** Trattiamo dati sanitari in Italia: cifratura dei segreti, diritto all'oblio, rate limiting. Va fatto **prima** di aumentare utenti e dati.
 

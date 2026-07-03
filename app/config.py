@@ -80,6 +80,18 @@ class Settings(BaseSettings):
     cors_origins: str = ""
     # Trust X-Forwarded-* headers (needed behind Fly.io/Render/Cloudflare).
     forwarded_allow_ips: str = "*"
+    # Fernet key for at-rest encryption of stored secrets (A10). Set
+    # DATA_ENCRYPTION_KEY in production; when empty, a key is generated at
+    # first use and persisted to `data_encryption_key_file` (with a warning).
+    # The file lives next to the SQLite DB — on Fly that's the volume, which
+    # Litestream does NOT replicate, so a leaked DB backup stays unreadable.
+    data_encryption_key: str = ""
+    data_encryption_key_file: str = "data/.encryption_key"
+    # In-process rate limiting (A10): requests/min per client IP on /api/*,
+    # with a stricter bucket on the Strava webhook. Disabled in tests.
+    rate_limit_enabled: bool = True
+    rate_limit_per_minute: int = 120
+    rate_limit_strava_per_minute: int = 30
 
     # -- Raw activity object storage (Tigris / S3-compatible) ---------------
     # Used to archive every raw Garmin payload (summary JSON, details streams,

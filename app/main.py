@@ -24,7 +24,12 @@ from app.config import get_settings
 from app.db.database import get_session, init_db
 from app.exceptions import CoachError, CollectionError
 from app.logging_config import configure_logging, get_logger
-from app.middleware import AuthMiddleware, RequestLogMiddleware, SecurityHeadersMiddleware
+from app.middleware import (
+    AuthMiddleware,
+    RateLimitMiddleware,
+    RequestLogMiddleware,
+    SecurityHeadersMiddleware,
+)
 from app.processing import (
     build_periodization,
     build_snapshot,
@@ -69,11 +74,15 @@ async def lifespan(_app: FastAPI):
 
 app = FastAPI(title="AI Running Coach", version=__version__, lifespan=lifespan)
 
-# Middleware (outermost first): security headers, logging, auth, gzip, CORS.
+# Middleware. Starlette runs the LAST added as the outermost: requests flow
+# RateLimit → GZip → Auth → RequestLog → SecurityHeaders. Rate limiting sits
+# outside auth on purpose (A10): a flood of bad tokens is throttled before it
+# reaches the constant-time compare.
 app.add_middleware(SecurityHeadersMiddleware)
 app.add_middleware(RequestLogMiddleware)
 app.add_middleware(AuthMiddleware)
 app.add_middleware(GZipMiddleware, minimum_size=512)
+app.add_middleware(RateLimitMiddleware)
 
 _settings = get_settings()
 if _settings.cors_origin_list:

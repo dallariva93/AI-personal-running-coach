@@ -24,3 +24,6 @@ requests==2.34.2
 
 # Object storage (Tigris / S3-compatible) for raw activity archive
 boto3==1.35.49
+
+# At-rest encryption of stored secrets (Strava OAuth tokens) - A10
+cryptography==49.0.0
