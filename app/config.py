@@ -57,6 +57,13 @@ class Settings(BaseSettings):
     ai_timeout_seconds: int = 60
     # When the AI call fails, fall back to the offline rule-based coach.
     ai_fallback_offline: bool = True
+    # LLM voice for the daily note (A1). Off by default so the suite/offline
+    # never call the network; the template note is used until enabled in prod.
+    # Verbalization runs in the post-sync pipeline with a hard, short timeout
+    # and total fallback to the template on any error.
+    verbalizer_enabled: bool = False
+    verbalizer_model: str = "claude-haiku-4-5-20251001"
+    verbalizer_timeout_seconds: int = 3
 
     # -- Push notifications (FCM HTTP v1, Roadmap A3) -----------------------
     # Path to a Firebase service-account JSON. When empty, push is a no-op

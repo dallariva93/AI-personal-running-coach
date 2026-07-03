@@ -690,7 +690,42 @@ il cronico ACWR ed evitare falsi "severe" nei pattern red prolungati.
 
 ---
 
-#### Passo 11 — A1 · Voce LLM + trigger proattivi (dipende da A3, gate da A9)
+#### Passo 11 — A1 · Voce LLM + trigger proattivi (dipende da A3, gate da A9) ✅ FATTO — 2026-07-03
+
+**Implementato:**
+- **Verbalizer** (`app/coaching/verbalizer.py`): `verbalize_decision(decision, recent_notes, call_fn=None)`
+  riscrive la `daily_note` con Haiku (timeout 3s, no retry). Le regole non sono solo
+  nel prompt ma **applicate in codice dopo la risposta**: numeri inventati (non presenti
+  nel JSON della decisione) → scarto; ripetizione di una nota degli ultimi 14 giorni
+  (match normalizzato) → scarto; >2 frasi → troncato. Qualsiasi errore/timeout/output
+  vuoto/flag disabilitato/assenza key → nota template invariata. Cablato nel pipeline
+  post-sync (`verbalize_today_note` in `decision_service`, persiste sulla riga) — non
+  nell'overview, per latenza. Config `verbalizer_enabled` (default off).
+- **Trigger comportamentali** (`app/services/triggers.py`, `evaluate_triggers` in coda a
+  `_adapt_after_change`): (1) *reengage* — seduta di ieri `skipped` + oggi nessuna corsa
+  → "Ci sei?"; (2) *recalibrate* — ≥3 execution `too_hard` in 10 giorni → offerta +5s/km;
+  (3) *hrv_watch* — HRV sotto la baseline personale (Q1) per ≥5 giorni consecutivi →
+  nudge pre-red. Tutti `notifiable`, con `priority` e `dedupe_key` **settimanale** (una
+  volta per finestra). Le azioni suggerite viaggiano in `event.after["actions"]`.
+- **Azione `recalibrate`**: nuova azione coach (`apply_coach_action`) che aggiunge +5s/km
+  al `target_pace` di tutte le sedute future (helper `_shift_pace`).
+- **Gate (A9)**: `tests/eval/test_triggers.py` (7 scenari: ogni trigger scatta una volta,
+  silente sotto soglia, dedupe settimanale, +5s/km applicato) e `tests/eval/test_verbalizer.py`
+  (8 guardie deterministiche con `call_fn` iniettata + golden `eval_llm` per le 14 note
+  distinte). Eval job: 67 scenari deterministici in ~9s (<60s target).
+
+**Accettazione**: 14 giorni → 14 note distinte (golden `eval_llm`, nightly) ✓; key assente →
+note template, zero errori (verificato end-to-end sul pipeline reale) ✓; i 3 trigger
+scattano sugli scenari sintetici e mai più di una volta per finestra di dedupe ✓.
+546→561 test, coverage 83.3%.
+
+**Deviazioni/note:** (1) A3 (push FCM) e A9 (harness) erano già stati sviluppati in
+parallelo — verificati presenti prima di iniziare; riparato un drift alembic
+pre-esistente lasciato da A3 (`devices.fcm_token` index unique) in commit separato.
+(2) Le azioni dei trigger sono esposte in `event.after` e (per `recalibrate`) eseguibili
+via `/api/coach/today/action`; il wiring del deep-link tap-dal-push lato Android è un
+follow-up sottile, non incluso. (3) Verbalizer off di default (come il meteo): in prod
+`VERBALIZER_ENABLED=true`.
 
 **Obiettivo.** Uccidere il difetto 3: i fatti restano deterministici, la superficie verbale diventa generativa e non si ripete; il coach prende iniziativa sui pattern comportamentali.
 

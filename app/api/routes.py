@@ -188,6 +188,11 @@ def _adapt_after_change(session: Session, run_analysis: bool = False) -> None:
             except ValueError:
                 pass  # no running activity to analyse yet
         decision = build_today_decision(session, persist=True)
+        # LLM voice for the daily note (A1): rewrite + persist, total fallback
+        # to the template (disabled/no-key/error), so it only ever improves it.
+        from app.services.decision_service import verbalize_today_note
+
+        verbalize_today_note(session, decision)
         record_decision_notification(session, decision)
         # Weather-window suggestion (Q6): once/day, low-priority, best-effort.
         # Guarded by its own dedupe + weather_enabled gate, so this is a no-op
@@ -195,6 +200,12 @@ def _adapt_after_change(session: Session, run_analysis: bool = False) -> None:
         from app.services.weather import maybe_suggest_weather_window
 
         maybe_suggest_weather_window(session, decision.decision)
+        # Proactive behavioural triggers (A1): at most one event per pattern
+        # per week, self-deduped, notifiable. Runs last so it sees the freshly
+        # scored executions and adapted plan.
+        from app.services.triggers import evaluate_triggers
+
+        evaluate_triggers(session)
         _commit(session)
 
     try:

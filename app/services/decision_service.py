@@ -74,6 +74,41 @@ def get_today_decision(db: Session, ref: date | None = None) -> CoachDecision:
     return build_today_decision(db, ref=ref, persist=True)
 
 
+def _recent_daily_notes(db: Session, ref: date, days: int = 14) -> list[str]:
+    """Daily notes from the last ``days`` days, excluding ``ref`` (A1)."""
+    cutoff = (ref - timedelta(days=days)).isoformat()
+    rows = db.scalars(
+        select(CoachDecisionRow.daily_note)
+        .where(
+            CoachDecisionRow.date >= cutoff,
+            CoachDecisionRow.date < ref.isoformat(),
+            CoachDecisionRow.daily_note.is_not(None),
+        )
+        .order_by(CoachDecisionRow.date.desc())
+    ).all()
+    return [n for n in rows if n]
+
+
+def verbalize_today_note(db: Session, decision: CoachDecision, ref: date | None = None) -> None:
+    """Rewrite today's daily note with the LLM voice and persist it (A1).
+
+    Best-effort and total-fallback: :func:`verbalize_decision` returns the
+    template note on any error / disabled flag / missing key, so this only ever
+    improves the note. Mutates ``decision`` in place and updates its stored row.
+    """
+    from app.coaching.verbalizer import verbalize_decision
+
+    ref = ref or date.today()
+    recent = _recent_daily_notes(db, ref)
+    note = verbalize_decision(decision, recent)
+    if note and note != decision.daily_note:
+        decision.daily_note = note
+        row = db.scalar(select(CoachDecisionRow).where(CoachDecisionRow.date == decision.date))
+        if row is not None:
+            row.daily_note = note
+            db.flush()
+
+
 def record_decision_notification(db: Session, decision: CoachDecision) -> None:
     """Emit a notifiable event for a *notable* decision (Roadmap #6).
 
@@ -131,7 +166,11 @@ def recent_decisions(db: Session, days: int = 14) -> list[CoachDecision]:
 
 
 #: Actions the athlete can take on the Today card (Roadmap #2, actionable).
-COACH_ACTIONS = {"done", "reduce", "defer", "problem"}
+COACH_ACTIONS = {"done", "reduce", "defer", "problem", "recalibrate"}
+
+# +5 s/km applied to future target paces when the athlete accepts the
+# "your targets look too tight" recalibration (A1, trigger 2).
+_RECALIBRATE_DELTA_SEC = 5
 
 
 def apply_coach_action(
@@ -233,6 +272,11 @@ def apply_coach_action(
     elif action == "problem":
         _record_problem(db, detail, ref)
 
+    elif action == "recalibrate":
+        # Loosen future target paces by +5 s/km (A1, trigger 2 action): the
+        # athlete confirmed the prescribed intensities are too tight.
+        _recalibrate_future_paces(db, plan, start, ref)
+
     db.flush()
 
     # Audit the athlete's action (not notifiable — they did it themselves).
@@ -243,6 +287,7 @@ def apply_coach_action(
         "reduce": "Allenamento ridotto su richiesta",
         "defer": "Seduta spostata a domani",
         "problem": f"Segnalato un problema ({detail or 'stanchezza'})",
+        "recalibrate": "Ritmi target ricalibrati (+5 s/km sulle sedute future)",
     }
     log_event(
         db,
@@ -264,6 +309,31 @@ def apply_coach_action(
             logger.warning("Adaptive pass after action skipped: %s", exc)
 
     return build_today_decision(db, ref=ref, persist=True)
+
+
+def _shift_pace(pace: str | None, delta_sec: int) -> str | None:
+    """Add ``delta_sec`` to a ``M:SS`` (or ``M:SS/km``) pace; None passes through."""
+    if not pace:
+        return pace
+    core, _, suffix = pace.partition("/")
+    parts = core.split(":")
+    if len(parts) != 2 or not all(p.strip().isdigit() for p in parts):
+        return pace
+    total = int(parts[0]) * 60 + int(parts[1]) + delta_sec
+    total = max(0, total)
+    shifted = f"{total // 60}:{total % 60:02d}"
+    return f"{shifted}/{suffix}" if suffix else shifted
+
+
+def _recalibrate_future_paces(db, plan, start, ref: date) -> None:
+    """Add +5 s/km to the target pace of every not-yet-past plan session (A1)."""
+    if plan is None or start is None:
+        return
+    for week in plan.weeks:
+        for sess in week.sessions:
+            sess_date = start + timedelta(days=(week.week_number - 1) * 7 + sess.day_of_week)
+            if sess_date >= ref and sess.target_pace:
+                sess.target_pace = _shift_pace(sess.target_pace, _RECALIBRATE_DELTA_SEC)
 
 
 def _record_problem(db: Session, detail: str | None, ref: date) -> None:
