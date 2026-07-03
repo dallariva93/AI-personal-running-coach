@@ -67,7 +67,16 @@ def _maybe_push(db: Session, event: CoachEvent) -> None:
     try:
         from app.services.push import send_to_all
 
-        send_to_all(db, event.title, event.detail or event.title, priority)
+        # Forward a deep-link payload (A4) so tapping the notification can open
+        # the right surface (e.g. the voice-debrief sheet).
+        after = event.after or {}
+        data: dict = {}
+        if after.get("deep_link"):
+            data["deep_link"] = after["deep_link"]
+        if after.get("activity_id") is not None:
+            data["activity_id"] = after["activity_id"]
+        data["event_id"] = event.id
+        send_to_all(db, event.title, event.detail or event.title, priority, data or None)
     except Exception:
         logger.exception("Push delivery failed for event %s (non-fatal)", event.id)
 

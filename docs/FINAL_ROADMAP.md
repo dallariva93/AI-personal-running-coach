@@ -738,7 +738,42 @@ follow-up sottile, non incluso. (3) Verbalizer off di default (come il meteo): i
 
 ---
 
-#### Passo 12 — A4 · Voice debrief post-corsa
+#### Passo 12 — A4 · Voice debrief post-corsa ✅ FATTO — 2026-07-03
+
+**Implementato:**
+- **Estrattore** (`app/services/debrief.py`, `extract_debrief(text, call_fn=None)`): due percorsi,
+  stesso contratto `DebriefResult{rpe, soreness, pain_location, mood, notes}`. Path LLM (Haiku,
+  prompt `DEBRIEF_EXTRACT_SYSTEM_PROMPT` in `prompts.py`, parse difensivo + coercizione/clamp 1-10);
+  su assenza key / JSON invalido / eccezione → **fallback rule-based** deterministico (parser
+  italiano: numeri espliciti "7 di fatica"/"6/10", keyword di tono, parti del corpo con lato +
+  cue di fastidio per `pain_location`, umore). Così la feature vive **offline/senza credenziali**.
+- **Persistenza + precedenza fonti:** nuova colonna `daily_checkins.source`
+  (`garmin_proxy|health_connect|manual|voice`, migrazione `c7d8e9f0a1b2`). `save_checkin` ora
+  rispetta la precedenza (voice > manual > proxy): una fonte più debole può solo **riempire i
+  buchi**, mai sovrascrivere. `ingest_wellness` marca `garmin_proxy`, la POST `/api/checkin`
+  marca `manual`, il debrief `voice` (portando avanti HRV/sonno del proxy senza cancellarli).
+- **Endpoint** `POST /api/debrief {text, activity_id?}` (`process_debrief`): estrae → aggiorna
+  `Activity.rpe/notes` → upsert del check-in del giorno come `voice` → gira il pipeline post-sync.
+- **Ponte G6:** `pain_location` non nullo → evento `debrief_pain` notifiable **priority high**
+  ("Sento che hai indicato dolore al …: vuoi dirmi di più?").
+- **Ponte dal push A3:** `maybe_prompt_debrief` (in coda al pipeline su nuova corsa) logga un
+  evento notifiable "Com'è andata?" con `after.deep_link=debrief`; `send_to_all`/`_maybe_push`
+  ora propagano un payload `data` (deep_link/activity_id) via `_build_fcm_message` (puro, testato).
+- **Android:** bottom-sheet `DebriefSheet` ("Com'è andata?") con `SpeechRecognizer` on-device
+  (it-IT, gratuito, no rete) + fallback campo testo → `POST /api/debrief`. Tap sulla notifica
+  deep-linkata riapre `MainActivity` (`singleTop`) e mostra lo sheet; permesso `RECORD_AUDIO`.
+
+**Accettazione**: testi italiani reali ("fatta dura, polpaccio destro un po' teso, 7 di fatica") →
+estrazione corretta (rpe=7, pain_location="polpaccio destro") ✓; proxy che **non** sovrascrive un
+debrief voice, HRV del proxy preservata ✓; pain → evento high ✓; offline → rule-based (nessuna
+rete) ✓. `tests/test_debrief.py`: 22 test deterministici + golden `eval_llm` nightly. Suite: 584
+passati (3 skip), coverage 83.7%. Gate verdi (pytest, ruff, `alembic check` no-drift).
+
+**Deviazioni/note:** (1) "Coda locale offline" lato Android è per ora un retry semplice
+(`runCatching`) come da brief ("riusa il meccanismo di G5 quando arriva"). (2) Il payload `data`
+del push è un'aggiunta minima e retro-compatibile ad A3 (nessuna `data` = notifica invariata).
+(3) L'estrattore rule-based copre le frasi tipiche del brief; la comprensione ricca resta all'LLM
+quando la key è presente.
 
 **Obiettivo.** Sostituire i proxy crudi (stress→fatica, body-battery→motivazione) con 20 secondi di voce dell'atleta dopo la corsa.
 

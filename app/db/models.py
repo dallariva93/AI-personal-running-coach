@@ -323,6 +323,10 @@ class DailyCheckinRow(Base):
     motivation: Mapped[int | None] = mapped_column(Integer, nullable=True)
     notes: Mapped[str | None] = mapped_column(Text, nullable=True)
     hrv_rmssd: Mapped[float | None] = mapped_column(Float, nullable=True)
+    # Provenance (A4): garmin_proxy | health_connect | manual | voice. NULL on
+    # legacy rows (treated as manual-tier). Drives save precedence so a Garmin
+    # proxy never overwrites a voice debrief.
+    source: Mapped[str | None] = mapped_column(String(20), nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime, default=_utcnow)
 
     def __repr__(self) -> str:  # pragma: no cover - debug helper

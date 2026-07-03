@@ -32,6 +32,10 @@ class CoachFirebaseService : FirebaseMessagingService() {
                 id = id,
                 title = title,
                 body = body,
+                // Deep-link payload (A4): e.g. tapping an execution-score / debrief
+                // push opens the on-device "Com'è andata?" bottom-sheet.
+                deepLink = message.data["deep_link"],
+                activityId = message.data["activity_id"]?.toIntOrNull(),
             ),
         )
     }

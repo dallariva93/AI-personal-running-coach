@@ -80,7 +80,11 @@ private enum class Dest(val route: String, val label: String, val icon: ImageVec
 }
 
 @Composable
-fun AppScaffold(app: RunningCoachApp) {
+fun AppScaffold(
+    app: RunningCoachApp,
+    debriefRequest: com.runningcoach.app.DebriefRequest? = null,
+    onDebriefHandled: () -> Unit = {},
+) {
     val factory = remember { ViewModelFactory(app) }
     val overviewVm: OverviewViewModel = viewModel(factory = factory)
     val settingsVm: SettingsViewModel = viewModel(factory = factory)
@@ -396,6 +400,17 @@ fun AppScaffold(app: RunningCoachApp) {
                     )
                 }
             }
+        }
+
+        // Post-run voice debrief (Roadmap A4): shown when the app is opened from
+        // a debrief notification. Dismiss/send clears the request in the host.
+        if (debriefRequest != null) {
+            com.runningcoach.app.ui.components.DebriefSheet(
+                activityId = debriefRequest.activityId,
+                repository = app.repository,
+                onDismiss = onDebriefHandled,
+                onSent = { msg -> scope.launch { snackbar.showSnackbar(msg) } },
+            )
         }
     }
 }

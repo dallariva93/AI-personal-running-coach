@@ -38,6 +38,8 @@ from app.schemas import (
     CoachDecision,
     CoachEventOut,
     DailyCheckin,
+    DebriefIn,
+    DebriefResult,
     DeviceIn,
     DeviceOut,
     ExecutionResult,
@@ -187,6 +189,16 @@ def _adapt_after_change(session: Session, run_analysis: bool = False) -> None:
                 run_single_analysis(session, presync=False)
             except ValueError:
                 pass  # no running activity to analyse yet
+            # Nudge the athlete for a 20s voice debrief on the fresh run (A4).
+            from app.services.debrief import maybe_prompt_debrief
+
+            latest_run = session.scalar(
+                select(Activity)
+                .where(Activity.sport == "run")
+                .order_by(Activity.date.desc(), Activity.id.desc())
+                .limit(1)
+            )
+            maybe_prompt_debrief(session, latest_run)
         decision = build_today_decision(session, persist=True)
         # LLM voice for the daily note (A1): rewrite + persist, total fallback
         # to the template (disabled/no-key/error), so it only ever improves it.
@@ -337,10 +349,28 @@ def get_checkin(session: Session = Depends(get_session)) -> DailyCheckin | None:
 def post_checkin(
     payload: DailyCheckin, session: Session = Depends(get_session)
 ) -> DailyCheckin:
+    # A manually submitted form is a "manual" source (A4 precedence): it beats a
+    # Garmin proxy but yields to a voice debrief on the same day.
+    if payload.source is None:
+        payload = payload.model_copy(update={"source": "manual"})
     save_checkin(session, payload)
     _commit(session)
     _adapt_after_change(session)
     return latest_checkin(session)
+
+
+@router.post("/debrief", response_model=DebriefResult, status_code=201)
+def post_debrief(
+    payload: DebriefIn, session: Session = Depends(get_session)
+) -> DebriefResult:
+    """Post-run voice/text debrief (A4): extract signals, update the run + the
+    day's check-in (source=voice), and raise a pain event if one was mentioned."""
+    from app.services.debrief import process_debrief
+
+    result = process_debrief(session, payload.text, payload.activity_id)
+    _commit(session)
+    _adapt_after_change(session)
+    return result
 
 
 @router.get("/coach/today", response_model=CoachDecision)

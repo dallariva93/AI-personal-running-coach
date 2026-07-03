@@ -109,17 +109,41 @@ def _all_tokens(db: Session) -> list[str]:
     return list(rows)
 
 
+def _build_fcm_message(
+    token: str,
+    title: str,
+    body: str,
+    android_priority: str,
+    data: dict | None = None,
+) -> dict:
+    """Assemble the FCM v1 message body (pure — unit-tested).
+
+    ``data`` (e.g. ``{"deep_link": "debrief", "activity_id": "12"}``) is passed
+    through as string key/values so the app can deep-link on notification tap
+    (A4). Empty/absent data yields a plain notification, unchanged from before.
+    """
+    message: dict = {
+        "token": token,
+        "notification": {"title": title, "body": body},
+        "android": {"priority": android_priority},
+    }
+    if data:
+        message["data"] = {k: str(v) for k, v in data.items() if v is not None}
+    return {"message": message}
+
+
 def send_to_all(
     db: Session,
     title: str,
     body: str,
     priority: str = "medium",
+    data: dict | None = None,
 ) -> int:
     """Best-effort push to every registered device. Returns the count of
     successful sends. Never raises — logs and returns 0 on failure.
 
     ``priority`` maps to FCM Android priority: ``high`` → ``HIGH``, anything
-    else → ``NORMAL``.
+    else → ``NORMAL``. ``data`` carries an optional deep-link payload (A4).
     """
     settings = get_settings()
     if not settings.fcm_enabled:
@@ -140,22 +164,17 @@ def send_to_all(
     android_priority = "HIGH" if priority == "high" else "NORMAL"
     sent = 0
     for token in tokens:
-        if _send_one(sa, token, title, body, android_priority):
+        if _send_one(sa, token, title, body, android_priority, data):
             sent += 1
     return sent
 
 
 def _send_one(
-    sa: dict, token: str, title: str, body: str, android_priority: str
+    sa: dict, token: str, title: str, body: str, android_priority: str,
+    data: dict | None = None,
 ) -> bool:
     endpoint = _FCM_ENDPOINT.format(project_id=sa["project_id"])
-    message = {
-        "message": {
-            "token": token,
-            "notification": {"title": title, "body": body},
-            "android": {"priority": android_priority},
-        }
-    }
+    message = _build_fcm_message(token, title, body, android_priority, data)
 
     for attempt in range(_MAX_RETRIES + 1):
         try:

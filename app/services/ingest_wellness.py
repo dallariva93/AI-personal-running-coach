@@ -124,6 +124,7 @@ def ingest_wellness(session: Session, days: int = 30) -> int:
                 hrv_rmssd=hrv_rmssd,
                 fatigue=fatigue,
                 motivation=motivation,
+                source="garmin_proxy",  # never overwrites a voice debrief (A4)
             ),
         )
         upserted += 1

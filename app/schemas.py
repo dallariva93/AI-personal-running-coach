@@ -84,6 +84,33 @@ class DailyCheckin(BaseModel):
     motivation: int | None = None  # 1 (none) .. 10 (high)
     notes: str | None = None
     hrv_rmssd: float | None = None
+    # Provenance (A4): garmin_proxy | health_connect | manual | voice.
+    # Drives precedence so a Garmin proxy never overwrites a voice debrief.
+    source: str | None = None
+
+
+class DebriefIn(BaseModel):
+    """A free-text (or transcribed voice) post-run debrief (Roadmap A4)."""
+
+    text: str
+    activity_id: int | None = None
+
+
+class DebriefResult(BaseModel):
+    """Structured signals extracted from a voice/text debrief (Roadmap A4).
+
+    ``notes`` always echoes the athlete's own words; every other field is
+    ``None`` when the debrief didn't mention it (never invented).
+    """
+
+    model_config = ConfigDict(extra="ignore")
+
+    rpe: int | None = None  # perceived effort 1-10
+    soreness: int | None = None  # 1 (none) .. 10 (very sore)
+    pain_location: str | None = None  # e.g. "polpaccio destro"
+    mood: str | None = None  # short free text, e.g. "bene", "stanco"
+    notes: str = ""
+    activity_id: int | None = None  # the run the debrief was attached to
 
 
 class Race(BaseModel):

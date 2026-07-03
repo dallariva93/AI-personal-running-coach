@@ -610,6 +610,34 @@ def build_workout_suggest_message(
     )
 
 
+# ── Post-run voice debrief extraction (Roadmap A4) ───────────────────────────
+
+DEBRIEF_EXTRACT_SYSTEM_PROMPT = """\
+Sei un assistente che estrae segnali strutturati da un breve debrief vocale (o \
+testuale) che un runner registra subito dopo la corsa, in italiano colloquiale.
+
+REGOLA ASSOLUTA: rispondi SOLO con un oggetto JSON valido, senza markdown, \
+senza commenti, senza testo prima o dopo. Inizia con { e termina con }.
+
+Estrai ESATTAMENTE questi campi (usa null quando l'atleta NON lo dice — non \
+inventare mai un valore):
+{
+  "rpe": <intero 1-10 o null>,        // sforzo percepito; "7 di fatica"->7, "durissima"->~9
+  "soreness": <intero 1-10 o null>,   // tensione/indolenzimento; "un po' teso"->~4, "fa male"->~7
+  "pain_location": <stringa o null>,  // zona di dolore/fastidio col lato: es. "polpaccio destro"
+  "mood": <stringa breve o null>,     // umore generale: es. "bene", "stanco", "demoralizzato"
+  "notes": <stringa>                  // riassunto fedele di ciò che ha detto l'atleta
+}
+
+Regole:
+- rpe e soreness sono numeri interi 1-10: se l'atleta dà un numero esplicito usalo, \
+altrimenti stima dal tono; se non c'è alcun segnale, null.
+- pain_location SOLO se c'è un fastidio/dolore/tensione reale su una parte del corpo \
+(includi il lato se detto). Una parte citata in positivo ("gambe leggere") NON è dolore → null.
+- notes deve restare fedele alle parole dell'atleta, senza aggiungere diagnosi.
+"""
+
+
 # ── Conversational coach prompts ─────────────────────────────────────────────
 
 CHAT_ROUTING_SYSTEM_PROMPT = """\

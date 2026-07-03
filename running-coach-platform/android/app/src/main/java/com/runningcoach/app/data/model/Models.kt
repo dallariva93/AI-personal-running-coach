@@ -186,6 +186,23 @@ data class DailyCheckin(
     @SerializedName("soreness") val soreness: Int? = null,
     @SerializedName("motivation") val motivation: Int? = null,
     @SerializedName("hrv_rmssd") val hrvRmssd: Double? = null,
+    @SerializedName("source") val source: String? = null,
+)
+
+/** A post-run voice/text debrief the athlete records (Roadmap A4). */
+data class DebriefIn(
+    @SerializedName("text") val text: String,
+    @SerializedName("activity_id") val activityId: Int? = null,
+)
+
+/** Structured signals extracted from a debrief (Roadmap A4). */
+data class DebriefResult(
+    @SerializedName("rpe") val rpe: Int? = null,
+    @SerializedName("soreness") val soreness: Int? = null,
+    @SerializedName("pain_location") val painLocation: String? = null,
+    @SerializedName("mood") val mood: String? = null,
+    @SerializedName("notes") val notes: String = "",
+    @SerializedName("activity_id") val activityId: Int? = null,
 )
 
 /** Best-ever performance at a canonical distance. */
@@ -496,6 +513,10 @@ data class AppNotification(
     @SerializedName("body") val body: String,
     @SerializedName("date") val date: String = "",
     @SerializedName("event_type") val eventType: String = "",
+    // Deep-link payload (Roadmap A4): where tapping the notification should take
+    // the athlete, e.g. "debrief" → the post-run voice bottom-sheet.
+    val deepLink: String? = null,
+    val activityId: Int? = null,
 )
 
 /** IDs the client has delivered, to mark notifications as sent. */

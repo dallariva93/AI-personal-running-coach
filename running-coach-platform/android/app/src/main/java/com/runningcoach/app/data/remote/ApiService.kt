@@ -12,6 +12,8 @@ import com.runningcoach.app.data.model.CoachActionRequest
 import com.runningcoach.app.data.model.CoachDecision
 import com.runningcoach.app.data.model.CoachEvent
 import com.runningcoach.app.data.model.DailyCheckin
+import com.runningcoach.app.data.model.DebriefIn
+import com.runningcoach.app.data.model.DebriefResult
 import com.runningcoach.app.data.model.DeviceIn
 import com.runningcoach.app.data.model.NotificationAck
 import com.runningcoach.app.data.model.HeatmapResponse
@@ -99,6 +101,9 @@ interface ApiService {
 
     @POST("api/checkin")
     suspend fun postCheckin(@Body checkin: DailyCheckin): DailyCheckin
+
+    @POST("api/debrief")
+    suspend fun postDebrief(@Body body: DebriefIn): DebriefResult
 
     @PATCH("api/activities/{id}")
     suspend fun patchActivity(@Path("id") id: Int, @Body patch: ActivityPatch): Activity

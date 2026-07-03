@@ -12,6 +12,8 @@ import com.runningcoach.app.data.model.CoachActionRequest
 import com.runningcoach.app.data.model.CoachDecision
 import com.runningcoach.app.data.model.CoachEvent
 import com.runningcoach.app.data.model.DailyCheckin
+import com.runningcoach.app.data.model.DebriefIn
+import com.runningcoach.app.data.model.DebriefResult
 import com.runningcoach.app.data.model.DeviceIn
 import com.runningcoach.app.data.model.HeatmapResponse
 import com.runningcoach.app.data.model.OnboardingStatus
@@ -91,6 +93,10 @@ class CoachRepository(private val settings: SettingsStore) {
     suspend fun putProfile(profile: AthleteProfile): AthleteProfile = api().putProfile(profile)
 
     suspend fun postCheckin(checkin: DailyCheckin): DailyCheckin = api().postCheckin(checkin)
+
+    /** Send a post-run voice/text debrief (Roadmap A4). */
+    suspend fun postDebrief(text: String, activityId: Int? = null): DebriefResult =
+        api().postDebrief(DebriefIn(text = text, activityId = activityId))
 
     suspend fun patchActivity(id: Int, rpe: Int? = null, notes: String? = null): Activity =
         api().patchActivity(id, ActivityPatch(rpe = rpe, notes = notes))
