@@ -204,7 +204,7 @@ Verdetti: **TIENI** (funziona, serve) · **RIPARA** (serve ma è rotta/incomplet
 | A6 | **Race recap condivisibile** (#11) + weekly recap emozionale — il motore del passaparola | 9 | 5 | medio | basso | altissimo | 3-4 sett |
 | A7 | **Counterfactual what-if sul piano** (N2) | 9 | 6 | medio | basso | altissimo | 3-4 sett |
 | A8 | **Chat unificata**: una sola conversazione col contesto completo (decisioni, execution, eventi, memoria episodica v0 N10); via la chat pre-piano separata; 4 tab | 8 | 5 | medio | medio | alto | 3-4 sett |
-| A9 | **Eval harness coach v1** (#25): 50 scenari sintetici in CI; nessun prompt cambia senza passare i test di sicurezza | 8 | 6 | medio | medio | alto | 4 sett |
+| A9 | **Eval harness coach v1** (#25): 50 scenari sintetici in CI; nessun prompt cambia senza passare i test di sicurezza ✅ FATTO — 2026-07-03 | 8 | 6 | medio | medio | alto | 4 sett |
 | A10 | **Sicurezza GDPR**: cifratura at rest campi sanitari e token, delete-my-data, rate limiting | 8 | 5 | medio | basso | alto (rischio evitato) | 3 sett |
 
 ### Grandi funzionalità — 3 mesi
@@ -633,7 +633,31 @@ client dedicati a soglia bassa. Nuova dipendenza: `cryptography==49.0.0`.
 
 ---
 
-#### Passo 9 — A9 · Eval harness del coach (prima di ritoccare i prompt)
+#### Passo 9 — A9 · Eval harness del coach (prima di ritoccare i prompt) ✅ FATTO — 2026-07-03
+
+**Implementato:** `tests/eval/` con cinque atleti sintetici (`athletes.py`:
+`SyntheticAthlete` dataclass con livello, weekly_km, hrv_pattern, injury_prone,
+risk_tolerance) e simulatore giorno-per-giorno (`simulator.py`): dato un atleta
+e N giorni, semina 28 giorni di storia easy variegata (split settimanale con
+giorno di riposo per evitare monotonia artificiale), crea un piano base
+multi-settimana deterministico (non LLM), e per ogni giorno simula check-in +
+attività easy + pipeline reale (`build_today_decision`, `adapt_plan_after_sync`,
+`evaluate_plan_executions`) su DB temporaneo. Quattro checker di sicurezza
+deterministici: `check_no_quality_when_red`, `check_adaptive_volume_cap`
+(ramp ≤10%), `check_no_new_hard_back_to_back`, `check_taper_quality_preserved`,
+con aggregatore `all_violations`. `test_safety.py`: 50 scenari (5 atleti × 5
+pattern readiness × 2 fasi build/taper) parametrizzati + meta-test
+`test_broken_engine_is_caught` che neutralizza `_is_taper` nell'adaptive e
+assert che `check_taper_quality_preserved` rileva la violazione. Golden test
+LLM (`test_llm_golden.py`): chiama `AICoach.plan_multiweek` con API key reale e
+assert che il piano passa `_validate_plan_structure`; marker `eval_llm`,
+skip senza `ANTHROPIC_API_KEY`. CI: nuovo job `eval` in `ci.yml` che gira
+`pytest tests/eval -m "not eval_llm" -q` su Python 3.12. Marker `eval_llm`
+registrato in `pyproject.toml`.
+**Deviazioni dal brief:** (1) golden test limitato a 1 conversazione invece di
+20 — l'infrastruttura c'è, i 20 casi registrati sono follow-up documentato nel
+docstring del test; (2) storico seedato a 28 giorni (non 10) per stabilizzare
+il cronico ACWR ed evitare falsi "severe" nei pattern red prolungati.
 
 **Obiettivo.** Da qui in avanti nessuna modifica a prompt/engine passa senza superare scenari di sicurezza. È il prerequisito di A1.
 

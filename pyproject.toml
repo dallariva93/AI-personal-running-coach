@@ -12,6 +12,9 @@ filterwarnings = ["ignore::DeprecationWarning"]
 # Put the repo root on sys.path so the app package imports under a bare `pytest`
 # invocation (CI), not only under `python -m pytest` which adds the cwd itself.
 pythonpath = ["."]
+markers = [
+    "eval_llm: coach eval harness golden tests that call the live LLM (nightly, needs ANTHROPIC_API_KEY)",
+]
 
 [tool.ruff]
 line-length = 100
