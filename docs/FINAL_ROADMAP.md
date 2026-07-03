@@ -535,6 +535,50 @@ sostitutiva per lettura/grep mirata, dichiarata esplicitamente in
 
 ---
 
+### RETROSPETTIVA FASE 0 — esito verifica ✅ 2026-07-03
+
+Revisione consolidata dei feedback (deviazioni, rischi residui, "cosa non è
+coperto") lasciati nei blocchi ✅ FATTO dei Passi 1-7. Stato verificato al
+momento della revisione: CI backend verde, deploy Fly.io verde, build APK
+Android verde sull'ultimo commit della fase (`717c2fe`), 465+ test, coverage
+82.7%.
+
+| Passo | Verdetto | Note |
+|---|---|---|
+| 1 · Q1 HRV baseline | ✔ **OK** | Nessuna reiterazione. La baseline esce dalla modalità "learning" da sola dopo 21 giorni di dati HRV — serve solo continuare a sincronizzare il wellness. Residuo cosmetico: `cli.py cmd_metrics` non passa `hrv_history` (non passava nemmeno `checkin` prima — la CLI mostra le soglie assolute, l'app quella personale). |
+| 2 · Q2 morte dei bottoni | ✔ **OK** con verifica manuale | Codice a posto; l'unico punto non verificabile da qui è il comportamento del `SyncWorker` su device reale (Doze, quota expedited) — da osservare qualche giorno d'uso. Il vero pull-to-refresh richiederebbe un bump del compose-bom: rimandato, l'icona di sync manuale copre il caso. |
+| 3 · Q4+Q8 streak + undo | ✔ **OK** | Backend interamente coperto da test (incluso move+undo). Resta solo il tap-through manuale dello snackbar "Annulla" su device. |
+| 4 · Q5 cache | ✔ **OK** con promemoria | Nessuna azione ora (deploy single-worker). **Promemoria vincolante:** al Passo 22 (G4 multi-user) la cache in-process va sostituita con store condiviso + fingerprint da DB — già documentato nel docstring di `app/services/cache.py`, va nel perimetro di G4. |
+| 5 · Q3 execution v2 | ✔ **OK**, upgrade pianificato | Il rilevamento ripetute è dichiaratamente v0 (km-splits, non lap veri). L'upgrade ai `typed_splits` da S3 è un'evoluzione prevista, non un difetto: farla quando l'archivio raw sarà attivo in produzione, sostituendo solo la fonte dietro `rep_analysis()`. |
+| 6 · Q6 weather | ⚠ **OK, ma da attivare** | Il codice è completo ma **spento di default** (`weather_enabled=false` per proteggere test/offline). Per vederla in produzione: `fly secrets set WEATHER_ENABLED=true` (+ opzionale `HOME_LAT`/`HOME_LON` se le corse non hanno GPS). La chiamata rete reale (`fetch_hourly`) non è coperta da test per contratto → al primo giorno attivo controllare i log e che arrivi la notifica. |
+| 7 · Q7 accessibility | ⚠ **DA REITERARE** (7-bis) | Copertura parziale by design (Home/Today/calendari). Vedi sotto. |
+
+**Reiterazione richiesta — Passo 7-bis (Q7, completamento):** lavoro meccanico
+a basso rischio, stesso pattern già stabilito:
+1. Estrarre le stringhe delle schermate rimanenti (Plan — 976 righe, poi
+   Settings/Activities/Calendar/Chat/Workout/Shoes) in `strings.xml` +
+   `values-it/`, una schermata per commit.
+2. Applicare `Color.textSafeOn()` anche a `MetricRing` e `StatItem.valueColor`
+   (stesso rischio di contrasto dei Pill, non ancora corretto).
+3. Aggiungere `./gradlew lint` (o `lintDebug`) al workflow `android.yml` così
+   il criterio di accettazione (`HardcodedText`/`ContentDescription` puliti)
+   diventa verificato in CI invece che per grep — copre anche i passi futuri.
+4. Estrarre i testi di snackbar/toast nei ViewModel (oggi hardcoded in Kotlin).
+
+**Azioni solo-utente (nessun codice):**
+- [ ] Compilare la checklist TalkBack in `docs/ACCESSIBILITY.md` su device reale.
+- [ ] Attivare il meteo in produzione (`WEATHER_ENABLED=true`, vedi Passo 6).
+- [ ] Osservare per qualche giorno che il sync in background (Q2) giri davvero
+      sul telefono (riga "Ultimo sync HH:MM" che si aggiorna da sola).
+
+**Conclusione:** la Fase 0 è chiudibile. Nessun passo ha difetti funzionali
+noti; l'unica reiterazione di codice è il completamento di Q7 (7-bis, sopra),
+che non blocca l'inizio della Fase 1 e può correre in parallelo — nessun passo
+della Fase 1 dipende da Q7. Ordine consigliato: Passo 8 (A10 sicurezza, da fare
+**prima** di crescere) e 7-bis in parallelo o subito dopo.
+
+---
+
 ### FASE 1 — Il coach diventa vivo (mesi 1-2)
 
 #### Passo 8 — A10 · Sicurezza & GDPR (prima di crescere)
