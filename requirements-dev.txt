@@ -6,4 +6,4 @@ pytest-cov==7.1.0
 httpx==0.28.1
 
 # Tooling
-ruff==0.15.18
+ruff==0.15.20
