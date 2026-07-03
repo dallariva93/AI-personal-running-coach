@@ -32,6 +32,7 @@ from app.processing import (
 from app.schemas import (
     ActivityOut,
     ActivityPatch,
+    AthleteModel,
     AthleteProfile,
     AthleteSnapshot,
     CoachActionRequest,
@@ -199,6 +200,11 @@ def _adapt_after_change(session: Session, run_analysis: bool = False) -> None:
                 .limit(1)
             )
             maybe_prompt_debrief(session, latest_run)
+        # Digital Twin (A5): refresh the learned constants once/day before the
+        # decision consumes them. Best-effort, never breaks the pipeline.
+        from app.services.athlete_model_service import maybe_refresh_athlete_model
+
+        maybe_refresh_athlete_model(session)
         decision = build_today_decision(session, persist=True)
         # LLM voice for the daily note (A1): rewrite + persist, total fallback
         # to the template (disabled/no-key/error), so it only ever improves it.
@@ -495,6 +501,15 @@ def get_metrics(session: Session = Depends(get_session)) -> TrainingMetrics:
 @router.get("/metrics/weekly", response_model=list[WeeklyBucket])
 def get_weekly(weeks: int = 8, session: Session = Depends(get_session)) -> list[WeeklyBucket]:
     return weekly_buckets(_all_summaries(session), weeks=weeks)
+
+
+@router.get("/athlete-model", response_model=AthleteModel)
+def get_athlete_model(session: Session = Depends(get_session)) -> AthleteModel:
+    """The learned Digital Twin (A5): ramp tolerance, recovery half-life, heat
+    sensitivity — each with confidence and a ``learning`` flag."""
+    from app.services.athlete_model_service import load_athlete_model
+
+    return load_athlete_model(session)
 
 
 @router.get("/reports", response_model=list[ReportOut])

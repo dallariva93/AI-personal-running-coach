@@ -133,7 +133,10 @@ def adapt_plan_after_sync(db: Session, ref: date | None = None) -> dict:
         hrv_history=hrv_history(db, ref=ref),
     )
 
-    factor, notes = adapt_plan(metrics)
+    # Digital Twin (A5): use the athlete's personal ramp cap when learned.
+    from app.services.athlete_model_service import personal_ramp_factor
+
+    factor, notes = adapt_plan(metrics, max_ramp_factor=personal_ramp_factor(db))
     ease = _should_ease(metrics)
     severe = _is_severe(metrics)
     taper = _is_taper(metrics)

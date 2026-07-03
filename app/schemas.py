@@ -89,6 +89,33 @@ class DailyCheckin(BaseModel):
     source: str | None = None
 
 
+class AthleteModelEstimate(BaseModel):
+    """One learned athlete constant (Roadmap A5 · Digital Twin v0).
+
+    ``value`` is the current best estimate; ``confidence`` is the number of
+    samples it rests on; ``learning`` is True when there aren't enough samples
+    yet, so ``value`` is the population default rather than a personal figure.
+    """
+
+    value: float
+    confidence: int = 0
+    learning: bool = True
+
+
+class AthleteModel(BaseModel):
+    """The athlete's learned model — three constants that become variables (A5).
+
+    - ``ramp_tolerance_pct``: max week-over-week volume increase absorbed safely.
+    - ``recovery_halflife_days``: typical days to bounce back from a hard effort.
+    - ``heat_sensitivity_s_per_c``: pace penalty (s/km) per °C above 15°C.
+    """
+
+    ramp_tolerance_pct: AthleteModelEstimate
+    recovery_halflife_days: AthleteModelEstimate
+    heat_sensitivity_s_per_c: AthleteModelEstimate
+    computed_at: str | None = None
+
+
 class DebriefIn(BaseModel):
     """A free-text (or transcribed voice) post-run debrief (Roadmap A4)."""
 

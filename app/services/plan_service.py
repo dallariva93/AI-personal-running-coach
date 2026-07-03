@@ -43,8 +43,13 @@ def generate_plan(
         active.status = "archived"
         db.flush()
 
-    # Generate plan data from coach
-    plan_data = coach.plan_multiweek(request, profile, metrics)
+    # Generate plan data from coach. The Digital Twin (A5) injects the athlete's
+    # personal weekly ramp cap into the prompt when it has been learned.
+    from app.services.athlete_model_service import personal_ramp_factor
+
+    ramp_factor = personal_ramp_factor(db)
+    ramp_pct = round((ramp_factor - 1) * 100, 1) if ramp_factor is not None else None
+    plan_data = coach.plan_multiweek(request, profile, metrics, ramp_pct=ramp_pct)
 
     # Guarantee the plan matches what was agreed in the pre-plan chat: the
     # generator is a separate model call (with an offline fallback) and can

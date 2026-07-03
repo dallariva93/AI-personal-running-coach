@@ -17,6 +17,7 @@ from sqlalchemy.orm import Session
 
 from app.db.models import (
     Activity,
+    AthleteModelRow,
     AthleteProfileRow,
     ChatMessage,
     ChatSession,
@@ -60,6 +61,7 @@ _DELETE_ORDER = [
     StravaAccount,
     StravaWebhookEvent,
     AthleteProfileRow,
+    AthleteModelRow,
     SyncState,
 ]
 

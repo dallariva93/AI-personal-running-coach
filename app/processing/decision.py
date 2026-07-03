@@ -238,19 +238,26 @@ def decide_today(
     checkin: DailyCheckin | None,
     ref: date | None = None,
     next_sessions: list[PlanSessionOut] | None = None,
+    days_since_last_hard: int | None = None,
+    recovery_halflife_days: int | None = None,
 ) -> CoachDecision:
     """Produce today's structured coaching decision with its daily note (v2).
 
     ``next_sessions`` is the lookahead window (P1-3): upcoming planned sessions
     for the next 7 days, used to avoid stacking quality sessions and to preserve
     taper logic.
+
+    ``days_since_last_hard`` + ``recovery_halflife_days`` (Digital Twin, A5): when
+    the athlete's personal recovery half-life hasn't elapsed since the last hard
+    effort, quality is not re-proposed — the coach protects the recovery window.
     """
     ref = ref or date.today()
     days_to_race = metrics.weeks_to_race
     if days_to_race is not None:
         days_to_race = days_to_race * 7
     decision = _decide_core(
-        metrics, profile, today_session, checkin, ref, next_sessions, days_to_race
+        metrics, profile, today_session, checkin, ref, next_sessions, days_to_race,
+        days_since_last_hard, recovery_halflife_days,
     )
     decision.daily_note = daily_note(
         decision.decision, metrics, profile, days_to_race
@@ -312,6 +319,17 @@ def _level_easy_min(profile: AthleteProfile | None) -> tuple[int, int]:
     return _LEVEL_EASY_MIN.get(level, _LEVEL_EASY_MIN["intermediate"])
 
 
+def _recovery_incomplete(
+    days_since_last_hard: int | None, recovery_halflife_days: int | None
+) -> bool:
+    """True when the personal recovery window (A5) hasn't elapsed yet."""
+    return (
+        days_since_last_hard is not None
+        and recovery_halflife_days is not None
+        and 0 <= days_since_last_hard < recovery_halflife_days
+    )
+
+
 def _decide_core(
     metrics: TrainingMetrics,
     profile: AthleteProfile | None,
@@ -320,6 +338,8 @@ def _decide_core(
     ref: date | None = None,
     next_sessions: list[PlanSessionOut] | None = None,
     days_to_race: int | None = None,
+    days_since_last_hard: int | None = None,
+    recovery_halflife_days: int | None = None,
 ) -> CoachDecision:
     """The rule cascade producing the decision (v2: profile + lookahead + taper)."""
     ref = ref or date.today()
@@ -329,6 +349,7 @@ def _decide_core(
     confidence = _confidence(missing, flags, metrics)
 
     should_ease = bool(flags)
+    recovery_incomplete = _recovery_incomplete(days_since_last_hard, recovery_halflife_days)
     taper = _in_taper(days_to_race)
     race_eve = _race_eve(days_to_race)
     quality_tomorrow = _has_quality_tomorrow(next_sessions, ref)
@@ -360,9 +381,15 @@ def _decide_core(
             )
 
         # P0-2: in taper, do NOT downgrade quality to easy unless injury is high.
-        # Outside taper, safety flags downgrade quality as before.
-        if _is_hard(st) and should_ease and not taper:
-            reason = flags[0] if flags else "segnali di affaticamento"
+        # Outside taper, safety flags — or an incomplete personal recovery window
+        # (A5) — downgrade quality to easy.
+        if _is_hard(st) and (should_ease or recovery_incomplete) and not taper:
+            reason = (
+                flags[0] if flags
+                else "recupero incompleto dall'ultima seduta dura"
+                if recovery_incomplete
+                else "segnali di affaticamento"
+            )
             return CoachDecision(
                 date=ref.isoformat(),
                 decision="modify",
@@ -523,7 +550,12 @@ def _decide_core(
             session_type="easy",
         )
 
-    if metrics.tsb is not None and metrics.tsb >= _TSB_VERY_FRESH and not taper:
+    if (
+        metrics.tsb is not None
+        and metrics.tsb >= _TSB_VERY_FRESH
+        and not taper
+        and not recovery_incomplete
+    ):
         return CoachDecision(
             date=ref.isoformat(),
             decision="quality",

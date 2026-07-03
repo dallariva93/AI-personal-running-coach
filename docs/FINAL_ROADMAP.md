@@ -200,7 +200,7 @@ Verdetti: **TIENI** (funziona, serve) · **RIPARA** (serve ma è rotta/incomplet
 | A2 | **Health Connect MVP** (#10): corse, HR, sonno, HRV senza Garmin — apre il TAM | 10 | 7 | alto | medio | altissimo | 4-6 sett |
 | A3 | **Push reali (FCM)** + execution score push entro minuti dalla sync — chiude il loop dopamminico ✅ FATTO — 2026-07-03 | 9 | 5 | medio | basso | altissimo | 3 sett |
 | A4 | **Voice debrief post-corsa** (N5) — sostituisce i proxy crudi fatigue/motivation | 9 | 5 | medio | basso | altissimo | 2-3 sett |
-| A5 | **Digital Twin v0** (N1): recovery half-life, ramp tolerance e heat sensitivity stimate dai dati storici, con fallback ai default | 9 | 6 | medio | medio | altissimo | 4 sett |
+| A5 | **Digital Twin v0** (N1): recovery half-life, ramp tolerance e heat sensitivity stimate dai dati storici, con fallback ai default ✅ FATTO — 2026-07-03 | 9 | 6 | medio | medio | altissimo | 4 sett |
 | A6 | **Race recap condivisibile** (#11) + weekly recap emozionale — il motore del passaparola | 9 | 5 | medio | basso | altissimo | 3-4 sett |
 | A7 | **Counterfactual what-if sul piano** (N2) | 9 | 6 | medio | basso | altissimo | 3-4 sett |
 | A8 | **Chat unificata**: una sola conversazione col contesto completo (decisioni, execution, eventi, memoria episodica v0 N10); via la chat pre-piano separata; 4 tab | 8 | 5 | medio | medio | alto | 3-4 sett |
@@ -786,7 +786,42 @@ quando la key è presente.
 
 ---
 
-#### Passo 13 — A5 · Digital Twin v0 (dipende da Q1)
+#### Passo 13 — A5 · Digital Twin v0 (dipende da Q1) ✅ FATTO — 2026-07-03
+
+**Implementato:**
+- **Estimatori puri** (`app/processing/digital_twin.py`, funzioni pure, input plain-data):
+  `estimate_ramp_tolerance` (max incremento % settimana-su-settimana assorbito senza esito
+  negativo nei 7gg successivi; clamp [5,15]; default 10% con <8 coppie-settimana),
+  `estimate_recovery_halflife` (mediana giorni dal too_hard/gara al ritorno di execution≥80
+  o readiness green; clamp [1,7]; default 2 con <3 episodi), `estimate_heat_sensitivity`
+  (regressione lineare passo-GAP vs temperatura sulle corse easy, s/km per °C; default 1.5
+  con <10 corse >15°C). Ogni stima porta `confidence` (n campioni) e `learning`.
+- **Persistenza:** tabella `athlete_model(key, value, confidence, computed_at)` (migrazione
+  `d8e9f0a1b2c3`) + schema `AthleteModel`/`AthleteModelEstimate`.
+- **Orchestratore:** `app/services/athlete_model_service.estimate_athlete_model(db)` deriva gli
+  input dal DB (carichi settimanali + esiti, episodi di recupero, punti caldo) e chiama i puri;
+  `maybe_refresh_athlete_model` ricalcola 1×/giorno in coda al pipeline post-sync.
+- **Consumo:** il decision engine (`decide_today`) non ripropone qualità finché non è trascorsa
+  l'emivita di recupero personale (nuovi param `days_since_last_hard`/`recovery_halflife_days`);
+  `adapt_plan` accetta il ramp personale come cap; il prompt di generazione piano riceve il ramp
+  appreso. `GET /api/athlete-model` espone il twin.
+
+**Accettazione**: ramp-crollo al 12% → tolleranza stimata 10% (<12) ✓; recupero in 3 giorni →
+halflife 3 e il decision engine non ripropone qualità al giorno 2 ✓; heat slope appreso ✓; storia
+sottile → default + `learning` (mai numeri azzardati) ✓. `tests/test_digital_twin.py` (17 unit) +
+`tests/eval/test_twin.py` (5 scenari nell'eval job). Suite 606 pass, coverage 84.1%. Gate verdi
+(pytest, ruff, `alembic check` no-drift).
+
+**Deviazioni/note:** (1) Il nome `app/processing/athlete_model.py` era **già occupato** da un
+estimatore di fisiologia (LT1/LT2/durability) non correlato e non importato da nessuno: per non
+sovrascriverlo il modulo puro del twin è `app/processing/digital_twin.py` e l'orchestratore
+`app/services/athlete_model_service.py` (rispetta anche la regola di purezza di CLAUDE.md: niente
+I/O in `processing/`). (2) La ricostruzione storica della readiness usa soglie HRV assolute (no
+baseline per-giorno) — deterministica e sufficiente per il twin. (3) L'esito "bad" per il ramp usa
+readiness-red + execution-collapse; `injury_level high` storico (che richiederebbe di ricomputare
+le metriche giorno-per-giorno) è lasciato a un pass successivo. (4) Il cap ramp in `adapt_plan` è un
+hook: il fattore di volume attuale non supera mai 1.0, quindi il consumo ramp effettivo è nel prompt
+del piano.
 
 **Obiettivo.** Le prime tre costanti che diventano variabili apprese: tolleranza al ramp, emivita di recupero, sensibilità al caldo.
 

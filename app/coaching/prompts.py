@@ -432,8 +432,14 @@ def build_multiweek_plan_message(
     request: PlanGenerateRequest,
     profile: AthleteProfile | None,
     metrics: TrainingMetrics | None,
+    ramp_pct: float | None = None,
 ) -> str:
-    """Assemble the user-turn payload for multiweek plan generation."""
+    """Assemble the user-turn payload for multiweek plan generation.
+
+    ``ramp_pct`` (Digital Twin, A5): the athlete's learned week-over-week volume
+    ramp cap, injected so the generator respects a personal — not generic —
+    progression rate.
+    """
     from datetime import date
 
     today = date.today().isoformat()
@@ -510,7 +516,12 @@ def build_multiweek_plan_message(
         f"Profilo atleta: {profile_str}\n"
         f"Volume settimanale attuale: ~{baseline_km:.0f} km\n"
         f"Settimane disponibili fino alla gara: {weeks_available}\n"
-        f"{runner_context_section}\n"
+        + (
+            f"Ramp personale appreso (Digital Twin): non superare ~{ramp_pct:.0f}% "
+            "di aumento volume settimana-su-settimana.\n"
+            if ramp_pct is not None else ""
+        )
+        + f"{runner_context_section}\n"
         "Genera il piano COMPLETO con tutte le settimane. "
         "Ogni settimana deve avere ESATTAMENTE 7 sessioni (day_of_week 0-6). "
         "Rispetta la struttura di periodizzazione Base→Build→Specifico/Peak→Taper→Gara. "

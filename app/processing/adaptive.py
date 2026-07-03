@@ -17,10 +17,17 @@ _MIN_FACTOR = 0.5
 _MAX_FACTOR = 1.1
 
 
-def adapt_plan(m: TrainingMetrics) -> tuple[float, list[str]]:
-    """Return ``(volume_multiplier, notes)`` adapting the plan to live signals."""
+def adapt_plan(
+    m: TrainingMetrics, max_ramp_factor: float | None = None
+) -> tuple[float, list[str]]:
+    """Return ``(volume_multiplier, notes)`` adapting the plan to live signals.
+
+    ``max_ramp_factor`` (Digital Twin, A5): the athlete's personal week-over-week
+    ramp cap (e.g. 1.12) replaces the population default upper bound when known.
+    """
     factor = 1.0
     notes: list[str] = []
+    upper = max_ramp_factor if max_ramp_factor is not None else _MAX_FACTOR
 
     if m.injury_level == "high":
         factor *= 0.8
@@ -46,5 +53,5 @@ def adapt_plan(m: TrainingMetrics) -> tuple[float, list[str]]:
         elif m.race_probability > 0.9:
             notes.append("ampiamente in linea con l'obiettivo: consolida, non strafare")
 
-    factor = round(max(_MIN_FACTOR, min(_MAX_FACTOR, factor)), 2)
+    factor = round(max(_MIN_FACTOR, min(upper, factor)), 2)
     return factor, notes

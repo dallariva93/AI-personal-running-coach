@@ -653,3 +653,23 @@ class SyncState(Base):
 
     def __repr__(self) -> str:  # pragma: no cover
         return f"<SyncState {self.key}={self.value!r}>"
+
+
+class AthleteModelRow(Base):
+    """Persisted Digital Twin estimates (Roadmap A5). One row per learned key.
+
+    Keys: ``ramp_tolerance_pct``, ``recovery_halflife_days``,
+    ``heat_sensitivity_s_per_c``. Recomputed by the post-sync pipeline, throttled
+    to once per day. ``confidence`` is the sample count behind ``value``; the
+    ``learning`` flag is reconstructed on read from per-key thresholds.
+    """
+
+    __tablename__ = "athlete_model"
+
+    key: Mapped[str] = mapped_column(String(48), primary_key=True)
+    value: Mapped[float] = mapped_column(Float)
+    confidence: Mapped[int] = mapped_column(Integer, default=0)
+    computed_at: Mapped[datetime] = mapped_column(DateTime, default=_utcnow, onupdate=_utcnow)
+
+    def __repr__(self) -> str:  # pragma: no cover
+        return f"<AthleteModel {self.key}={self.value} conf={self.confidence}>"

@@ -50,6 +50,7 @@ class Coach(Protocol):
         request: PlanGenerateRequest,
         profile: AthleteProfile | None,
         metrics: TrainingMetrics | None,
+        ramp_pct: float | None = None,
     ) -> dict: ...
 
     def suggest_workout(
@@ -211,10 +212,11 @@ class AICoach:
         request: PlanGenerateRequest,
         profile: AthleteProfile | None,
         metrics: TrainingMetrics | None,
+        ramp_pct: float | None = None,
     ) -> dict:
         """Generate a full multi-week training plan via Claude, fall back to offline."""
         model = self.settings.planner_model or self.settings.coach_model
-        user = prompts.build_multiweek_plan_message(request, profile, metrics)
+        user = prompts.build_multiweek_plan_message(request, profile, metrics, ramp_pct)
         try:
             raw = self._call(
                 prompts.MULTIWEEK_PLAN_SYSTEM_PROMPT,
@@ -229,7 +231,7 @@ class AICoach:
             logger.error(
                 "Multiweek plan AI call failed, falling back to offline: %s", exc
             )
-            return self._fallback.plan_multiweek(request, profile, metrics)
+            return self._fallback.plan_multiweek(request, profile, metrics, ramp_pct)
 
     def suggest_workout(
         self,
@@ -908,6 +910,7 @@ class OfflineCoach:
         request: PlanGenerateRequest,
         profile: AthleteProfile | None,
         metrics: TrainingMetrics | None,
+        ramp_pct: float | None = None,
     ) -> dict:
         """Generate a complete multi-week plan using deterministic templates."""
         from datetime import datetime as _dt

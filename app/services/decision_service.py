@@ -48,6 +48,29 @@ def session_on_date(plan: TrainingPlanOut | None, target: date) -> PlanSessionOu
     return next((s for s in week.sessions if s.day_of_week == weekday), None)
 
 
+# Efforts that open a recovery window (A5): quality, long runs and races.
+_HARD_EFFORT_TYPES = {
+    "tempo", "intervals", "intervalli", "threshold", "soglia", "vo2max",
+    "gara", "race", "lungo", "long",
+}
+
+
+def _days_since_last_hard(summaries: list, ref: date) -> int | None:
+    """Days since the athlete's most recent hard effort strictly before ``ref``."""
+    last: date | None = None
+    for r in summaries:
+        at = (getattr(r, "activity_type", "") or "").lower()
+        if at not in _HARD_EFFORT_TYPES:
+            continue
+        try:
+            d = date.fromisoformat(r.date)
+        except (ValueError, TypeError):
+            continue
+        if d < ref and (last is None or d > last):
+            last = d
+    return (ref - last).days if last is not None else None
+
+
 def build_today_decision(
     db: Session, ref: date | None = None, persist: bool = True
 ) -> CoachDecision:
@@ -63,7 +86,17 @@ def build_today_decision(
     plan = get_current_plan(db)
     today_session = session_on_date(plan, ref)
 
-    decision = decide_today(metrics, profile, today_session, checkin, ref=ref)
+    # Digital Twin (A5): personal recovery window gates re-proposing quality.
+    from app.services.athlete_model_service import personal_recovery_halflife
+
+    halflife = personal_recovery_halflife(db)
+    days_since_hard = _days_since_last_hard(summaries, ref)
+
+    decision = decide_today(
+        metrics, profile, today_session, checkin, ref=ref,
+        days_since_last_hard=days_since_hard,
+        recovery_halflife_days=halflife,
+    )
     if persist:
         _upsert(db, decision)
     return decision
