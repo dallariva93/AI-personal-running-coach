@@ -875,6 +875,7 @@ class ChatSessionOut(BaseModel):
 
     id: int
     title: str
+    mode: str = "general"  # general | plan_negotiation (A8)
     created_at: datetime
     updated_at: datetime
     message_count: int = 0
@@ -885,6 +886,9 @@ class ChatSendRequest(BaseModel):
 
     session_id: int | None = None
     message: str
+    # Unified chat (A8): only honoured when the session is created by this
+    # message; an existing session keeps the mode it was born with.
+    mode: str | None = None  # general | plan_negotiation
 
 
 class ChatSendResponse(BaseModel):
@@ -895,6 +899,12 @@ class ChatSendResponse(BaseModel):
     reply: str
     model_used: str
     tier: str
+    # Unified chat (A8): plan-negotiation surface. ``plan_ready`` mirrors the
+    # §READY§ sentinel; ``runner_context`` is the extracted §CTX§ JSON string,
+    # ready to feed ``POST /api/plan/generate``.
+    mode: str = "general"
+    plan_ready: bool = False
+    runner_context: str | None = None
 
 
 # ── Workout builder schemas ───────────────────────────────────────────────────

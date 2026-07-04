@@ -13,14 +13,9 @@ import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
-import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
-import androidx.compose.foundation.lazy.LazyColumn
-import androidx.compose.foundation.lazy.items
-import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -36,7 +31,6 @@ import androidx.compose.material.icons.filled.FitnessCenter
 import androidx.compose.material.icons.filled.Landscape
 import androidx.compose.material.icons.filled.NightsStay
 import androidx.compose.material.icons.filled.Park
-import androidx.compose.material.icons.filled.Send
 import androidx.compose.material.icons.filled.Speed
 import androidx.compose.material.icons.filled.SportsScore
 import androidx.compose.material.icons.filled.Timer
@@ -61,16 +55,13 @@ import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
-import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.window.Dialog
-import kotlinx.coroutines.launch
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -80,7 +71,6 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextDecoration
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
-import com.runningcoach.app.data.model.PlanChatMessage
 import com.runningcoach.app.data.model.PlanGenerateRequest
 import com.runningcoach.app.data.model.PlanSession
 import com.runningcoach.app.data.model.PlanWeek
@@ -177,9 +167,8 @@ fun PlanScreen(
     onGeneratePlan: (PlanGenerateRequest) -> Unit,
     onToggleSession: (Int) -> Unit,
     onArchivePlan: (Int) -> Unit,
-    onShowGenerateDialog: () -> Unit,
+    onStartPlanChat: () -> Unit,
     onDismissDialog: () -> Unit,
-    onSendChatMessage: (String) -> Unit = {},
     onOpenWorkouts: () -> Unit = {},
     onOpenCalendar: () -> Unit = {},
     repository: CoachRepository? = null,
@@ -208,7 +197,7 @@ fun PlanScreen(
 
                 val plan = state.plan
                 if (plan == null) {
-                    EmptyPlanCard(onShowGenerateDialog)
+                    EmptyPlanCard(onStartPlanChat)
                 } else {
                     RaceCountdownCard(plan)
                     Spacer(Modifier.height(12.dp))
@@ -242,7 +231,7 @@ fun PlanScreen(
                         horizontalArrangement = Arrangement.spacedBy(8.dp),
                     ) {
                         OutlinedButton(
-                            onClick = onShowGenerateDialog,
+                            onClick = onStartPlanChat,
                             modifier = Modifier.weight(1f),
                         ) { Text("Nuovo piano") }
                         OutlinedButton(
@@ -270,10 +259,6 @@ fun PlanScreen(
 
     if (state.showGenerateDialog) {
         GeneratePlanDialog(
-            chatMessages = state.chatMessages,
-            chatLoading = state.chatLoading,
-            chatComplete = state.chatComplete,
-            onSendChatMessage = onSendChatMessage,
             onGenerate = onGeneratePlan,
             onDismiss = onDismissDialog,
         )
@@ -617,16 +602,12 @@ private fun SessionRow(session: PlanSession, onToggleSession: (Int) -> Unit) {
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun GeneratePlanDialog(
-    chatMessages: List<PlanChatMessage>,
-    chatLoading: Boolean,
-    chatComplete: Boolean,
-    onSendChatMessage: (String) -> Unit,
     onGenerate: (PlanGenerateRequest) -> Unit,
     onDismiss: () -> Unit,
 ) {
-    // step 0 = AI chat, step 1 = goal params
-    var step by remember { mutableStateOf(0) }
-
+    // Final confirmation only (A8): the interview happens in the unified chat
+    // (plan mode) and everything it agreed travels in the runner context; here
+    // the athlete just confirms race date + goal parameters.
     val goalTypes = listOf("marathon", "half", "10k", "5k", "general")
     val goalTypeLabels = listOf("Maratona", "Mezza Maratona", "10 km", "5 km", "Generale")
     val levels = listOf("beginner", "intermediate", "advanced")
@@ -639,16 +620,6 @@ fun GeneratePlanDialog(
     var goalTime by rememberSaveable { mutableStateOf("") }
     var selectedLevelIdx by rememberSaveable { mutableStateOf(1) }
     var daysPerWeek by rememberSaveable { mutableFloatStateOf(4f) }
-    var chatInput by remember { mutableStateOf("") }
-
-    val listState = rememberLazyListState()
-    val scope = rememberCoroutineScope()
-
-    LaunchedEffect(chatMessages.size) {
-        if (chatMessages.isNotEmpty()) {
-            scope.launch { listState.animateScrollToItem(chatMessages.size - 1) }
-        }
-    }
 
     Dialog(onDismissRequest = onDismiss) {
         Surface(
@@ -657,7 +628,6 @@ fun GeneratePlanDialog(
             color = MaterialTheme.colorScheme.surface,
         ) {
             Column {
-                // ── Dialog header ──────────────────────────────────────────
                 Row(
                     modifier = Modifier
                         .fillMaxWidth()
@@ -666,11 +636,10 @@ fun GeneratePlanDialog(
                     horizontalArrangement = Arrangement.SpaceBetween,
                 ) {
                     Text(
-                        if (step == 0) "Chat con Coach AI" else "Parametri piano",
+                        "Conferma piano",
                         style = MaterialTheme.typography.titleMedium,
                         fontWeight = FontWeight.Bold,
                     )
-                    // AI badge
                     Row(
                         modifier = Modifier
                             .background(
@@ -688,309 +657,151 @@ fun GeneratePlanDialog(
                             tint = MaterialTheme.colorScheme.primary,
                         )
                         Text(
-                            "Haiku AI",
+                            "Coach AI",
                             style = MaterialTheme.typography.labelSmall,
                             color = MaterialTheme.colorScheme.primary,
                         )
                     }
                 }
-
-                // ── Step indicator ─────────────────────────────────────────
-                Row(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .padding(horizontal = 20.dp),
-                    horizontalArrangement = Arrangement.spacedBy(8.dp),
-                    verticalAlignment = Alignment.CenterVertically,
-                ) {
-                    StepPill(1, "Chat coach", step == 0)
-                    HorizontalDivider(modifier = Modifier.weight(1f))
-                    StepPill(2, "Obiettivo", step == 1)
-                }
+                Text(
+                    "Struttura e ritmi arrivano dalla chat col coach: qui confermi solo data e obiettivo.",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    modifier = Modifier.padding(horizontal = 20.dp),
+                )
                 Spacer(Modifier.height(12.dp))
                 HorizontalDivider()
 
-                // ── Body ───────────────────────────────────────────────────
-                if (step == 0) {
-                    // Chat area
-                    LazyColumn(
-                        state = listState,
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .heightIn(min = 200.dp, max = 320.dp)
-                            .padding(horizontal = 16.dp, vertical = 8.dp),
-                        verticalArrangement = Arrangement.spacedBy(8.dp),
-                    ) {
-                        items(chatMessages) { msg ->
-                            ChatBubble(msg)
-                        }
-                        if (chatLoading) {
-                            item {
-                                Row(
-                                    Modifier.fillMaxWidth(),
-                                    horizontalArrangement = Arrangement.Start,
-                                ) {
-                                    CircularProgressIndicator(
-                                        modifier = Modifier.size(18.dp),
-                                        strokeWidth = 2.dp,
-                                        color = MaterialTheme.colorScheme.primary,
-                                    )
-                                }
-                            }
-                        }
-                    }
-
-                    HorizontalDivider()
-
-                    // Chat input row
-                    Row(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .padding(horizontal = 12.dp, vertical = 8.dp),
-                        verticalAlignment = Alignment.CenterVertically,
-                        horizontalArrangement = Arrangement.spacedBy(8.dp),
+                Column(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .verticalScroll(rememberScrollState())
+                        .padding(horizontal = 20.dp, vertical = 12.dp),
+                    verticalArrangement = Arrangement.spacedBy(12.dp),
+                ) {
+                    ExposedDropdownMenuBox(
+                        expanded = goalTypeExpanded,
+                        onExpandedChange = { goalTypeExpanded = it },
                     ) {
                         OutlinedTextField(
-                            value = chatInput,
-                            onValueChange = { chatInput = it },
-                            placeholder = { Text("Scrivi qui…", style = MaterialTheme.typography.bodySmall) },
-                            modifier = Modifier.weight(1f),
-                            singleLine = true,
-                            enabled = !chatLoading && !chatComplete,
-                            textStyle = MaterialTheme.typography.bodyMedium,
+                            value = goalTypeLabels[selectedGoalTypeIdx],
+                            onValueChange = {},
+                            readOnly = true,
+                            label = { Text("Obiettivo") },
+                            trailingIcon = { ExposedDropdownMenuDefaults.TrailingIcon(expanded = goalTypeExpanded) },
+                            modifier = Modifier.menuAnchor().fillMaxWidth(),
                         )
-                        IconButton(
-                            onClick = {
-                                if (chatInput.isNotBlank() && !chatLoading) {
-                                    onSendChatMessage(chatInput)
-                                    chatInput = ""
-                                }
-                            },
-                            enabled = chatInput.isNotBlank() && !chatLoading && !chatComplete,
-                        ) {
-                            Icon(
-                                Icons.Filled.Send,
-                                contentDescription = "Invia",
-                                tint = if (chatInput.isNotBlank() && !chatLoading && !chatComplete)
-                                    MaterialTheme.colorScheme.primary
-                                else MaterialTheme.colorScheme.onSurfaceVariant,
-                            )
-                        }
-                    }
-
-                    HorizontalDivider()
-
-                    // Footer
-                    Row(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .padding(horizontal = 16.dp, vertical = 12.dp),
-                        horizontalArrangement = Arrangement.SpaceBetween,
-                    ) {
-                        TextButton(onClick = onDismiss) { Text("Annulla") }
-                        Button(
-                            onClick = { step = 1 },
-                            enabled = chatComplete,
-                        ) {
-                            Text("Avanti →")
-                        }
-                    }
-                } else {
-                    // Goal params form
-                    Column(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .verticalScroll(rememberScrollState())
-                            .padding(horizontal = 20.dp, vertical = 12.dp),
-                        verticalArrangement = Arrangement.spacedBy(12.dp),
-                    ) {
-                        ExposedDropdownMenuBox(
+                        ExposedDropdownMenu(
                             expanded = goalTypeExpanded,
-                            onExpandedChange = { goalTypeExpanded = it },
+                            onDismissRequest = { goalTypeExpanded = false },
                         ) {
-                            OutlinedTextField(
-                                value = goalTypeLabels[selectedGoalTypeIdx],
-                                onValueChange = {},
-                                readOnly = true,
-                                label = { Text("Obiettivo") },
-                                trailingIcon = { ExposedDropdownMenuDefaults.TrailingIcon(expanded = goalTypeExpanded) },
-                                modifier = Modifier.menuAnchor().fillMaxWidth(),
-                            )
-                            ExposedDropdownMenu(
-                                expanded = goalTypeExpanded,
-                                onDismissRequest = { goalTypeExpanded = false },
-                            ) {
-                                goalTypeLabels.forEachIndexed { idx, label ->
-                                    DropdownMenuItem(
-                                        text = { Text(label) },
-                                        onClick = { selectedGoalTypeIdx = idx; goalTypeExpanded = false },
-                                    )
-                                }
-                            }
-                        }
-
-                        OutlinedTextField(
-                            value = goalDate,
-                            onValueChange = { goalDate = it },
-                            label = { Text("Data gara (AAAA-MM-GG)") },
-                            placeholder = { Text("es. 2026-10-04") },
-                            modifier = Modifier.fillMaxWidth(),
-                            singleLine = true,
-                        )
-
-                        OutlinedTextField(
-                            value = goalTime,
-                            onValueChange = { goalTime = it },
-                            label = { Text("Tempo obiettivo (opzionale)") },
-                            placeholder = { Text("es. 3:45:00") },
-                            modifier = Modifier.fillMaxWidth(),
-                            singleLine = true,
-                        )
-
-                        ExposedDropdownMenuBox(
-                            expanded = levelExpanded,
-                            onExpandedChange = { levelExpanded = it },
-                        ) {
-                            OutlinedTextField(
-                                value = levelLabels[selectedLevelIdx],
-                                onValueChange = {},
-                                readOnly = true,
-                                label = { Text("Livello") },
-                                trailingIcon = { ExposedDropdownMenuDefaults.TrailingIcon(expanded = levelExpanded) },
-                                modifier = Modifier.menuAnchor().fillMaxWidth(),
-                            )
-                            ExposedDropdownMenu(
-                                expanded = levelExpanded,
-                                onDismissRequest = { levelExpanded = false },
-                            ) {
-                                levelLabels.forEachIndexed { idx, label ->
-                                    DropdownMenuItem(
-                                        text = { Text(label) },
-                                        onClick = { selectedLevelIdx = idx; levelExpanded = false },
-                                    )
-                                }
-                            }
-                        }
-
-                        Column {
-                            Row(
-                                Modifier.fillMaxWidth(),
-                                horizontalArrangement = Arrangement.SpaceBetween,
-                            ) {
-                                Text("Allenamenti/settimana", style = MaterialTheme.typography.bodySmall)
-                                Text(
-                                    "${daysPerWeek.toInt()}",
-                                    style = MaterialTheme.typography.labelMedium,
-                                    fontWeight = FontWeight.SemiBold,
-                                    color = BrandGreen,
+                            goalTypeLabels.forEachIndexed { idx, label ->
+                                DropdownMenuItem(
+                                    text = { Text(label) },
+                                    onClick = { selectedGoalTypeIdx = idx; goalTypeExpanded = false },
                                 )
                             }
-                            Slider(
-                                value = daysPerWeek,
-                                onValueChange = { daysPerWeek = it },
-                                valueRange = 3f..6f,
-                                steps = 2,
-                                modifier = Modifier.fillMaxWidth(),
-                            )
                         }
                     }
 
-                    HorizontalDivider()
+                    OutlinedTextField(
+                        value = goalDate,
+                        onValueChange = { goalDate = it },
+                        label = { Text("Data gara (AAAA-MM-GG)") },
+                        placeholder = { Text("es. 2026-10-04") },
+                        modifier = Modifier.fillMaxWidth(),
+                        singleLine = true,
+                    )
 
-                    Row(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .padding(horizontal = 16.dp, vertical = 12.dp),
-                        horizontalArrangement = Arrangement.SpaceBetween,
+                    OutlinedTextField(
+                        value = goalTime,
+                        onValueChange = { goalTime = it },
+                        label = { Text("Tempo obiettivo (opzionale)") },
+                        placeholder = { Text("es. 3:45:00") },
+                        modifier = Modifier.fillMaxWidth(),
+                        singleLine = true,
+                    )
+
+                    ExposedDropdownMenuBox(
+                        expanded = levelExpanded,
+                        onExpandedChange = { levelExpanded = it },
                     ) {
-                        TextButton(onClick = { step = 0 }) { Text("← Chat") }
-                        Button(
-                            onClick = {
-                                if (goalDate.isNotBlank()) {
-                                    onGenerate(
-                                        PlanGenerateRequest(
-                                            goalType = goalTypes[selectedGoalTypeIdx],
-                                            goalDate = goalDate.trim(),
-                                            goalTime = goalTime.trim().ifBlank { null },
-                                            level = levels[selectedLevelIdx],
-                                            daysPerWeek = daysPerWeek.toInt(),
-                                            longRunDay = 6,
-                                        ),
-                                    )
-                                }
-                            },
-                            enabled = goalDate.isNotBlank(),
+                        OutlinedTextField(
+                            value = levelLabels[selectedLevelIdx],
+                            onValueChange = {},
+                            readOnly = true,
+                            label = { Text("Livello") },
+                            trailingIcon = { ExposedDropdownMenuDefaults.TrailingIcon(expanded = levelExpanded) },
+                            modifier = Modifier.menuAnchor().fillMaxWidth(),
+                        )
+                        ExposedDropdownMenu(
+                            expanded = levelExpanded,
+                            onDismissRequest = { levelExpanded = false },
                         ) {
-                            Icon(Icons.Filled.AutoAwesome, contentDescription = null, modifier = Modifier.size(16.dp))
-                            Spacer(Modifier.width(6.dp))
-                            Text("Genera Piano")
+                            levelLabels.forEachIndexed { idx, label ->
+                                DropdownMenuItem(
+                                    text = { Text(label) },
+                                    onClick = { selectedLevelIdx = idx; levelExpanded = false },
+                                )
+                            }
                         }
+                    }
+
+                    Column {
+                        Row(
+                            Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.SpaceBetween,
+                        ) {
+                            Text("Allenamenti/settimana", style = MaterialTheme.typography.bodySmall)
+                            Text(
+                                "${daysPerWeek.toInt()}",
+                                style = MaterialTheme.typography.labelMedium,
+                                fontWeight = FontWeight.SemiBold,
+                                color = BrandGreen,
+                            )
+                        }
+                        Slider(
+                            value = daysPerWeek,
+                            onValueChange = { daysPerWeek = it },
+                            valueRange = 3f..6f,
+                            steps = 2,
+                            modifier = Modifier.fillMaxWidth(),
+                        )
+                    }
+                }
+
+                HorizontalDivider()
+
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(horizontal = 16.dp, vertical = 12.dp),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                ) {
+                    TextButton(onClick = onDismiss) { Text("Annulla") }
+                    Button(
+                        onClick = {
+                            if (goalDate.isNotBlank()) {
+                                onGenerate(
+                                    PlanGenerateRequest(
+                                        goalType = goalTypes[selectedGoalTypeIdx],
+                                        goalDate = goalDate.trim(),
+                                        goalTime = goalTime.trim().ifBlank { null },
+                                        level = levels[selectedLevelIdx],
+                                        daysPerWeek = daysPerWeek.toInt(),
+                                        longRunDay = 6,
+                                    ),
+                                )
+                            }
+                        },
+                        enabled = goalDate.isNotBlank(),
+                    ) {
+                        Icon(Icons.Filled.AutoAwesome, contentDescription = null, modifier = Modifier.size(16.dp))
+                        Spacer(Modifier.width(6.dp))
+                        Text("Genera Piano")
                     }
                 }
             }
-        }
-    }
-}
-
-@Composable
-private fun StepPill(number: Int, label: String, active: Boolean) {
-    Row(
-        verticalAlignment = Alignment.CenterVertically,
-        horizontalArrangement = Arrangement.spacedBy(4.dp),
-    ) {
-        Box(
-            modifier = Modifier
-                .size(20.dp)
-                .background(
-                    if (active) MaterialTheme.colorScheme.primary
-                    else MaterialTheme.colorScheme.surfaceVariant,
-                    CircleShape,
-                ),
-            contentAlignment = Alignment.Center,
-        ) {
-            Text(
-                "$number",
-                style = MaterialTheme.typography.labelSmall,
-                color = if (active) MaterialTheme.colorScheme.onPrimary
-                        else MaterialTheme.colorScheme.onSurfaceVariant,
-            )
-        }
-        Text(
-            label,
-            style = MaterialTheme.typography.labelSmall,
-            color = if (active) MaterialTheme.colorScheme.primary
-                    else MaterialTheme.colorScheme.onSurfaceVariant,
-        )
-    }
-}
-
-@Composable
-private fun ChatBubble(message: PlanChatMessage) {
-    val isUser = message.role == "user"
-    Row(
-        modifier = Modifier.fillMaxWidth(),
-        horizontalArrangement = if (isUser) Arrangement.End else Arrangement.Start,
-    ) {
-        Box(
-            modifier = Modifier
-                .widthIn(max = 260.dp)
-                .background(
-                    if (isUser) MaterialTheme.colorScheme.primary
-                    else MaterialTheme.colorScheme.surfaceVariant,
-                    RoundedCornerShape(
-                        topStart = 12.dp, topEnd = 12.dp,
-                        bottomStart = if (isUser) 12.dp else 2.dp,
-                        bottomEnd = if (isUser) 2.dp else 12.dp,
-                    ),
-                )
-                .padding(horizontal = 12.dp, vertical = 8.dp),
-        ) {
-            Text(
-                text = message.content,
-                style = MaterialTheme.typography.bodySmall,
-                color = if (isUser) MaterialTheme.colorScheme.onPrimary
-                        else MaterialTheme.colorScheme.onSurfaceVariant,
-            )
         }
     }
 }

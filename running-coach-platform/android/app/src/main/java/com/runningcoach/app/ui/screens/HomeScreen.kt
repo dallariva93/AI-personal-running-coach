@@ -19,6 +19,7 @@ import androidx.compose.material.icons.filled.CheckCircle
 import androidx.compose.material.icons.filled.ChevronRight
 import androidx.compose.material.icons.filled.ExpandLess
 import androidx.compose.material.icons.filled.ExpandMore
+import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material.icons.filled.Sync
 import androidx.compose.material.icons.outlined.Circle
 import androidx.compose.material3.CircularProgressIndicator
@@ -67,6 +68,7 @@ fun HomeScreen(
     onCoachAction: (String, String?) -> Unit = { _, _ -> },
     onOpenCoachLog: () -> Unit = {},
     onOpenWeeklyRecap: () -> Unit = {},
+    onOpenSettings: () -> Unit = {},
 ) {
     val ov: Overview? = state.overview
     Column(
@@ -88,6 +90,14 @@ fun HomeScreen(
                     Spacer(Modifier.height(6.dp))
                     Pill(it.coach.uppercase(), Coral)
                 }
+            }
+            // A8: Settings left the NavigationBar — it lives here as the gear.
+            IconButton(onClick = onOpenSettings) {
+                Icon(
+                    Icons.Filled.Settings,
+                    contentDescription = "Impostazioni",
+                    tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
             }
         }
         Spacer(Modifier.height(16.dp))

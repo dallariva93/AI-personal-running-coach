@@ -2,7 +2,6 @@ package com.runningcoach.app.ui.viewmodel
 
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
-import com.runningcoach.app.data.model.PlanChatMessage
 import com.runningcoach.app.data.model.PlanGenerateRequest
 import com.runningcoach.app.data.model.TrainingPlan
 import com.runningcoach.app.data.repository.CoachRepository
@@ -13,10 +12,6 @@ import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 
-private const val WELCOME_MESSAGE =
-    "Ciao! Prima di creare il tuo piano, dimmi qualcosa sul tuo allenamento attuale. " +
-    "Quanti km corri in media a settimana?"
-
 data class PlanUiState(
     val loading: Boolean = false,
     val plan: TrainingPlan? = null,
@@ -26,12 +21,8 @@ data class PlanUiState(
     // "Annulla" action (Roadmap Q8) — a swap is its own inverse.
     val lastMove: Pair<Int, String>? = null,
     val showGenerateDialog: Boolean = false,
-    // Chat state
-    val chatMessages: List<PlanChatMessage> = listOf(
-        PlanChatMessage(role = "assistant", content = WELCOME_MESSAGE)
-    ),
-    val chatLoading: Boolean = false,
-    val chatComplete: Boolean = false,
+    // The §CTX§ JSON agreed in the unified plan-mode chat (A8), attached to
+    // the next generate request. The interview itself lives in ChatViewModel.
     val runnerContext: String? = null,
 )
 
@@ -53,40 +44,9 @@ class PlanViewModel(private val repository: CoachRepository) : ViewModel() {
         }
     }
 
-    fun sendChatMessage(text: String) {
-        val trimmed = text.trim().takeIf { it.isNotEmpty() } ?: return
-        val userMsg = PlanChatMessage(role = "user", content = trimmed)
-        val updatedMessages = _state.value.chatMessages + userMsg
-        _state.update { it.copy(chatMessages = updatedMessages, chatLoading = true, error = null) }
-
-        viewModelScope.launch {
-            runCatching {
-                repository.chatForPlan(updatedMessages)
-            }.onSuccess { response ->
-                val assistantMsg = PlanChatMessage(role = "assistant", content = response.message)
-                _state.update {
-                    it.copy(
-                        chatMessages = updatedMessages + assistantMsg,
-                        chatLoading = false,
-                        chatComplete = response.isComplete,
-                        runnerContext = response.runnerContext,
-                    )
-                }
-            }.onFailure { e ->
-                _state.update { it.copy(chatLoading = false, error = friendly(e)) }
-            }
-        }
-    }
-
-    fun resetChat() {
-        _state.update {
-            it.copy(
-                chatMessages = listOf(PlanChatMessage(role = "assistant", content = WELCOME_MESSAGE)),
-                chatLoading = false,
-                chatComplete = false,
-                runnerContext = null,
-            )
-        }
+    /** Store the §CTX§ agreed in the unified plan-mode chat (A8). */
+    fun setRunnerContext(context: String?) {
+        _state.update { it.copy(runnerContext = context) }
     }
 
     fun generatePlan(request: PlanGenerateRequest) {
@@ -220,7 +180,6 @@ class PlanViewModel(private val repository: CoachRepository) : ViewModel() {
 
     fun dismissDialog() {
         _state.update { it.copy(showGenerateDialog = false) }
-        resetChat()
     }
 
     fun clearMessage() =

@@ -91,6 +91,7 @@ def post_send(
             metrics=metrics,
             recent_runs_raw=recent_runs_raw,
             active_plan_week=active_plan_week,
+            mode=payload.mode,
         )
     except Exception as exc:
         raise HTTPException(status_code=500, detail=str(exc)) from exc

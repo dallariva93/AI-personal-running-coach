@@ -24,6 +24,7 @@ from app.db.models import (
     CoachDecisionRow,
     CoachEvent,
     CoachingReport,
+    CoachMemory,
     DailyCheckinRow,
     RawActivityAsset,
     Shoe,
@@ -62,6 +63,7 @@ _DELETE_ORDER = [
     StravaWebhookEvent,
     AthleteProfileRow,
     AthleteModelRow,
+    CoachMemory,
     SyncState,
 ]
 

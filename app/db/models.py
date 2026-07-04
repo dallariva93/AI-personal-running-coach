@@ -488,6 +488,12 @@ class ChatSession(Base):
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True)
     title: Mapped[str] = mapped_column(String(200), default="Nuova chat")
+    # Unified chat (A8): "general" free conversation, or "plan_negotiation" —
+    # the pre-plan interview running through the same chat surface, where the
+    # negotiation system prompt and the §CTX§/§READY§ flow apply.
+    mode: Mapped[str] = mapped_column(
+        String(24), default="general", server_default="general"
+    )
     created_at: Mapped[datetime] = mapped_column(DateTime, default=_utcnow)
     updated_at: Mapped[datetime] = mapped_column(DateTime, default=_utcnow)
 
@@ -657,6 +663,25 @@ class SyncState(Base):
 
     def __repr__(self) -> str:  # pragma: no cover
         return f"<SyncState {self.key}={self.value!r}>"
+
+
+class CoachMemory(Base):
+    """Episodic memory v0 (Roadmap A8, bridge to N10): durable athlete facts.
+
+    One short fact per row ("preferisce correre la mattina", "fastidio ricorrente
+    al polpaccio destro"), extracted post-conversation by a Haiku extractor and
+    injected into the chat system prompt so the coach *remembers* across
+    sessions. Deduped on the normalised fact text.
+    """
+
+    __tablename__ = "coach_memory"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    fact: Mapped[str] = mapped_column(Text)
+    updated_at: Mapped[datetime] = mapped_column(DateTime, default=_utcnow, onupdate=_utcnow)
+
+    def __repr__(self) -> str:  # pragma: no cover
+        return f"<CoachMemory {self.fact[:40]!r}>"
 
 
 class AthleteModelRow(Base):

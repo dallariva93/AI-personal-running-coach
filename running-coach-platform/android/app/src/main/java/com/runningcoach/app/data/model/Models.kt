@@ -445,6 +445,7 @@ data class ChatMessage(
 data class ChatSession(
     @SerializedName("id") val id: Int,
     @SerializedName("title") val title: String,
+    @SerializedName("mode") val mode: String = "general",
     @SerializedName("created_at") val createdAt: String? = null,
     @SerializedName("updated_at") val updatedAt: String? = null,
     @SerializedName("message_count") val messageCount: Int = 0,
@@ -454,6 +455,8 @@ data class ChatSession(
 data class ChatSendRequest(
     @SerializedName("session_id") val sessionId: Int? = null,
     @SerializedName("message") val message: String,
+    // Unified chat (A8): only honoured when this message creates the session.
+    @SerializedName("mode") val mode: String? = null,
 )
 
 /** Response from the chat send endpoint. */
@@ -463,6 +466,10 @@ data class ChatSendResponse(
     @SerializedName("reply") val reply: String,
     @SerializedName("model_used") val modelUsed: String,
     @SerializedName("tier") val tier: String,
+    // Unified chat (A8): plan-negotiation surface.
+    @SerializedName("mode") val mode: String = "general",
+    @SerializedName("plan_ready") val planReady: Boolean = false,
+    @SerializedName("runner_context") val runnerContext: String? = null,
 )
 
 /** Strava connection + webhook status (mirrors app/schemas.py StravaStatus). */

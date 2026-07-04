@@ -23,6 +23,7 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.Send
 import androidx.compose.material.icons.filled.AddComment
 import androidx.compose.material.icons.filled.AutoAwesome
+import androidx.compose.material3.Button
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
@@ -53,6 +54,7 @@ fun ChatScreen(
     state: ChatUiState,
     onSend: (String) -> Unit,
     onNewSession: () -> Unit,
+    onGeneratePlan: (String) -> Unit = {},
 ) {
     val listState = rememberLazyListState()
 
@@ -82,6 +84,10 @@ fun ChatScreen(
                 }
             },
         )
+
+        if (state.mode == "plan_negotiation") {
+            PlanModeBanner()
+        }
 
         LazyColumn(
             state = listState,
@@ -130,10 +136,36 @@ fun ChatScreen(
             )
         }
 
+        // Plan negotiation complete (A8): hand the §CTX§ to the generator.
+        if (state.planReady && state.runnerContext != null) {
+            Button(
+                onClick = { onGeneratePlan(state.runnerContext) },
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(horizontal = 16.dp, vertical = 6.dp),
+            ) { Text("Genera il piano") }
+        }
+
         ChatInput(
             enabled = !state.loading,
             onSend = onSend,
             modifier = Modifier.imePadding(),
+        )
+    }
+}
+
+/** Banner shown while the chat is negotiating the plan (A8). */
+@Composable
+private fun PlanModeBanner() {
+    Surface(
+        color = MaterialTheme.colorScheme.primaryContainer,
+        modifier = Modifier.fillMaxWidth(),
+    ) {
+        Text(
+            "Stiamo costruendo il piano",
+            style = MaterialTheme.typography.labelLarge,
+            color = MaterialTheme.colorScheme.onPrimaryContainer,
+            modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp),
         )
     }
 }

@@ -670,8 +670,20 @@ def build_chat_system(
     metrics: TrainingMetrics | None,
     recent_runs: list[RunSummary],
     active_plan_week: str | None = None,
+    recent_decisions: list[dict] | None = None,
+    recent_events: list[dict] | None = None,
+    recent_executions: list[dict] | None = None,
+    memory_facts: list[str] | None = None,
 ) -> str:
-    """Build the system prompt for the conversational coach with injected athlete context."""
+    """Build the system prompt for the conversational coach with injected athlete context.
+
+    The unified coach (A8) also sees its own recent behaviour and memory:
+    ``recent_decisions`` (last 5, dicts with date/decision/headline),
+    ``recent_events`` (last 10 diary entries: date/event_type/title),
+    ``recent_executions`` (date/title/score/status) and ``memory_facts``
+    (durable athlete facts from the episodic memory) — so it can answer
+    "perché ieri mi hai detto di riposare?" citing its own decision.
+    """
     from datetime import date
 
     today = date.today().isoformat()
@@ -733,6 +745,41 @@ def build_chat_system(
         else ""
     )
 
+    # The coach's own recent behaviour (A8): decisions, diary, executions.
+    decisions_section = ""
+    if recent_decisions:
+        lines = [
+            f"  {d.get('date', '?')}: {d.get('decision', '?')}"
+            + (f" — {d['headline']}" if d.get("headline") else "")
+            for d in recent_decisions[:5]
+        ]
+        decisions_section = "\n\n[TUE DECISIONI RECENTI]\n" + "\n".join(lines)
+
+    events_section = ""
+    if recent_events:
+        lines = [
+            f"  {e.get('date', '?')} [{e.get('event_type', '?')}] {e.get('title', '')}"
+            for e in recent_events[:10]
+        ]
+        events_section = "\n\n[TUO DIARIO RECENTE]\n" + "\n".join(lines)
+
+    executions_section = ""
+    if recent_executions:
+        lines = []
+        for x in recent_executions[:5]:
+            line = f"  {x.get('date', '?')}: {x.get('title', '?')}"
+            if x.get("score") is not None:
+                line += f" — execution {x['score']:.0f}/100"
+            if x.get("status"):
+                line += f" ({x['status']})"
+            lines.append(line)
+        executions_section = "\n\n[ESECUZIONI RECENTI DEL PIANO]\n" + "\n".join(lines)
+
+    memory_section = ""
+    if memory_facts:
+        lines = [f"  - {fact}" for fact in memory_facts[:10]]
+        memory_section = "\n\n[MEMORIA SULL'ATLETA]\n" + "\n".join(lines)
+
     return (
         f"Sei un coach di corsa AI. Parli in italiano, tono diretto e professionale "
         f"ma amichevole. Dai per scontato che l'atleta conosca le basi del running.\n\n"
@@ -740,9 +787,31 @@ def build_chat_system(
         f"[PROFILO ATLETA]\n{profile_str}\n\n"
         f"[METRICHE ATTUALI]\n{metrics_str}\n\n"
         f"[ULTIMI ALLENAMENTI]\n{runs_str}"
-        f"{plan_section}\n\n"
+        f"{plan_section}"
+        f"{decisions_section}"
+        f"{events_section}"
+        f"{executions_section}"
+        f"{memory_section}\n\n"
         "Rispondi in modo conciso (max 3-4 frasi salvo analisi richieste). "
-        "Usa dati reali dall'atleta per personalizzare. "
+        "Usa dati reali dall'atleta per personalizzare; quando ti chiedono di una "
+        "tua decisione o di una seduta passata, cita la voce corrispondente. "
         "Non inventare dati non presenti. "
         "Non dare diagnosi mediche (dolori persistenti → medico/fisio)."
     )
+
+
+# ── Episodic memory extraction (Roadmap A8, bridge to N10) ───────────────────
+
+MEMORY_EXTRACT_SYSTEM_PROMPT = """\
+Estrai dal messaggio dell'atleta SOLO fatti duraturi e riutilizzabili su di lui
+(preferenze stabili, vincoli ricorrenti, infortuni cronici, abitudini, obiettivi
+di lungo periodo). NON estrarre stati transitori (stanchezza di oggi, meteo,
+una singola corsa).
+
+REGOLA ASSOLUTA: rispondi SOLO con un array JSON di stringhe brevi in italiano,
+senza markdown ne testo extra. Se non ci sono fatti duraturi: [].
+
+Esempi:
+"oggi sono stanco ma di solito corro la mattina presto" -> ["Corre di solito la mattina presto"]
+"che passo tengo domani?" -> []
+"""

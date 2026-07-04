@@ -164,8 +164,12 @@ class CoachRepository(private val settings: SettingsStore) {
         )
     )
 
-    suspend fun sendChatMessage(message: String, sessionId: Int? = null): ChatSendResponse =
-        api().sendChatMessage(ChatSendRequest(sessionId = sessionId, message = message))
+    suspend fun sendChatMessage(
+        message: String,
+        sessionId: Int? = null,
+        mode: String? = null,
+    ): ChatSendResponse =
+        api().sendChatMessage(ChatSendRequest(sessionId = sessionId, message = message, mode = mode))
 
     suspend fun getChatSessions(): List<ChatSession> = api().getChatSessions()
 

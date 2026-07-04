@@ -23,7 +23,17 @@ data class ChatUiState(
     val messages: List<ChatDisplayMessage> = emptyList(),
     val loading: Boolean = false,
     val error: String? = null,
+    // Unified chat (A8): "general" or "plan_negotiation". In plan mode the
+    // screen shows the "Stiamo costruendo il piano" banner; when the backend
+    // signals §READY§, runnerContext carries the §CTX§ JSON for generation.
+    val mode: String = "general",
+    val planReady: Boolean = false,
+    val runnerContext: String? = null,
 )
+
+private const val PLAN_WELCOME =
+    "Costruiamo il tuo piano! Dimmi qualcosa sul tuo allenamento attuale: " +
+    "quanti km corri in media a settimana?"
 
 class ChatViewModel(private val repo: CoachRepository) : ViewModel() {
 
@@ -48,6 +58,8 @@ class ChatViewModel(private val repo: CoachRepository) : ViewModel() {
                 repo.sendChatMessage(
                     message = trimmed,
                     sessionId = _state.value.sessionId,
+                    // Mode only matters on the session-creating first message.
+                    mode = if (_state.value.sessionId == null) _state.value.mode else null,
                 )
             }.onSuccess { resp ->
                 _state.update {
@@ -61,6 +73,9 @@ class ChatViewModel(private val repo: CoachRepository) : ViewModel() {
                             modelUsed = resp.modelUsed,
                         ),
                         loading = false,
+                        mode = resp.mode,
+                        planReady = resp.planReady,
+                        runnerContext = resp.runnerContext ?: it.runnerContext,
                     )
                 }
             }.onFailure { err ->
@@ -76,6 +91,15 @@ class ChatViewModel(private val repo: CoachRepository) : ViewModel() {
 
     fun newSession() {
         _state.value = ChatUiState()
+    }
+
+    /** Start a fresh plan-negotiation session (A8: "Crea piano" opens the chat). */
+    fun startPlanSession() {
+        _state.value = ChatUiState(
+            sessionTitle = "Costruzione piano",
+            mode = "plan_negotiation",
+            messages = listOf(ChatDisplayMessage(role = "assistant", content = PLAN_WELCOME)),
+        )
     }
 
     fun clearError() {

@@ -3,13 +3,14 @@ package com.runningcoach.app.ui.navigation
 import android.content.Intent
 import android.net.Uri
 import androidx.compose.foundation.isSystemInDarkTheme
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.padding
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.AutoAwesome
-import androidx.compose.material.icons.filled.BarChart
 import androidx.compose.material.icons.filled.CalendarMonth
 import androidx.compose.material.icons.filled.DirectionsRun
-import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material.icons.filled.Today
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
@@ -20,13 +21,18 @@ import androidx.compose.material3.Scaffold
 import androidx.compose.material3.SnackbarHost
 import androidx.compose.material3.SnackbarHostState
 import androidx.compose.material3.SnackbarResult
+import androidx.compose.material3.Tab
+import androidx.compose.material3.TabRow
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.saveable.rememberSaveable
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.LocalContext
@@ -69,15 +75,15 @@ import com.runningcoach.app.widget.RunningWidget
 import kotlinx.coroutines.launch
 import java.io.File
 
-// Labels are kept short (≤7 chars) and single-line so all six destinations fit
-// a phone-width NavigationBar without ellipsis or wrapping.
+// Four destinations (A8: 6 tabs → 4). Stats lives inside Corse behind a
+// Lista/Statistiche switch; Settings is the gear icon on the Oggi header.
+// Their routes survive below as plain composables (soft migration: deep links
+// and in-app navigation to "stats"/"settings" keep working).
 private enum class Dest(val route: String, val label: String, val icon: ImageVector) {
     Home("home", "Oggi", Icons.Filled.Today),
     Activities("activities", "Corse", Icons.Filled.DirectionsRun),
     Plan("plan", "Piano", Icons.Filled.CalendarMonth),
     Chat("chat", "Coach", Icons.Filled.AutoAwesome),
-    Stats("stats", "Stats", Icons.Filled.BarChart),
-    Settings("settings", "Opzioni", Icons.Filled.Settings),
 }
 
 @Composable
@@ -252,6 +258,10 @@ fun AppScaffold(
                         onOpenWeeklyRecap = {
                             navController.navigate("recap/weekly") { launchSingleTop = true }
                         },
+                        // A8: Settings left the NavigationBar — gear on the header.
+                        onOpenSettings = {
+                            navController.navigate("settings") { launchSingleTop = true }
+                        },
                     )
                 }
                 composable("coachlog") {
@@ -278,15 +288,48 @@ fun AppScaffold(
                     )
                 }
                 composable(Dest.Activities.route) {
-                    ActivitiesScreen(
-                        state,
-                        onOpenActivity = openActivity,
-                        onOpenHeatmap = { navController.navigate("heatmap") { launchSingleTop = true } },
-                        onOpenCalendar = { navController.navigate("calendar") { launchSingleTop = true } },
-                        onOpenCrossTraining = {
-                            navController.navigate("cross-training") { launchSingleTop = true }
-                        },
-                    )
+                    // A8: Stats merged into Corse behind a Lista/Statistiche
+                    // switch. Each pane is the pre-existing full screen (it
+                    // scrolls internally), so there is no nested-scroll clash.
+                    var runsTab by rememberSaveable { mutableIntStateOf(0) }
+                    Column(Modifier.fillMaxSize()) {
+                        TabRow(selectedTabIndex = runsTab) {
+                            Tab(
+                                selected = runsTab == 0,
+                                onClick = { runsTab = 0 },
+                                text = { Text("Lista") },
+                            )
+                            Tab(
+                                selected = runsTab == 1,
+                                onClick = { runsTab = 1 },
+                                text = { Text("Statistiche") },
+                            )
+                        }
+                        Box(Modifier.weight(1f)) {
+                            if (runsTab == 0) {
+                                ActivitiesScreen(
+                                    state,
+                                    onOpenActivity = openActivity,
+                                    onOpenHeatmap = {
+                                        navController.navigate("heatmap") { launchSingleTop = true }
+                                    },
+                                    onOpenCalendar = {
+                                        navController.navigate("calendar") { launchSingleTop = true }
+                                    },
+                                    onOpenCrossTraining = {
+                                        navController.navigate("cross-training") { launchSingleTop = true }
+                                    },
+                                )
+                            } else {
+                                StatsScreen(
+                                    state = statsState,
+                                    onPeriodChange = statsVm::load,
+                                    onExportCsv = { settingsVm.exportData("csv") },
+                                    onExportJson = { settingsVm.exportData("json") },
+                                )
+                            }
+                        }
+                    }
                 }
                 composable("calendar") {
                     CalendarScreen(
@@ -354,9 +397,12 @@ fun AppScaffold(
                         onGeneratePlan = planVm::generatePlan,
                         onToggleSession = planVm::toggleSession,
                         onArchivePlan = planVm::archivePlan,
-                        onShowGenerateDialog = planVm::showGenerateDialog,
+                        // A8: "Crea piano" opens the unified chat in plan mode.
+                        onStartPlanChat = {
+                            chatVm.startPlanSession()
+                            navController.navigate(Dest.Chat.route) { launchSingleTop = true }
+                        },
                         onDismissDialog = planVm::dismissDialog,
-                        onSendChatMessage = planVm::sendChatMessage,
                         onOpenWorkouts = {
                             navController.navigate("workouts") { launchSingleTop = true }
                         },
@@ -396,9 +442,18 @@ fun AppScaffold(
                         state = chatState,
                         onSend = chatVm::sendMessage,
                         onNewSession = chatVm::newSession,
+                        // Plan negotiation complete (A8): hand the §CTX§ to the
+                        // plan generator and open the final-confirmation dialog.
+                        onGeneratePlan = { ctx ->
+                            planVm.setRunnerContext(ctx)
+                            planVm.showGenerateDialog()
+                            navController.navigate(Dest.Plan.route) { launchSingleTop = true }
+                        },
                     )
                 }
-                composable(Dest.Stats.route) {
+                // Legacy route (A8 soft migration): Stats left the NavigationBar
+                // and lives inside Corse, but deep links keep working.
+                composable("stats") {
                     StatsScreen(
                         state = statsState,
                         onPeriodChange = statsVm::load,
@@ -406,7 +461,8 @@ fun AppScaffold(
                         onExportJson = { settingsVm.exportData("json") },
                     )
                 }
-                composable(Dest.Settings.route) {
+                // Legacy route (A8): Settings is now the gear on the Oggi header.
+                composable("settings") {
                     SettingsScreen(
                         settings = settings,
                         profile = state.overview?.profile,

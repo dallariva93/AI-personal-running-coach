@@ -203,7 +203,7 @@ Verdetti: **TIENI** (funziona, serve) · **RIPARA** (serve ma è rotta/incomplet
 | A5 | **Digital Twin v0** (N1): recovery half-life, ramp tolerance e heat sensitivity stimate dai dati storici, con fallback ai default ✅ FATTO — 2026-07-03 | 9 | 6 | medio | medio | altissimo | 4 sett |
 | A6 | **Race recap condivisibile** (#11) + weekly recap emozionale — il motore del passaparola ✅ FATTO — 2026-07-04 | 9 | 5 | medio | basso | altissimo | 3-4 sett |
 | A7 | **Counterfactual what-if sul piano** (N2) ✅ FATTO — 2026-07-04 | 9 | 6 | medio | basso | altissimo | 3-4 sett |
-| A8 | **Chat unificata**: una sola conversazione col contesto completo (decisioni, execution, eventi, memoria episodica v0 N10); via la chat pre-piano separata; 4 tab | 8 | 5 | medio | medio | alto | 3-4 sett |
+| A8 | **Chat unificata**: una sola conversazione col contesto completo (decisioni, execution, eventi, memoria episodica v0 N10); via la chat pre-piano separata; 4 tab ✅ FATTO — 2026-07-04 | 8 | 5 | medio | medio | alto | 3-4 sett |
 | A9 | **Eval harness coach v1** (#25): 50 scenari sintetici in CI; nessun prompt cambia senza passare i test di sicurezza ✅ FATTO — 2026-07-03 | 8 | 6 | medio | medio | alto | 4 sett |
 | A10 | **Sicurezza GDPR**: cifratura at rest campi sanitari e token, delete-my-data, rate limiting | 8 | 5 | medio | basso | alto (rischio evitato) | 3 sett |
 
@@ -988,7 +988,50 @@ comportamento fisiologicamente corretto ed esposto onestamente dal simulatore. (
 
 ---
 
-#### Passo 17 — A8 · Chat unificata + 4 tab
+#### Passo 17 — A8 · Chat unificata + 4 tab ✅ FATTO — 2026-07-04
+
+**Implementato:**
+- **Contesto completo nel system prompt** (`build_chat_system`): ultime 5 decisioni
+  (data+esito+headline), ultimi 10 eventi del diario, esecuzioni recenti del piano
+  (score/status) e memoria episodica — sezioni presenti solo quando c'è il dato. Il
+  service (`chat_service`) le deriva dal DB a ogni send.
+- **Memoria episodica v0** (`coach_memory(fact, updated_at)`, migrazione `f0a1b2c3d4e5`;
+  `app/services/coach_memory.py`): estrattore Haiku post-scambio ("fatti duraturi
+  sull'atleta", prompt in `prompts.py`), parse difensivo, dedupe normalizzato, pruning a
+  30 fatti, `call_fn` iniettabile, no-op senza key — best-effort, non rompe mai la chat.
+  Rientra nell'erasure GDPR. Ponte verso N10.
+- **Modalità piano nella stessa chat**: `chat_sessions.mode` (`general|plan_negotiation`),
+  `ChatSendRequest.mode` (onorato solo alla creazione della sessione),
+  `ChatSendResponse.{mode, plan_ready, runner_context}`. In plan-mode il send passa da
+  `coach.chat_for_plan`: prompt negoziale e flusso §CTX§/§READY§ **identici**, cambia solo
+  la superficie. `/api/plan/chat` legacy resta.
+- **Android 6→4 tab**: `Dest` = Oggi/Corse/Piano/Coach. Stats fusa in Corse (TabRow
+  Lista/Statistiche, ogni pannello è lo screen preesistente che scrolla internamente);
+  Impostazioni = ingranaggio nell'header di Oggi. Route legacy `stats`/`settings`
+  mantenute (migrazione dolce). `GeneratePlanDialog` ridotto alla conferma finale
+  (data-gara+parametri, niente chat interna); "Crea piano"/"Nuovo piano" aprono la chat
+  in plan-mode (banner "Stiamo costruendo il piano"); al §READY§ la chat mostra
+  "Genera il piano" → `PlanViewModel.setRunnerContext` + dialog di conferma.
+
+**Accettazione**: flusso piano end-to-end attraverso la nuova superficie
+(`/api/chat/send` plan-mode → §READY§ → `/api/plan/generate` → enforcement della
+week_structure) testato e verde, e i test esistenti di `/api/plan/chat`/enforcement
+invariati ✓; la chat generale **cita una decisione recente** (fixture
+`CoachDecisionRow` → il prompt la contiene → la risposta la cita) ✓; 4 tab con route
+legacy intatte, wiring navigazione invariato per calendar/heatmap/shoes/recap ✓.
+`tests/test_chat_unified.py` (13) + regressione `tests/integration/test_chat_api.py`.
+Suite 680 pass, coverage 85.7%. Gate verdi (pytest, ruff, `alembic check` no-drift).
+
+**Deviazioni/note:** (1) **Riparazione preesistente in commit separato**: `POST
+/api/chat/send` andava in 500 con qualunque attività in DB (`r.activity_date`
+inesistente su RunSummary, slice dei run più VECCHI, `metrics.injury_risk` inesistente
++ format non guardati in `build_chat_system`) — mai coperto da test; riparato fedele
+all'intento con regressione. (2) L'estrattore di memoria gira su ogni messaggio utente
+(gated su key, costo Haiku minimo) invece che "a fine conversazione": una chat non ha
+un momento di chiusura affidabile. (3) Il dialog ridotto conserva obiettivo/livello/
+giorni oltre a data-gara: sono i parametri obbligatori di `PlanGenerateRequest`; la
+settimana-tipo e i ritmi arrivano dal §CTX§ come da brief. (4) Android non compilato
+qui (nessun SDK): sintassi/import/bilanciamento verificati, valida `android.yml`.
 
 **Obiettivo.** Un solo coach con cui parlare, che sa tutto; via la chat pre-piano separata e il form-dialog; 6 tab → 4.
 
