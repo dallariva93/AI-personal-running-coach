@@ -66,6 +66,11 @@ interface ApiService {
         @Body payload: com.runningcoach.app.data.model.HealthConnectImportIn,
     ): com.runningcoach.app.data.model.HealthConnectImportResult
 
+    @POST("api/plan/whatif")
+    suspend fun planWhatIf(
+        @Body request: com.runningcoach.app.data.model.WhatIfRequest,
+    ): com.runningcoach.app.data.model.WhatIfResult
+
     @GET("api/recap/weekly")
     suspend fun weeklyRecap(): com.runningcoach.app.data.model.WeeklyRecap
 

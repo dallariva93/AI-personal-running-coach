@@ -321,6 +321,25 @@ class RaceRecap(BaseModel):
     narrative: str = ""
 
 
+class WhatIfRequest(BaseModel):
+    """Request one what-if simulation on the active plan (Roadmap A7)."""
+
+    scenario: str  # skip_next_long | sick_one_week | add_training_day
+
+
+class WhatIfResultOut(BaseModel):
+    """Baseline-vs-scenario comparison for a plan what-if (A7). No persistence."""
+
+    scenario: str
+    baseline_race_time: str | None = None
+    scenario_race_time: str | None = None
+    race_time_delta_seconds: float | None = None  # +ve = slower than baseline
+    race_time_delta_label: str | None = None  # human "42s più lento", etc.
+    baseline_tsb_at_race: float
+    scenario_tsb_at_race: float
+    risk_notes: list[str] = Field(default_factory=list)
+
+
 class PhasePlan(BaseModel):
     """One periodization phase in the macrocycle (GAP 2/17)."""
 

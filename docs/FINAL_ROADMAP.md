@@ -202,7 +202,7 @@ Verdetti: **TIENI** (funziona, serve) · **RIPARA** (serve ma è rotta/incomplet
 | A4 | **Voice debrief post-corsa** (N5) — sostituisce i proxy crudi fatigue/motivation | 9 | 5 | medio | basso | altissimo | 2-3 sett |
 | A5 | **Digital Twin v0** (N1): recovery half-life, ramp tolerance e heat sensitivity stimate dai dati storici, con fallback ai default ✅ FATTO — 2026-07-03 | 9 | 6 | medio | medio | altissimo | 4 sett |
 | A6 | **Race recap condivisibile** (#11) + weekly recap emozionale — il motore del passaparola ✅ FATTO — 2026-07-04 | 9 | 5 | medio | basso | altissimo | 3-4 sett |
-| A7 | **Counterfactual what-if sul piano** (N2) | 9 | 6 | medio | basso | altissimo | 3-4 sett |
+| A7 | **Counterfactual what-if sul piano** (N2) ✅ FATTO — 2026-07-04 | 9 | 6 | medio | basso | altissimo | 3-4 sett |
 | A8 | **Chat unificata**: una sola conversazione col contesto completo (decisioni, execution, eventi, memoria episodica v0 N10); via la chat pre-piano separata; 4 tab | 8 | 5 | medio | medio | alto | 3-4 sett |
 | A9 | **Eval harness coach v1** (#25): 50 scenari sintetici in CI; nessun prompt cambia senza passare i test di sicurezza ✅ FATTO — 2026-07-03 | 8 | 6 | medio | medio | alto | 4 sett |
 | A10 | **Sicurezza GDPR**: cifratura at rest campi sanitari e token, delete-my-data, rate limiting | 8 | 5 | medio | basso | alto (rischio evitato) | 3 sett |
@@ -939,7 +939,44 @@ migrazione: A6 non introduce nuove colonne/tabelle.
 
 ---
 
-#### Passo 16 — A7 · What-if counterfactual sul piano
+#### Passo 16 — A7 · What-if counterfactual sul piano ✅ FATTO — 2026-07-04
+
+**Implementato:**
+- **Proiezione EWMA condivisa:** estratto `project_form(daily, end)` da `fitness_fatigue`
+  (refactor minimo, comportamento identico) — la stessa ricorrenza Banister CTL/ATL/TSB ora
+  si estende in avanti su carico pianificato. Parità verificata: `project_form` sulla storia nota
+  == `fitness_fatigue`.
+- **Motore puro** (`app/processing/whatif.py`, `simulate_scenario`): clona in memoria la serie
+  di carico (attuale passato + sessioni future), applica lo scenario, riproietta CTL/ATL/TSB al
+  giorno gara e ricava il `race_time_delta` da un'elasticità fitness→tempo documentata
+  (`_CTL_ELASTICITY=0.5`). Tre scenari v0 enumerati: `skip_next_long` (rimuove il prossimo lungo),
+  `sick_one_week` (azzera i 7 giorni successivi), `add_training_day` (aggiunge un facile in un
+  giorno libero). `risk_notes` qualitative (fitness giù/su, TSB troppo negativo/alto, delta gara).
+  **Zero persistenza.**
+- **Orchestratore** (`app/services/whatif_service.py`): deriva i carichi passati reali (stessa
+  costruzione di `metrics._daily_internal_loads` → parità con le metriche live), sintetizza il
+  carico sRPE delle sessioni future del piano attivo, calcola la predizione baseline con
+  `predict_race_time`, chiama il motore puro. Read-only.
+- **Endpoint:** `POST /api/plan/whatif {scenario}` → 400 su scenario ignoto, 404 senza piano attivo.
+- **Android:** bottom-sheet "E se…?" nel `PlanScreen` (`WhatIfSheet`, self-contained/repository-
+  driven) con i 3 scenari e il confronto prima→dopo (previsione gara + TSB alla gara, verde/coral)
+  e le note di rischio. Modelli + ApiService + repository.
+
+**Accettazione**: `sick_one_week` su piano 12 settimane → **previsione peggiorativa** (delta > 0)
+**e TSB più alto** alla gara ✓ (framing realistico: la settimana malata è quella finale vicino
+alla gara, dove il calo di fatica ATL supera il calo di fitness CTL); **nessuna scrittura DB**
+asserita (conteggi righe invariati) ✓; **proiezione EWMA in avanti testata contro `fitness_fatigue`
+su storia nota** ✓. `tests/test_whatif.py` (14 test). Suite 665 pass, coverage 84.8%. Gate verdi
+(pytest, ruff, `alembic check` no-drift — nessuna migrazione: A7 non tocca il DB).
+
+**Deviazioni/note:** (1) Il `race_time_delta` usa un'elasticità fitness→tempo esplicita e
+conservativa (`_CTL_ELASTICITY`): `predict_race_time` è Riegel-based sui PB e non prende il CTL in
+input, quindi la variazione di previsione è derivata dal delta di CTL proiettato — il what-if
+mostra **direzione e ordine di grandezza**, non una garanzia di tempo gara. (2) Il "TSB più alto"
+del brief vale quando la settimana persa è vicina alla gara (transiente di freschezza da riposo):
+lontano dalla gara, con allenamento che riprende, il CTL resta depresso e il TSB può scendere —
+comportamento fisiologicamente corretto ed esposto onestamente dal simulatore. (3)
+`add_training_day` con settimana già piena è un no-op con nota esplicita. (4) Nessuna migrazione.
 
 **Obiettivo.** Il piano da documento a simulatore: "cosa succede se salto il lungo / mi ammalo una settimana / aggiungo un giorno".
 

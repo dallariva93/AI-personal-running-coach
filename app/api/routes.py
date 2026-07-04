@@ -68,6 +68,8 @@ from app.schemas import (
     Vo2maxPoint,
     WeeklyBucket,
     WeeklyRecap,
+    WhatIfRequest,
+    WhatIfResultOut,
 )
 from app.services import (
     get_profile,
@@ -594,6 +596,26 @@ def post_weekly_plan(session: Session = Depends(get_session)):
     _commit(session)
     session.refresh(report)
     return _report_to_out(report)
+
+
+@router.post("/plan/whatif", response_model=WhatIfResultOut)
+def post_plan_whatif(
+    payload: WhatIfRequest, session: Session = Depends(get_session)
+) -> WhatIfResultOut:
+    """Simulate a what-if on the active plan (A7): skip the next long run, a sick
+    week, or an extra training day. Read-only — nothing is persisted."""
+    from app.processing.whatif import SCENARIOS
+    from app.services.whatif_service import run_whatif
+
+    if payload.scenario not in SCENARIOS:
+        raise HTTPException(
+            status_code=400,
+            detail=f"Scenario non valido. Ammessi: {', '.join(SCENARIOS)}.",
+        )
+    result = run_whatif(session, payload.scenario)
+    if result is None:
+        raise HTTPException(status_code=404, detail="Nessun piano attivo.")
+    return result
 
 
 @router.get("/personal-records", response_model=list[PersonalRecord])

@@ -151,6 +151,23 @@ data class RaceRecap(
     @SerializedName("narrative") val narrative: String = "",
 )
 
+/** A plan what-if request (Roadmap A7). */
+data class WhatIfRequest(
+    @SerializedName("scenario") val scenario: String,
+)
+
+/** Baseline-vs-scenario comparison for a plan what-if (Roadmap A7). */
+data class WhatIfResult(
+    @SerializedName("scenario") val scenario: String,
+    @SerializedName("baseline_race_time") val baselineRaceTime: String? = null,
+    @SerializedName("scenario_race_time") val scenarioRaceTime: String? = null,
+    @SerializedName("race_time_delta_seconds") val raceTimeDeltaSeconds: Double? = null,
+    @SerializedName("race_time_delta_label") val raceTimeDeltaLabel: String? = null,
+    @SerializedName("baseline_tsb_at_race") val baselineTsbAtRace: Double = 0.0,
+    @SerializedName("scenario_tsb_at_race") val scenarioTsbAtRace: Double = 0.0,
+    @SerializedName("risk_notes") val riskNotes: List<String> = emptyList(),
+)
+
 /** Long-horizon training memory (last 6 months). */
 data class AthleteSnapshot(
     @SerializedName("runs_count") val runsCount: Int = 0,

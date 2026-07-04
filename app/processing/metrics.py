@@ -102,6 +102,31 @@ def _daily_internal_loads(
     return daily
 
 
+def project_form(daily: dict[date, float], end: date) -> tuple[float, float, float]:
+    """Run the Banister EWMA over ``daily`` sRPE loads up to ``end`` (inclusive).
+
+    The shared engine behind :func:`fitness_fatigue` and the what-if projector
+    (A7): ``end`` may be in the future, so the very same recurrence extends over
+    planned load. Days without a load contribute 0 (pure decay). Returns
+    ``(CTL, ATL, TSB)`` with the standard "yesterday's balance" TSB convention.
+    """
+    if not daily:
+        return 0.0, 0.0, 0.0
+    start = min(min(daily), end)
+    ctl = atl = 0.0
+    ctl_k = 1.0 / CTL_TAU
+    atl_k = 1.0 / ATL_TAU
+    prev_ctl, prev_atl = 0.0, 0.0
+    day = start
+    while day <= end:
+        load = daily.get(day, 0.0) / LOAD_SCALE
+        prev_ctl, prev_atl = ctl, atl
+        ctl = ctl + ctl_k * (load - ctl)
+        atl = atl + atl_k * (load - atl)
+        day += timedelta(days=1)
+    return round(ctl, 1), round(atl, 1), round(prev_ctl - prev_atl, 1)
+
+
 def fitness_fatigue(
     runs: list[RunSummary],
     ref: date | None = None,
@@ -118,24 +143,7 @@ def fitness_fatigue(
     daily = _daily_internal_loads(runs, profile, garmin_factor)
     if not daily:
         return None, None, None
-
-    start = min(daily)
-    if start >= ref:
-        start = ref
-    ctl = atl = 0.0
-    ctl_k = 1.0 / CTL_TAU
-    atl_k = 1.0 / ATL_TAU
-    prev_ctl, prev_atl = 0.0, 0.0
-    day = start
-    while day <= ref:
-        load = daily.get(day, 0.0) / LOAD_SCALE
-        prev_ctl, prev_atl = ctl, atl
-        ctl = ctl + ctl_k * (load - ctl)
-        atl = atl + atl_k * (load - atl)
-        day += timedelta(days=1)
-    # TSB uses the *previous* day's balance (yesterday's fitness/fatigue).
-    tsb = prev_ctl - prev_atl
-    return round(ctl, 1), round(atl, 1), round(tsb, 1)
+    return project_form(daily, ref)
 
 
 def _classify_form(

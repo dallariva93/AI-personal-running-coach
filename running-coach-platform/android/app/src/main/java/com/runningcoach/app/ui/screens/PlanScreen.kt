@@ -85,10 +85,12 @@ import com.runningcoach.app.data.model.PlanGenerateRequest
 import com.runningcoach.app.data.model.PlanSession
 import com.runningcoach.app.data.model.PlanWeek
 import com.runningcoach.app.data.model.TrainingPlan
+import com.runningcoach.app.data.repository.CoachRepository
 import com.runningcoach.app.ui.components.Pill
 import com.runningcoach.app.ui.components.ScreenTitle
 import com.runningcoach.app.ui.components.SurfaceCard
 import com.runningcoach.app.ui.components.ThinDivider
+import com.runningcoach.app.ui.components.WhatIfSheet
 import com.runningcoach.app.ui.theme.BrandGreen
 import com.runningcoach.app.ui.theme.Coral
 import com.runningcoach.app.ui.viewmodel.PlanUiState
@@ -180,7 +182,9 @@ fun PlanScreen(
     onSendChatMessage: (String) -> Unit = {},
     onOpenWorkouts: () -> Unit = {},
     onOpenCalendar: () -> Unit = {},
+    repository: CoachRepository? = null,
 ) {
+    var showWhatIf by remember { mutableStateOf(false) }
     Box(
         Modifier
             .fillMaxSize()
@@ -219,6 +223,18 @@ fun PlanScreen(
                         Icon(Icons.Filled.CalendarMonth, contentDescription = null)
                         Spacer(Modifier.width(8.dp))
                         Text("Modifica nel calendario")
+                    }
+                    // What-if simulator (Roadmap A7): explore changes, nothing saved.
+                    if (repository != null) {
+                        Spacer(Modifier.height(8.dp))
+                        OutlinedButton(
+                            onClick = { showWhatIf = true },
+                            modifier = Modifier.fillMaxWidth(),
+                        ) {
+                            Icon(Icons.Filled.AutoAwesome, contentDescription = null)
+                            Spacer(Modifier.width(8.dp))
+                            Text("E se…? Simula uno scenario")
+                        }
                     }
                     Spacer(Modifier.height(16.dp))
                     Row(
@@ -261,6 +277,10 @@ fun PlanScreen(
             onGenerate = onGeneratePlan,
             onDismiss = onDismissDialog,
         )
+    }
+
+    if (showWhatIf && repository != null) {
+        WhatIfSheet(repository = repository, onDismiss = { showWhatIf = false })
     }
 }
 

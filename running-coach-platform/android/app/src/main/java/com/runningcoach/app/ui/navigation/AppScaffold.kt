@@ -363,6 +363,7 @@ fun AppScaffold(
                         onOpenCalendar = {
                             navController.navigate("plan-calendar") { launchSingleTop = true }
                         },
+                        repository = app.repository,
                     )
                 }
                 composable("plan-calendar") {
