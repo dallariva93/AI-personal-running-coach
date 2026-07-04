@@ -80,7 +80,7 @@ def send_message(
     session_id: int | None,
     profile: AthleteProfile | None,
     metrics: TrainingMetrics | None,
-    recent_runs_raw: list[dict] | None = None,
+    recent_runs_raw: list | None = None,  # RunSummary objects (attribute access)
     active_plan_week: dict | None = None,
 ) -> ChatSendResponse:
     """Persist a user message, call the AI coach, persist the reply.

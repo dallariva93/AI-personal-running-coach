@@ -58,17 +58,11 @@ def post_send(
         else None
     )
 
-    # Build recent runs list for context (last 10)
-    recent_runs_raw = [
-        {
-            "date": r.activity_date.isoformat() if r.activity_date else "",
-            "type": r.activity_type,
-            "distance_km": r.distance_km,
-            "avg_pace": r.avg_pace,
-            "avg_hr": r.avg_hr,
-        }
-        for r in summaries[-10:]
-    ] if summaries else []
+    # Most recent 10 runs for context. ``summaries`` is date-descending and
+    # ``build_chat_system`` reads RunSummary attributes directly, so pass the
+    # objects as-is (the old dict-building read fields that don't exist on
+    # RunSummary and 500'd every send once the athlete had any activity).
+    recent_runs_raw = summaries[:10] if summaries else []
 
     # Get current plan week for context
     active_plan_week: dict | None = None

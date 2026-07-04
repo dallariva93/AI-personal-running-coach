@@ -697,19 +697,23 @@ def build_chat_system(
             )
     profile_str = "\n".join(profile_lines) if profile_lines else "Profilo non disponibile."
 
-    # Metrics section
+    # Metrics section. Every field is optional on TrainingMetrics: guard each
+    # one (the original unguarded reads — including a non-existent
+    # ``injury_risk`` attribute — crashed the chat as soon as metrics existed).
     metrics_str = "Metriche non disponibili."
     if metrics:
         parts = [
-            f"CTL (fitness): {metrics.chronic_load_km:.1f} km",
-            f"ATL (fatica): {metrics.acute_load_km:.1f} km",
-            f"TSB (forma): {metrics.tsb:.1f}",
-            f"ACWR: {metrics.acwr:.2f}",
+            f"Volume 7gg: {metrics.acute_load_km:.1f} km",
+            f"Volume cronico: {metrics.chronic_load_km:.1f} km/sett",
         ]
+        if metrics.tsb is not None:
+            parts.append(f"TSB (forma): {metrics.tsb:.1f}")
+        if metrics.acwr is not None:
+            parts.append(f"ACWR: {metrics.acwr:.2f}")
         if metrics.phase:
             parts.append(f"Fase: {metrics.phase}")
-        if metrics.injury_risk:
-            parts.append(f"Rischio infortuni: {metrics.injury_risk}")
+        if metrics.injury_level:
+            parts.append(f"Rischio infortuni: {metrics.injury_level}")
         metrics_str = " · ".join(parts)
 
     # Recent runs (last 10)
