@@ -32,6 +32,7 @@ class RunSummary(BaseModel):
 
     garmin_activity_id: str | None = None
     strava_activity_id: str | None = None
+    health_connect_id: str | None = None  # A2: no-Garmin Health Connect track
     date: str  # ISO YYYY-MM-DD
     start_time: str | None = None  # local start "HH:MM" (Q6 weather + habitual hours)
     sport: str = "run"  # run | bike | swim | strength (Feature 24)
@@ -521,6 +522,7 @@ class ActivityOut(BaseModel):
     id: int
     garmin_activity_id: str | None
     strava_activity_id: str | None = None
+    health_connect_id: str | None = None
     date: str
     sport: str = "run"
     activity_type: str
@@ -588,6 +590,50 @@ class ManualActivityIn(BaseModel):
     avg_hr: int | None = None
     rpe: int | None = None
     notes: str | None = None
+
+
+class HealthConnectRun(BaseModel):
+    """One running session read from Android Health Connect (Roadmap A2).
+
+    Compact by design: no per-km splits (v0 derives pace from distance+duration
+    server-side). ``hr_samples`` is an optional sampled bpm series used only to
+    fill avg/max HR when the source didn't provide them.
+    """
+
+    health_connect_id: str
+    date: str  # ISO YYYY-MM-DD
+    start_time: str | None = None  # local "HH:MM"
+    duration_min: float = 0.0
+    distance_km: float = 0.0
+    avg_hr: int | None = None
+    max_hr: int | None = None
+    elevation_gain_m: float | None = None
+    hr_samples: list[int] | None = None
+    route_polyline: str | None = None
+    name: str | None = None  # user-set title, feeds session-type inference
+
+
+class HealthConnectWellness(BaseModel):
+    """One day of sleep/HRV from Health Connect (Roadmap A2)."""
+
+    date: str
+    sleep_h: float | None = None
+    hrv_rmssd: float | None = None
+
+
+class HealthConnectImportIn(BaseModel):
+    """Batch import payload from the Health Connect sync worker (Roadmap A2)."""
+
+    runs: list[HealthConnectRun] = []
+    wellness: list[HealthConnectWellness] = []
+
+
+class HealthConnectImportResult(BaseModel):
+    """Result of a Health Connect batch import (Roadmap A2)."""
+
+    imported: int
+    wellness_days: int
+    activities: list[ActivityOut] = []
 
 
 class StravaStatus(BaseModel):

@@ -60,6 +60,12 @@ class CoachRepository(private val settings: SettingsStore) {
     suspend fun ingestWellness(): Int =
         runCatching { api().ingestWellness()["days_upserted"] ?: 0 }.getOrDefault(0)
 
+    /** Import runs + wellness read from Health Connect (Roadmap A2). */
+    suspend fun importHealthConnect(
+        payload: com.runningcoach.app.data.model.HealthConnectImportIn,
+    ): com.runningcoach.app.data.model.HealthConnectImportResult =
+        api().importHealthConnect(payload)
+
     suspend fun ingestCrossTraining(): List<Activity> = api().ingestCrossTraining()
 
     suspend fun crossTraining(limit: Int = 50): List<Activity> = api().crossTraining(limit)

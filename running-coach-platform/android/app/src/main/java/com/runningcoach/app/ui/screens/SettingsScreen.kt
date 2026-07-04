@@ -138,6 +138,13 @@ fun SettingsScreen(
         Spacer(Modifier.height(24.dp))
         Divider()
         Spacer(Modifier.height(16.dp))
+        // Health Connect (A2): the no-Garmin path. Self-contained — reads the
+        // context and drives its own permission request + one-shot sync.
+        com.runningcoach.app.health.HealthConnectSection()
+
+        Spacer(Modifier.height(24.dp))
+        Divider()
+        Spacer(Modifier.height(16.dp))
         ThemeSection(themeMode = themeMode, onSaveTheme = { themeMode = it; onSaveTheme(it) })
 
         Spacer(Modifier.height(24.dp))

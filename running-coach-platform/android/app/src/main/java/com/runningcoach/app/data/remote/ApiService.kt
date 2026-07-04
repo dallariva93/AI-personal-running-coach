@@ -61,6 +61,11 @@ interface ApiService {
     @POST("api/ingest/wellness")
     suspend fun ingestWellness(): Map<String, Int>
 
+    @POST("api/import/health-connect")
+    suspend fun importHealthConnect(
+        @Body payload: com.runningcoach.app.data.model.HealthConnectImportIn,
+    ): com.runningcoach.app.data.model.HealthConnectImportResult
+
     @POST("api/ingest/cross-training")
     suspend fun ingestCrossTraining(): List<Activity>
 

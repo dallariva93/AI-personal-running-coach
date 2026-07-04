@@ -8,11 +8,21 @@
     <!-- On-device voice debrief transcription (Roadmap A4). -->
     <uses-permission android:name="android.permission.RECORD_AUDIO" />
 
-    <!-- Resolve the on-device speech recognizer (Android 11+ package visibility). -->
+    <!-- Health Connect READ permissions (Roadmap A2): the no-Garmin path. -->
+    <uses-permission android:name="android.permission.health.READ_EXERCISE" />
+    <uses-permission android:name="android.permission.health.READ_DISTANCE" />
+    <uses-permission android:name="android.permission.health.READ_ELEVATION_GAINED" />
+    <uses-permission android:name="android.permission.health.READ_HEART_RATE" />
+    <uses-permission android:name="android.permission.health.READ_SLEEP" />
+    <uses-permission android:name="android.permission.health.READ_HEART_RATE_VARIABILITY" />
+
     <queries>
+        <!-- Resolve the on-device speech recognizer (Android 11+ visibility). -->
         <intent>
             <action android:name="android.speech.RecognitionService" />
         </intent>
+        <!-- Health Connect app (Roadmap A2). -->
+        <package android:name="com.google.android.apps.healthdata" />
     </queries>
 
     <application
@@ -35,7 +45,23 @@
                 <action android:name="android.intent.action.MAIN" />
                 <category android:name="android.intent.category.LAUNCHER" />
             </intent-filter>
+            <!-- Health Connect permissions rationale (Roadmap A2). -->
+            <intent-filter>
+                <action android:name="androidx.health.connect.action.SHOW_PERMISSIONS_RATIONALE" />
+            </intent-filter>
         </activity>
+
+        <!-- Android 14+ surfaces the privacy policy for health permissions here. -->
+        <activity-alias
+            android:name="ViewPermissionUsageActivity"
+            android:exported="true"
+            android:targetActivity=".MainActivity"
+            android:permission="android.permission.START_VIEW_PERMISSION_USAGE">
+            <intent-filter>
+                <action android:name="android.intent.action.VIEW_PERMISSION_USAGE" />
+                <category android:name="android.intent.category.HEALTH_PERMISSIONS" />
+            </intent-filter>
+        </activity-alias>
 
         <!-- FCM push delivery (Roadmap A3). Inert without google-services.json. -->
         <service

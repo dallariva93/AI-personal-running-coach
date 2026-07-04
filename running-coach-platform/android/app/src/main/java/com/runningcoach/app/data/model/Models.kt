@@ -189,6 +189,41 @@ data class DailyCheckin(
     @SerializedName("source") val source: String? = null,
 )
 
+/** One running session read from Health Connect (Roadmap A2). */
+data class HealthConnectRun(
+    @SerializedName("health_connect_id") val healthConnectId: String,
+    @SerializedName("date") val date: String,
+    @SerializedName("start_time") val startTime: String? = null,
+    @SerializedName("duration_min") val durationMin: Double = 0.0,
+    @SerializedName("distance_km") val distanceKm: Double = 0.0,
+    @SerializedName("avg_hr") val avgHr: Int? = null,
+    @SerializedName("max_hr") val maxHr: Int? = null,
+    @SerializedName("elevation_gain_m") val elevationGainM: Double? = null,
+    @SerializedName("hr_samples") val hrSamples: List<Int>? = null,
+    @SerializedName("route_polyline") val routePolyline: String? = null,
+    @SerializedName("name") val name: String? = null,
+)
+
+/** One day of sleep/HRV from Health Connect (Roadmap A2). */
+data class HealthConnectWellness(
+    @SerializedName("date") val date: String,
+    @SerializedName("sleep_h") val sleepH: Double? = null,
+    @SerializedName("hrv_rmssd") val hrvRmssd: Double? = null,
+)
+
+/** Batch import payload sent by the Health Connect sync worker (Roadmap A2). */
+data class HealthConnectImportIn(
+    @SerializedName("runs") val runs: List<HealthConnectRun> = emptyList(),
+    @SerializedName("wellness") val wellness: List<HealthConnectWellness> = emptyList(),
+)
+
+/** Result of a Health Connect batch import (Roadmap A2). */
+data class HealthConnectImportResult(
+    @SerializedName("imported") val imported: Int = 0,
+    @SerializedName("wellness_days") val wellnessDays: Int = 0,
+    @SerializedName("activities") val activities: List<Activity> = emptyList(),
+)
+
 /** A post-run voice/text debrief the athlete records (Roadmap A4). */
 data class DebriefIn(
     @SerializedName("text") val text: String,

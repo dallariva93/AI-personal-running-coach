@@ -8,6 +8,7 @@ import androidx.datastore.preferences.core.stringPreferencesKey
 import androidx.datastore.preferences.preferencesDataStore
 import com.runningcoach.app.BuildConfig
 import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.map
 
 private val Context.dataStore by preferencesDataStore(name = "settings")
@@ -33,6 +34,9 @@ class SettingsStore(private val context: Context) {
     private val lastSyncAtKey = longPreferencesKey("last_sync_at_millis")
     private val lastSyncNewCountKey = intPreferencesKey("last_sync_new_count")
     private val lastMaxActivityIdKey = intPreferencesKey("last_max_activity_id")
+    // Health Connect (A2): epoch-millis of the last successful HC read, so the
+    // worker only fetches sessions newer than the previous sync.
+    private val healthConnectSyncedAtKey = longPreferencesKey("hc_synced_at_millis")
 
     val settings: Flow<AppSettings> = context.dataStore.data.map { prefs ->
         AppSettings(
@@ -81,6 +85,15 @@ class SettingsStore(private val context: Context) {
             if (candidate > previous) prefs[lastMaxActivityIdKey] = candidate
         }
         return previous
+    }
+
+    /** Epoch-millis of the last successful Health Connect read (A2), or null. */
+    suspend fun healthConnectSyncedAt(): Long? =
+        context.dataStore.data.map { it[healthConnectSyncedAtKey] }.first()
+
+    /** Record a successful Health Connect read at ``atMillis`` (A2). */
+    suspend fun recordHealthConnectSync(atMillis: Long) {
+        context.dataStore.edit { prefs -> prefs[healthConnectSyncedAtKey] = atMillis }
     }
 
     private fun normalizeUrl(url: String): String {

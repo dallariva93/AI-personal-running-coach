@@ -45,6 +45,8 @@ from app.schemas import (
     DeviceOut,
     ExecutionResult,
     GamificationData,
+    HealthConnectImportIn,
+    HealthConnectImportResult,
     HeatmapResponse,
     HeatmapRoute,
     ManualActivityIn,
@@ -261,6 +263,31 @@ def post_ingest_wellness(session: Session = Depends(get_session)) -> dict:
     count = ingest_wellness(session)
     _commit(session)
     return {"days_upserted": count}
+
+
+@router.post("/import/health-connect", response_model=HealthConnectImportResult)
+def post_import_health_connect(
+    payload: HealthConnectImportIn, session: Session = Depends(get_session)
+) -> HealthConnectImportResult:
+    """Import running sessions + wellness from Android Health Connect (A2).
+
+    The no-Garmin path: reuses ``RunSummary``/``upsert_activity`` and refreshes
+    the coaching decision, so a run recorded by any HC-compatible app appears in
+    the app with an updated decision.
+    """
+    from app.services.health_connect import import_health_connect
+
+    activities, wellness_days = import_health_connect(session, payload)
+    _commit(session)
+    for a in activities:
+        session.refresh(a)
+    # Only re-run the single-run analysis when a run actually arrived (Q2 parity).
+    _adapt_after_change(session, run_analysis=bool(activities))
+    return HealthConnectImportResult(
+        imported=len(activities),
+        wellness_days=wellness_days,
+        activities=[ActivityOut.model_validate(a) for a in activities],
+    )
 
 
 @router.post("/ingest/cross-training", response_model=list[ActivityOut])

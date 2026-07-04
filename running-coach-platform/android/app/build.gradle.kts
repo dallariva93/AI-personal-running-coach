@@ -83,4 +83,7 @@ dependencies {
     // Real push delivery via FCM (Roadmap A3). Requires google-services.json
     // in app/ when building with Firebase; without it the FCM service is inert.
     implementation(libs.firebase.messaging)
+    // Health Connect (Roadmap A2): the no-Garmin path — read running sessions,
+    // HR, sleep and HRV from any HC-compatible app on the device.
+    implementation(libs.androidx.health.connect)
 }

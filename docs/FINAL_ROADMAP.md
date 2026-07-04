@@ -197,7 +197,7 @@ Verdetti: **TIENI** (funziona, serve) · **RIPARA** (serve ma è rotta/incomplet
 | # | Cosa | Impatto | Compl. | Costo | Rischio | ROI | Tempo |
 |---|---|---|---|---|---|---|---|
 | A1 | **Voce LLM sul motore deterministico** + trigger proattivi comportamentali (corsa saltata, too_hard ricorrente, HRV in calo) — uccide il difetto 3 | 9 | 5 | medio | basso | altissimo | 3-4 sett |
-| A2 | **Health Connect MVP** (#10): corse, HR, sonno, HRV senza Garmin — apre il TAM | 10 | 7 | alto | medio | altissimo | 4-6 sett |
+| A2 | **Health Connect MVP** (#10): corse, HR, sonno, HRV senza Garmin — apre il TAM ✅ FATTO — 2026-07-04 | 10 | 7 | alto | medio | altissimo | 4-6 sett |
 | A3 | **Push reali (FCM)** + execution score push entro minuti dalla sync — chiude il loop dopamminico ✅ FATTO — 2026-07-03 | 9 | 5 | medio | basso | altissimo | 3 sett |
 | A4 | **Voice debrief post-corsa** (N5) — sostituisce i proxy crudi fatigue/motivation | 9 | 5 | medio | basso | altissimo | 2-3 sett |
 | A5 | **Digital Twin v0** (N1): recovery half-life, ramp tolerance e heat sensitivity stimate dai dati storici, con fallback ai default ✅ FATTO — 2026-07-03 | 9 | 6 | medio | medio | altissimo | 4 sett |
@@ -838,7 +838,38 @@ del piano.
 
 ---
 
-#### Passo 14 — A2 · Health Connect MVP (track parallelo, indipendente)
+#### Passo 14 — A2 · Health Connect MVP (track parallelo, indipendente) ✅ FATTO — 2026-07-04
+
+**Implementato:**
+- **Backend:** colonna `activities.health_connect_id` (unique, indice, migrazione
+  `e9f0a1b2c3d4`) + ramo di dedup in `upsert_activity` (garmin → strava → health_connect).
+  Endpoint `POST /api/import/health-connect` (`app/services/health_connect.py`): batch di
+  corse + wellness → riusa `RunSummary`/`upsert_activity`, deriva il pace da distanza+durata
+  (v0, niente per-km reali), inferisce il tipo con `_infer_type` (cascata nome→trail→distanza,
+  degrada su easy senza training-effect), calcola avg/max HR dai campioni se assenti; wellness
+  (sonno/HRV) → `save_checkin` con `source="health_connect"` **rispettando la precedenza A4**
+  (non sovrascrive un debrief voice/manual). Rifà la decisione (`_adapt_after_change`).
+- **Android:** dipendenza `androidx.health.connect:connect-client`; permessi READ per
+  ExerciseSession/Distance/ElevationGained/HeartRate/SleepSession/HRV in manifest +
+  rationale intent-filter + `<queries>`. `HealthConnectManager` (disponibilità, consenso,
+  lettura sessioni running dall'ultimo sync via aggregate) + `HealthConnectSyncWorker`
+  (WorkManager, best-effort, no-op senza HC/consenso) + sezione di consenso in Impostazioni
+  ("Non hai Garmin? Collega Health Connect"). Modelli + ApiService + repository + ultimo-sync
+  in SettingsStore.
+
+**Accettazione**: una corsa importata via `/api/import/health-connect` appare con pace derivato,
+tipo inferito e decisione aggiornata ✓; re-import con stesso `health_connect_id` aggiorna la
+stessa riga (dedup) ✓; wellness → check-in `source=health_connect` che **non** sovrascrive voice ✓.
+`tests/test_health_connect.py` (10 test). Suite 616 pass, coverage 84.3%. Gate verdi (pytest,
+ruff, `alembic check` no-drift).
+
+**Deviazioni/note:** (1) **Android non compilato** in questo ambiente (nessun SDK): verificati
+bilanciamento sintassi/import/dipendenze/coerenza coi pattern; l'uso dell'SDK Health Connect
+(alpha) è il rischio residuo principale, lo valida `android.yml` in CI. (2) Il consenso è in
+Impostazioni, non in un onboarding dedicato (non esiste una schermata onboarding lato Android):
+deviazione minima dal brief. (3) Dedup con Strava (stessa corsa da due fonti senza id comune):
+v0 accetta il duplicato come da brief; euristica data+durata±2% in backlog. (4) Serie HR grezza
+non persistita (v0): si derivano solo avg/max.
 
 **Obiettivo.** Corse, FC, sonno, HRV senza Garmin: apre il TAM. Sviluppabile in parallelo a 9-13 (tocca superfici diverse).
 
