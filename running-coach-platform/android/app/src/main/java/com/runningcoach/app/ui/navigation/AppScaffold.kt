@@ -51,6 +51,7 @@ import com.runningcoach.app.ui.screens.HomeScreen
 import com.runningcoach.app.ui.screens.MapFullscreenScreen
 import com.runningcoach.app.ui.screens.PlanCalendarScreen
 import com.runningcoach.app.ui.screens.PlanScreen
+import com.runningcoach.app.ui.screens.RecapScreen
 import com.runningcoach.app.ui.screens.SettingsScreen
 import com.runningcoach.app.ui.screens.ShoesScreen
 import com.runningcoach.app.ui.screens.StatsScreen
@@ -248,11 +249,31 @@ fun AppScaffold(
                         onOpenCoachLog = {
                             navController.navigate("coachlog") { launchSingleTop = true }
                         },
+                        onOpenWeeklyRecap = {
+                            navController.navigate("recap/weekly") { launchSingleTop = true }
+                        },
                     )
                 }
                 composable("coachlog") {
                     CoachLogScreen(
                         repository = app.repository,
+                        onBack = { navController.popBackStack() },
+                    )
+                }
+                composable("recap/weekly") {
+                    RecapScreen(
+                        repository = app.repository,
+                        activityId = null,
+                        onBack = { navController.popBackStack() },
+                    )
+                }
+                composable(
+                    route = "recap/race/{id}",
+                    arguments = listOf(navArgument("id") { type = NavType.IntType }),
+                ) { entry ->
+                    RecapScreen(
+                        repository = app.repository,
+                        activityId = entry.arguments?.getInt("id"),
                         onBack = { navController.popBackStack() },
                     )
                 }
@@ -308,6 +329,9 @@ fun AppScaffold(
                         },
                         onSaveRpe = { rpe -> id?.let { overviewVm.updateActivity(it, rpe = rpe) } },
                         onSaveNotes = { notes -> id?.let { overviewVm.updateActivity(it, notes = notes) } },
+                        onOpenRaceRecap = {
+                            id?.let { navController.navigate("recap/race/$it") { launchSingleTop = true } }
+                        },
                     )
                 }
                 composable(

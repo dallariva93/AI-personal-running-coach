@@ -66,6 +66,13 @@ class CoachRepository(private val settings: SettingsStore) {
     ): com.runningcoach.app.data.model.HealthConnectImportResult =
         api().importHealthConnect(payload)
 
+    /** Shareable weekly recap (Roadmap A6). */
+    suspend fun weeklyRecap(): com.runningcoach.app.data.model.WeeklyRecap = api().weeklyRecap()
+
+    /** Shareable race recap (Roadmap A6): prediction vs. reality. */
+    suspend fun raceRecap(activityId: Int): com.runningcoach.app.data.model.RaceRecap =
+        api().raceRecap(activityId)
+
     suspend fun ingestCrossTraining(): List<Activity> = api().ingestCrossTraining()
 
     suspend fun crossTraining(limit: Int = 50): List<Activity> = api().crossTraining(limit)

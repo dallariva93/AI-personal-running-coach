@@ -66,6 +66,7 @@ fun HomeScreen(
     onOpenActivity: (Int) -> Unit = {},
     onCoachAction: (String, String?) -> Unit = { _, _ -> },
     onOpenCoachLog: () -> Unit = {},
+    onOpenWeeklyRecap: () -> Unit = {},
 ) {
     val ov: Overview? = state.overview
     Column(
@@ -146,6 +147,25 @@ fun HomeScreen(
             ) {
                 Text(
                     stringResource(R.string.home_coach_diary),
+                    style = MaterialTheme.typography.labelLarge,
+                    fontWeight = FontWeight.SemiBold,
+                    color = MaterialTheme.colorScheme.primary,
+                )
+                Spacer(Modifier.weight(1f))
+                Icon(
+                    Icons.Filled.ChevronRight,
+                    contentDescription = null,
+                    tint = MaterialTheme.colorScheme.primary,
+                )
+            }
+
+            // Weekly recap entry point (Roadmap A6): shareable, verbalized summary.
+            Row(
+                Modifier.fillMaxWidth().clickable(onClick = onOpenWeeklyRecap).padding(vertical = 6.dp),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                Text(
+                    stringResource(R.string.home_weekly_recap),
                     style = MaterialTheme.typography.labelLarge,
                     fontWeight = FontWeight.SemiBold,
                     color = MaterialTheme.colorScheme.primary,

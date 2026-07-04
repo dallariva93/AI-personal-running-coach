@@ -87,6 +87,7 @@ fun ActivityDetailScreen(
     onOpenMap: (() -> Unit)? = null,
     onSaveRpe: (Int) -> Unit = {},
     onSaveNotes: (String) -> Unit = {},
+    onOpenRaceRecap: (() -> Unit)? = null,
 ) {
     Column(
         Modifier
@@ -118,6 +119,14 @@ fun ActivityDetailScreen(
         }
 
         HeroHeader(activity, onSaveRpe)
+
+        // Race recap (Roadmap A6): prediction-vs-reality card, shareable.
+        if (activity.activityType.lowercase() in setOf("gara", "race") && onOpenRaceRecap != null) {
+            Spacer(Modifier.height(14.dp))
+            Button(onClick = onOpenRaceRecap, modifier = Modifier.fillMaxWidth()) {
+                Text("Vedi recap gara")
+            }
+        }
 
         // Real OSM route map right under the hero — the signature element of a
         // Garmin/Strava activity screen.

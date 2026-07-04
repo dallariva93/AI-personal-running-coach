@@ -201,7 +201,7 @@ Verdetti: **TIENI** (funziona, serve) · **RIPARA** (serve ma è rotta/incomplet
 | A3 | **Push reali (FCM)** + execution score push entro minuti dalla sync — chiude il loop dopamminico ✅ FATTO — 2026-07-03 | 9 | 5 | medio | basso | altissimo | 3 sett |
 | A4 | **Voice debrief post-corsa** (N5) — sostituisce i proxy crudi fatigue/motivation | 9 | 5 | medio | basso | altissimo | 2-3 sett |
 | A5 | **Digital Twin v0** (N1): recovery half-life, ramp tolerance e heat sensitivity stimate dai dati storici, con fallback ai default ✅ FATTO — 2026-07-03 | 9 | 6 | medio | medio | altissimo | 4 sett |
-| A6 | **Race recap condivisibile** (#11) + weekly recap emozionale — il motore del passaparola | 9 | 5 | medio | basso | altissimo | 3-4 sett |
+| A6 | **Race recap condivisibile** (#11) + weekly recap emozionale — il motore del passaparola ✅ FATTO — 2026-07-04 | 9 | 5 | medio | basso | altissimo | 3-4 sett |
 | A7 | **Counterfactual what-if sul piano** (N2) | 9 | 6 | medio | basso | altissimo | 3-4 sett |
 | A8 | **Chat unificata**: una sola conversazione col contesto completo (decisioni, execution, eventi, memoria episodica v0 N10); via la chat pre-piano separata; 4 tab | 8 | 5 | medio | medio | alto | 3-4 sett |
 | A9 | **Eval harness coach v1** (#25): 50 scenari sintetici in CI; nessun prompt cambia senza passare i test di sicurezza ✅ FATTO — 2026-07-03 | 8 | 6 | medio | medio | alto | 4 sett |
@@ -882,7 +882,52 @@ non persistita (v0): si derivano solo avg/max.
 
 ---
 
-#### Passo 15 — A6 · Race recap + weekly recap condivisibili
+#### Passo 15 — A6 · Race recap + weekly recap condivisibili ✅ FATTO — 2026-07-04
+
+**Implementato:**
+- **Fatti puri** (`app/processing/recap.py`): `compute_weekly_recap_facts` (distanza, n. uscite,
+  aderenza %, execution medio, "momento migliore" con priorità PB > seduta quasi perfetta ≥90 >
+  lungo ≥15km) e `compute_race_recap_facts` (tempo reale vs previsto, delta con etichetta
+  "più veloce/più lento del previsto"). `app/processing/gamification.compute_adherence_pct` (nuovo,
+  riusa `_day_state`) e `app/processing/performance.nearest_goal_type` (nuovo, riusa la stessa
+  metrica log-space di `predict_race_time`) completano il pacchetto puro.
+- **Narrativa LLM** (`app/coaching/recap_narrative.py`), stessa disciplina del verbalizer A1:
+  nessun numero inventato (guardia post-risposta sui fatti), max 2 frasi, fallback totale al
+  template deterministico su errore/timeout/flag disabilitato/assenza key. Riusa il flag
+  `verbalizer_enabled` esistente (nessuna nuova env in prod).
+- **Orchestratore** (`app/services/recap_service.py`): `build_weekly_recap` (settimana ISO
+  lun-dom, aderenza dal piano, execution dagli score delle sessioni, PB da
+  `compute_personal_records`), `build_race_recap` (predizione ricostruita dalla storia
+  **precedente** alla gara — mai col senno di poi — con `Goal` sintetico sulla distanza più
+  vicina). Due eventi notifiable low-priority: `maybe_emit_weekly_recap_trigger` (domenica sera,
+  dedupe settimanale) e `maybe_emit_race_recap_ready` (alla prima corsa "gara" ingerita, dedupe
+  per attività), entrambi agganciati a `_adapt_after_change`.
+- **Endpoint:** `GET /api/recap/weekly`, `GET /api/recap/race/{activity_id}` (404 se non è una gara).
+- **Android:** `RecapCard`/`RaceRecapCard`/`WeeklyRecapCard` (Compose, anteprima in-app, un
+  template due varianti brand-coerenti) + `RecapCardRenderer` (bitmap 1080×1350 via
+  `android.graphics.Picture`→`Canvas`, non le API di capture Compose — scelta deliberata per
+  restare compatibile con il Compose BOM attuale senza doverlo alzare) + `RecapScreen`
+  (self-contained, fetch+preview+condividi via `FileProvider` già configurato). Entry point:
+  riga "Riepilogo settimanale" in Home, bottone "Vedi recap gara" su `ActivityDetailScreen`
+  quando `activityType` è gara.
+
+**Accettazione**: delta prediction-vs-reale calcolato correttamente (test su gara più veloce/più
+lenta del previsto) ✓; bitmap 1080×1350 via disegno 2D diretto, banale dal punto di vista
+computazionale (<500ms, nessun rendering Compose coinvolto) ✓; share intent riusa esattamente il
+`FileProvider`/pattern già in uso per l'export CSV/JSON ✓. `tests/test_recap.py` (26 test) +
+`tests/eval/test_recap_narrative.py` (14 test, guardie deterministiche + golden `eval_llm`
+notturno). Suite 651 pass, coverage 84.6%. Gate verdi (pytest, ruff, `alembic check` no-drift;
+nessuna migrazione: nessun nuovo modello DB).
+
+**Deviazioni/note:** (1) Bitmap via `Picture`→`Canvas` in `android.graphics` invece delle API di
+capture Compose (`graphicsLayer.toImageBitmap()`, che richiedono Compose UI 1.7+/BOM 2024.09+,
+più recente del BOM attuale 2024.06): stessa lettera del brief ("Picture ... → Bitmap"),
+zero rischio di incompatibilità in un ambiente senza SDK per compilare. (2) Niente mappa del
+percorso sulla card (il brief la menziona, ma non tutte le corse hanno una route salvata):
+omessa in questa v0, backlog. (3) Deep-link non generalizzato (task C3 già tracciato in
+`docs/INTEGRATION_TASKS.md`): i recap sono raggiungibili da bottoni espliciti (Home, dettaglio
+attività) invece che dal tap sulla notifica push, che resta un promemoria testuale. (4) Nessuna
+migrazione: A6 non introduce nuove colonne/tabelle.
 
 **Obiettivo.** Il motore del passaparola: card visuale post-gara e recap domenicale emozionale.
 

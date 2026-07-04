@@ -13,6 +13,7 @@
     <string name="home_subtitle">Il tuo stato di forma in tempo reale</string>
     <string name="home_loading">Elaboro…</string>
     <string name="home_coach_diary">Diario del coach</string>
+    <string name="home_weekly_recap">Riepilogo settimanale</string>
     <string name="home_recent_runs">Ultime corse</string>
     <string name="home_empty_hint">Collega il backend in Impostazioni: il sync parte da solo.</string>
 

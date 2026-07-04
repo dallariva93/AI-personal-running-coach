@@ -13,6 +13,7 @@
     <string name="home_subtitle">Your form, right now</string>
     <string name="home_loading">Loading…</string>
     <string name="home_coach_diary">Coach diary</string>
+    <string name="home_weekly_recap">Weekly recap</string>
     <string name="home_recent_runs">Recent runs</string>
     <string name="home_empty_hint">Connect the backend in Settings: sync starts on its own.</string>
 

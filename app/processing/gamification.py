@@ -140,6 +140,21 @@ def compute_adherence_streak(days: list[AdherenceDay]) -> tuple[int, int]:
     return current, best
 
 
+def compute_adherence_pct(days: list[AdherenceDay]) -> float | None:
+    """% of plan-covered days honoured in ``days`` (Roadmap A6 weekly recap).
+
+    Same day-state logic as :func:`compute_adherence_streak` (a prescribed
+    session must not be ``skipped``; a prescribed rest day must not have been
+    run hard), but expressed as a percentage over the window rather than a
+    streak length. ``None`` when no day in the window carries any plan
+    prescription (e.g. no plan was active that week).
+    """
+    covered = [s for d in days if (s := _day_state(d)) is not None]
+    if not covered:
+        return None
+    return round(100.0 * sum(1 for s in covered if s) / len(covered), 0)
+
+
 _DISTANCE_MILESTONES = [
     (100, "100 km percorsi"),
     (500, "500 km percorsi"),

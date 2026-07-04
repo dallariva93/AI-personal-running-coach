@@ -126,6 +126,31 @@ data class RacePrediction(
     @SerializedName("confidence") val confidence: String = "low",
 )
 
+/** Shareable weekly summary (Roadmap A6): the Sunday-evening recap card. */
+data class WeeklyRecap(
+    @SerializedName("week_start") val weekStart: String,
+    @SerializedName("week_end") val weekEnd: String,
+    @SerializedName("distance_km") val distanceKm: Double = 0.0,
+    @SerializedName("runs_count") val runsCount: Int = 0,
+    @SerializedName("adherence_pct") val adherencePct: Double? = null,
+    @SerializedName("avg_execution_score") val avgExecutionScore: Double? = null,
+    @SerializedName("best_moment") val bestMoment: String? = null,
+    @SerializedName("narrative") val narrative: String = "",
+)
+
+/** Shareable race-day summary (Roadmap A6): prediction vs. reality. */
+data class RaceRecap(
+    @SerializedName("activity_id") val activityId: Int,
+    @SerializedName("date") val date: String,
+    @SerializedName("distance_km") val distanceKm: Double = 0.0,
+    @SerializedName("actual_time") val actualTime: String,
+    @SerializedName("predicted_time") val predictedTime: String? = null,
+    @SerializedName("delta_seconds") val deltaSeconds: Double? = null,
+    @SerializedName("delta_label") val deltaLabel: String? = null,
+    @SerializedName("splits_km") val splitsKm: List<String>? = null,
+    @SerializedName("narrative") val narrative: String = "",
+)
+
 /** Long-horizon training memory (last 6 months). */
 data class AthleteSnapshot(
     @SerializedName("runs_count") val runsCount: Int = 0,

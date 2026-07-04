@@ -290,6 +290,37 @@ class RacePrediction(BaseModel):
     confidence: str = "low"  # low | medium | high
 
 
+class WeeklyRecap(BaseModel):
+    """Shareable weekly summary (Roadmap A6): the Sunday-evening recap card."""
+
+    model_config = ConfigDict(extra="ignore")
+
+    week_start: str  # ISO YYYY-MM-DD, Monday
+    week_end: str  # ISO YYYY-MM-DD, Sunday
+    distance_km: float
+    runs_count: int
+    adherence_pct: float | None = None  # % of plan-covered days honoured
+    avg_execution_score: float | None = None
+    best_moment: str | None = None  # a PR, a great session, or the week's long run
+    narrative: str = ""  # LLM voice (A1) over the same facts, guarded, or a template
+
+
+class RaceRecap(BaseModel):
+    """Shareable race-day summary (Roadmap A6): prediction vs. reality."""
+
+    model_config = ConfigDict(extra="ignore")
+
+    activity_id: int
+    date: str
+    distance_km: float
+    actual_time: str
+    predicted_time: str | None = None
+    delta_seconds: float | None = None  # actual - predicted; negative = faster
+    delta_label: str | None = None  # e.g. "42s più veloce del previsto"
+    splits_km: list[str] | None = None
+    narrative: str = ""
+
+
 class PhasePlan(BaseModel):
     """One periodization phase in the macrocycle (GAP 2/17)."""
 

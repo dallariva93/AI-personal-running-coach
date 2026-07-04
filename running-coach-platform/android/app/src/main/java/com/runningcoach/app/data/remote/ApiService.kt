@@ -66,6 +66,14 @@ interface ApiService {
         @Body payload: com.runningcoach.app.data.model.HealthConnectImportIn,
     ): com.runningcoach.app.data.model.HealthConnectImportResult
 
+    @GET("api/recap/weekly")
+    suspend fun weeklyRecap(): com.runningcoach.app.data.model.WeeklyRecap
+
+    @GET("api/recap/race/{activity_id}")
+    suspend fun raceRecap(
+        @Path("activity_id") activityId: Int,
+    ): com.runningcoach.app.data.model.RaceRecap
+
     @POST("api/ingest/cross-training")
     suspend fun ingestCrossTraining(): List<Activity>
 

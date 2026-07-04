@@ -57,6 +57,7 @@ from app.schemas import (
     PeriodStats,
     PersonalRecord,
     RacePrediction,
+    RaceRecap,
     ReportOut,
     RunSummary,
     ShoeIn,
@@ -66,6 +67,7 @@ from app.schemas import (
     Vo2maxHistory,
     Vo2maxPoint,
     WeeklyBucket,
+    WeeklyRecap,
 )
 from app.services import (
     get_profile,
@@ -202,6 +204,10 @@ def _adapt_after_change(session: Session, run_analysis: bool = False) -> None:
                 .limit(1)
             )
             maybe_prompt_debrief(session, latest_run)
+            # A just-ingested race gets a shareable recap card (A6), once.
+            from app.services.recap_service import maybe_emit_race_recap_ready
+
+            maybe_emit_race_recap_ready(session, latest_run)
         # Digital Twin (A5): refresh the learned constants once/day before the
         # decision consumes them. Best-effort, never breaks the pipeline.
         from app.services.athlete_model_service import maybe_refresh_athlete_model
@@ -226,6 +232,10 @@ def _adapt_after_change(session: Session, run_analysis: bool = False) -> None:
         from app.services.triggers import evaluate_triggers
 
         evaluate_triggers(session)
+        # Weekly recap ready (A6): Sunday-evening nudge, once per ISO week.
+        from app.services.recap_service import maybe_emit_weekly_recap_trigger
+
+        maybe_emit_weekly_recap_trigger(session)
         _commit(session)
 
     try:
@@ -537,6 +547,25 @@ def get_athlete_model(session: Session = Depends(get_session)) -> AthleteModel:
     from app.services.athlete_model_service import load_athlete_model
 
     return load_athlete_model(session)
+
+
+@router.get("/recap/weekly", response_model=WeeklyRecap)
+def get_weekly_recap(session: Session = Depends(get_session)) -> WeeklyRecap:
+    """Shareable weekly recap (A6): km, adherence, execution, best moment."""
+    from app.services.recap_service import build_weekly_recap
+
+    return build_weekly_recap(session)
+
+
+@router.get("/recap/race/{activity_id}", response_model=RaceRecap)
+def get_race_recap(activity_id: int, session: Session = Depends(get_session)) -> RaceRecap:
+    """Shareable race recap (A6): prediction vs. reality, splits, narrative."""
+    from app.services.recap_service import build_race_recap
+
+    recap = build_race_recap(session, activity_id)
+    if recap is None:
+        raise HTTPException(status_code=404, detail="Gara non trovata.")
+    return recap
 
 
 @router.get("/reports", response_model=list[ReportOut])

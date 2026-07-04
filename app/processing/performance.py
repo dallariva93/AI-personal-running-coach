@@ -146,6 +146,17 @@ def predict_race_time(
     )
 
 
+def nearest_goal_type(distance_km: float) -> str:
+    """Map an arbitrary race distance to the nearest canonical ``goal_type``
+    (5k/10k/half/marathon), by the same log-space ratio :func:`predict_race_time`
+    uses to pick a reference effort (Roadmap A6: race recap for any race
+    distance, not just the athlete's declared goal)."""
+    return min(
+        _GOAL_DISTANCE,
+        key=lambda k: abs(math.log(distance_km) - math.log(_GOAL_DISTANCE[k])),
+    )
+
+
 def estimate_thresholds(
     runs: list[RunSummary], ref: date | None = None, window_days: int = 60
 ) -> AthletePhysiology | None:
