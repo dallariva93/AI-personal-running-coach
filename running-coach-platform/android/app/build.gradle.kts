@@ -1,7 +1,18 @@
 plugins {
     alias(libs.plugins.android.application)
     alias(libs.plugins.kotlin.android)
-    alias(libs.plugins.google.services)
+    // Applied conditionally below — see the note before `android { }`.
+    alias(libs.plugins.google.services) apply false
+}
+
+// The Google Services plugin (FCM, Roadmap A3) hard-fails the build when
+// `google-services.json` is absent. That file is an installation secret and is
+// intentionally NOT committed, so applying the plugin unconditionally breaks CI
+// and any contributor without Firebase. Apply it only when the file is present:
+// without it the app still builds and the FCM service is simply inert (polling
+// covers notification delivery), exactly as CoachFirebaseService documents.
+if (file("google-services.json").exists()) {
+    apply(plugin = "com.google.gms.google-services")
 }
 
 android {
