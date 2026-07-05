@@ -27,17 +27,26 @@ primary_region = "cdg"
 [http_service]
   internal_port = 8000
   force_https = true
-  auto_stop_machines = "stop"
+  # Keep one machine always warm: the cold-start (double app import + migrations)
+  # takes ~2 min on this app, far exceeding the health-check grace period, so a
+  # scale-to-zero wake-up returned 503 to the mobile app. One 256mb-equivalent
+  # machine running 24/7 stays within Fly's free allowance / $5 usage buffer.
+  auto_stop_machines = "off"
   auto_start_machines = true
-  min_machines_running = 0
+  min_machines_running = 1
 
   [[http_service.checks]]
     method = "get"
     path = "/api/health"
     interval = "30s"
     timeout = "5s"
-    grace_period = "30s"
+    # Boot imports pandas/numpy twice (migrate CLI + uvicorn); give it room so a
+    # redeploy/restart never flaps to 503 before the server is listening.
+    grace_period = "90s"
 
 [[vm]]
   size = "shared-cpu-1x"
-  memory = "256mb"
+  # 512mb (vs 256mb) avoids swap-thrash during the heavy import at boot and lets
+  # the O(all-activities) /api/mobile/overview endpoint run without memory
+  # pressure. ~$3.32/mo — under the free usage buffer.
+  memory = "512mb"
