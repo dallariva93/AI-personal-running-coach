@@ -27,8 +27,7 @@ android {
         versionName = "0.1.0"
 
         // Default backend used until the user changes it in Settings.
-        // 10.0.2.2 is the host machine as seen from the Android emulator.
-        buildConfigField("String", "DEFAULT_BASE_URL", "\"http://10.0.2.2:8000/\"")
+        buildConfigField("String", "DEFAULT_BASE_URL", "\"https://ai-running-coach.fly.dev/\"")
     }
 
     buildTypes {
