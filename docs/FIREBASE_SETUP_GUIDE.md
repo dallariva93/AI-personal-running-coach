@@ -34,13 +34,15 @@ Firebase Cloud Messaging (FCM) permette all'app di ricevere notifiche push reali
 ## PASSO 2: Aggiungi App Android al Progetto
 
 ### 2.1 Registra l'app Android
-1. Nella dashboard del progetto, cerca il pulsante **"+"** in alto a destra (vicino al nome del progetto) o il testo **"Aggiungi app"** (Add app) al centro della pagina
-2. Clicca sul pulsante **"+"** o **"Aggiungi app"**
-3. Seleziona l'icona **Android** 🤖 tra le piattaforme disponibili
-4. **Nome pacchetto Android:** `com.runningcoach.app` (è nel file `android/app/build.gradle.kts`)
-5. **Nome app (opzionale):** `AI Running Coach`
-6. **Firma debug (opzionale):** Lascia vuoto per ora
-7. Clicca **"Registra app"** (Register app)
+1. Nella dashboard del progetto, guarda nel menu laterale sinistro
+2. Cerca la sezione **"Build"** o **"Sviluppo"** (Build/Development)
+3. Sotto questa sezione, cerca **"Android"** o clicca sull'icona **+** per aggiungere una nuova piattaforma
+4. Se non trovi l'opzione, prova a cercare "Android" nella barra di ricerca in alto a sinistra
+5. Una volta trovata l'opzione Android, cliccaci per iniziare la registrazione
+6. **Nome pacchetto Android:** `com.runningcoach.app` (è nel file `android/app/build.gradle.kts`)
+7. **Nome app (opzionale):** `AI Running Coach`
+8. **Firma debug (opzionale):** Lascia vuoto per ora
+9. Clicca **"Registra app"** (Register app)
 
 ### 2.2 Scarica il file di configurazione
 1. Dopo la registrazione, vedrai un pulsante **"Scarica google-services.json"** (Download google-services.json)
@@ -77,16 +79,20 @@ Puoi saltare questo passo e cliccare **"Avanti"** (Next) nella console Firebase.
 ## PASSO 3: Configura Cloud Messaging
 
 ### 3.1 Abilita Cloud Messaging
-1. Nella dashboard del progetto, nel menu sinistro clicca su **"Cloud Messaging"** (sotto "Build")
-2. Se vedi un messaggio "API Cloud Messaging non è abilitata", clicca su **"Abilita API Cloud Messaging"**
-3. Attendi qualche secondo per l'attivazione
+1. Nella dashboard del progetto, guarda nel menu laterale sinistro
+2. Cerca la sezione **"Build"** o **"Messaging"** (potrebbe essere sotto "AI services" o una categoria simile)
+3. Cerca **"Cloud Messaging"** o **"Firebase Cloud Messaging"**
+4. Se non lo trovi, usa la barra di ricerca in alto a sinistra e digita "Cloud Messaging"
+5. Clicca su **"Cloud Messaging"**
+6. Se vedi un messaggio che l'API non è abilitata, clicca su **"Abilita"** o **"Enable"**
+7. Attendi qualche secondo per l'attivazione
 
-### 3.2 Ottieni il Server Key (opzionale per ora)
+### 3.2 Ottieni le credenziali (opzionale per ora)
 Per il backend FastAPI dovrai configurare le credenziali FCM in futuro, ma per ora puoi:
-1. Nella dashboard Cloud Messaging, clicca sull'icona **ingranaggio** ⚙️ in alto a destra
-2. Seleziona **"Impostazioni progetto"** (Project settings)
-3. Vai alla scheda **"Cloud Messaging"**
-4. Copia la **Server Key** e **Sender ID** per usarli nel backend in futuro
+1. Nella dashboard Cloud Messaging, cerca l'icona **ingranaggio** ⚙️ in alto a destra
+2. Clicca su **"Impostazioni progetto"** (Project settings)
+3. Vai alla scheda **"Cloud Messaging"** o **"Service accounts"**
+4. Copia le credenziali necessarie (Server Key, Sender ID, o crea un service account) per usarle nel backend in futuro
 
 ---
 
