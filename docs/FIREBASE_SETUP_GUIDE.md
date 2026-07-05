@@ -78,21 +78,28 @@ Puoi saltare questo passo e cliccare **"Avanti"** (Next) nella console Firebase.
 
 ## PASSO 3: Configura Cloud Messaging
 
-### 3.1 Abilita Cloud Messaging
-1. Nella dashboard del progetto, guarda nel menu laterale sinistro
-2. Cerca la sezione **"Build"** o **"Messaging"** (potrebbe essere sotto "AI services" o una categoria simile)
-3. Cerca **"Cloud Messaging"** o **"Firebase Cloud Messaging"**
-4. Se non lo trovi, usa la barra di ricerca in alto a sinistra e digita "Cloud Messaging"
-5. Clicca su **"Cloud Messaging"**
-6. Se vedi un messaggio che l'API non è abilitata, clicca su **"Abilita"** o **"Enable"**
-7. Attendi qualche secondo per l'attivazione
+> **Nota:** Il menu laterale **"Messaging"** serve principalmente per creare campagne
+> di notifiche grafiche. Per la configurazione tecnica (API, chiavi, certificati)
+> devi usare le **Impostazioni progetto**, come descritto sotto.
 
-### 3.2 Ottieni le credenziali (opzionale per ora)
-Per il backend FastAPI dovrai configurare le credenziali FCM in futuro, ma per ora puoi:
-1. Nella dashboard Cloud Messaging, cerca l'icona **ingranaggio** ⚙️ in alto a destra
-2. Clicca su **"Impostazioni progetto"** (Project settings)
-3. Vai alla scheda **"Cloud Messaging"** o **"Service accounts"**
-4. Copia le credenziali necessarie (Server Key, Sender ID, o crea un service account) per usarle nel backend in futuro
+### 3.1 Verifica Cloud Messaging
+1. Clicca sull'icona **ingranaggio** ⚙️ in alto a sinistra, accanto a **"Panoramica del progetto"** (Project Overview)
+2. Seleziona **"Impostazioni progetto"** (Project settings)
+3. Vai alla scheda **"Cloud Messaging"**
+4. **Buona notizia:** per i nuovi progetti Firebase l'API moderna e sicura (**FCM HTTP v1**) è **già abilitata di default**. Nella maggior parte dei casi non devi fare nulla.
+5. **API Legacy (solo se serve):** se un servizio richiede la vecchia API legacy e la vedi disabilitata sotto "Cloud Messaging API (Legacy)", clicca sui **tre puntini verticali** accanto ad essa → **"Gestisci API in Google Cloud Console"** → **"Abilita"**. Per questo progetto **non è necessaria**.
+
+### 3.2 Cosa fare adesso
+
+**Per l'app Android (già fatto):**
+- Hai già scaricato `google-services.json` e posizionato in `android/app/` ✅
+- Questo file basta per far funzionare l'app Android con FCM
+
+**Per il backend (quando invierai notifiche dal server):**
+1. Sempre in **Impostazioni progetto**, vai alla scheda **"Account di servizio"** (Service accounts)
+2. Clicca su **"Genera nuova chiave privata"** (Generate new private key)
+3. Conferma e scarica il file JSON delle credenziali
+4. Questo file servirà al backend FastAPI per autenticarsi con i server Firebase e inviare push (vedi PASSO 6)
 
 ---
 

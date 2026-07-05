@@ -1,0 +1,29 @@
+{
+  "project_info": {
+    "project_number": "871864880458",
+    "project_id": "ai-running-coach-57066",
+    "storage_bucket": "ai-running-coach-57066.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:871864880458:android:aa0f7fedfca2b49bf4c5b3",
+        "android_client_info": {
+          "package_name": "com.runningcoach.app"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyAZtwlI1tmAtDIDwnPFSC8rkufuPcNNsOE"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}
