@@ -9,3 +9,7 @@
 .cxx
 local.properties
 app/build/
+
+# Firebase config (installation secret, never commit)
+google-services.json
+app/google-services.json
