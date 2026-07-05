@@ -16,6 +16,36 @@ Priorità: **P0** = feature che l'utente oggi non vedrebbe mai funzionare;
 
 ## Categoria U — solo tu (istruzioni passo-passo)
 
+### U0 · [P1] Deploy backend affidabile senza collegamento manuale ogni volta
+
+**Perché.** Oggi per usare l'app devi collegare a mano il backend e, con lo
+scale-to-zero su Fly, il primo accesso dopo l'inattività dava **503** (cold-start
+~2 min oltre il grace period dell'healthcheck). Obiettivo: il backend è sempre
+raggiungibile e l'app punta all'URL di produzione senza passaggi manuali.
+
+**Fatto (già applicato in `fly.toml`).**
+- `min_machines_running = 1` + `auto_stop_machines = "off"`: una macchina resta
+  calda → niente più 503 da risveglio.
+- `memory = "512mb"`: niente swap-thrash al boot, regge `/api/mobile/overview`.
+- `grace_period = "90s"`: un redeploy non genera 503.
+- Costo ~$3.32/mese, dentro il buffer gratuito (~$5) di Fly.
+
+**Da fare tu.**
+1. Ridistribuisci per applicare la config: installa flyctl
+   (`curl -L https://fly.io/install.sh | sh`), poi `fly deploy -a ai-running-coach`.
+2. Verifica: `fly status` → 1 macchina `started` a 512MB; l'app deve ricevere
+   **200** su `/api/mobile/overview` senza attese.
+3. Nell'app Android, imposta il **DEFAULT_BASE_URL** di produzione
+   (`https://ai-running-coach.fly.dev/`) come default in Impostazioni, così non
+   devi ricollegare il backend a ogni avvio. (Se vuoi che diventi il default
+   compilato, è un task [C]: chiedimi di cambiarlo in `android/app/build.gradle.kts`.)
+
+**Aperto (serve il tuo input).** Errore INSERT allo startup nei log Fly (probabile
+`POST /api/ingest`): incollami la **prima riga** del traceback (es.
+`IntegrityError: ...`) e apro il task di fix.
+
+---
+
 ### U1 · [P0] Credenziali FCM/Firebase (push reali, A3 + nudge debrief A4)
 
 **Perché.** Tutta la catena push è inerte senza credenziali: il backend fa
