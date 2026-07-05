@@ -34,11 +34,13 @@ Firebase Cloud Messaging (FCM) permette all'app di ricevere notifiche push reali
 ## PASSO 2: Aggiungi App Android al Progetto
 
 ### 2.1 Registra l'app Android
-1. Nella dashboard del progetto, clicca sull'icona **Android** (o "Aggiungi app")
-2. **Nome pacchetto Android:** `com.runningcoach.app` (è nel file `android/app/build.gradle.kts`)
-3. **Nome app (opzionale):** `AI Running Coach`
-4. **Firma debug (opzionale):** Lascia vuoto per ora
-5. Clicca **"Registra app"** (Register app)
+1. Nella dashboard del progetto, cerca il pulsante **"+"** in alto a destra (vicino al nome del progetto) o il testo **"Aggiungi app"** (Add app) al centro della pagina
+2. Clicca sul pulsante **"+"** o **"Aggiungi app"**
+3. Seleziona l'icona **Android** 🤖 tra le piattaforme disponibili
+4. **Nome pacchetto Android:** `com.runningcoach.app` (è nel file `android/app/build.gradle.kts`)
+5. **Nome app (opzionale):** `AI Running Coach`
+6. **Firma debug (opzionale):** Lascia vuoto per ora
+7. Clicca **"Registra app"** (Register app)
 
 ### 2.2 Scarica il file di configurazione
 1. Dopo la registrazione, vedrai un pulsante **"Scarica google-services.json"** (Download google-services.json)
@@ -55,8 +57,13 @@ Firebase Cloud Messaging (FCM) permette all'app di ricevere notifiche push reali
 
 ### 2.4 Aggiungi il Firebase SDK (già fatto nel progetto)
 Il progetto ha già le dipendenze necessarie nel `build.gradle.kts`:
-- Plugin `google-services` è già configurato
+- Plugin `google-services` è configurato in modo condizionale (si applica solo se `google-services.json` è presente)
 - Dipendenza `firebase-messaging` è già presente
+- Dipendenza `androidx.health.connect` è già presente (per Health Connect)
+
+**Nota importante:** Il plugin google-services è configurato per applicarsi solo quando il file `google-services.json` è presente. Questo significa che:
+- **Senza il file:** L'app compila normalmente, ma FCM è disabilitato (le notifiche funzionano via polling)
+- **Con il file:** L'app compila con FCM abilitato per notifiche push reali
 
 Puoi saltare questo passo e cliccare **"Avanti"** (Next) nella console Firebase.
 
@@ -143,6 +150,7 @@ Il backend avrà bisogno di:
 - Verifica che il file sia in `android/app/google-services.json`
 - Verifica che il nome del file sia esattamente `google-services.json` (non `google-services.json.txt`)
 - Pulisci e rebuild il progetto
+- **Nota:** Con la configurazione condizionale del plugin, questo errore non dovrebbe più verificarsi - l'app compila anche senza il file
 
 ### Errore: "Package name mismatch"
 - Verifica che il package name in Firebase Console sia esattamente `com.runningcoach.app`
