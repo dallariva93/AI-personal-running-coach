@@ -66,6 +66,11 @@ class CoachRepository(private val settings: SettingsStore) {
     ): com.runningcoach.app.data.model.HealthConnectImportResult =
         api().importHealthConnect(payload)
 
+    /** Upload a finished live recording (G1). Idempotent server-side on live_id. */
+    suspend fun uploadLiveRun(
+        run: com.runningcoach.app.data.model.LiveRunIn,
+    ): Activity = api().uploadLiveRun(run)
+
     /** Simulate a what-if on the active plan (Roadmap A7). */
     suspend fun planWhatIf(scenario: String): com.runningcoach.app.data.model.WhatIfResult =
         api().planWhatIf(com.runningcoach.app.data.model.WhatIfRequest(scenario))

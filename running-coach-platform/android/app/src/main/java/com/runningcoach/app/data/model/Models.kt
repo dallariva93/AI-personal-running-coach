@@ -231,6 +231,32 @@ data class DailyCheckin(
     @SerializedName("source") val source: String? = null,
 )
 
+/** One point of the sampled series of a phone-recorded run (G1). */
+data class LiveSample(
+    @SerializedName("t") val t: Double,      // seconds since start
+    @SerializedName("d") val d: Double,      // cumulative km
+    @SerializedName("hr") val hr: Int? = null,
+)
+
+/** A manual lap press: cumulative time/distance at the press (G1). */
+data class LiveLap(
+    @SerializedName("t") val t: Double,
+    @SerializedName("d") val d: Double,
+)
+
+/** A finished live recording, as POST /api/activities/live expects (G1). */
+data class LiveRunIn(
+    @SerializedName("live_id") val liveId: String,
+    @SerializedName("date") val date: String,
+    @SerializedName("start_time") val startTime: String? = null,
+    @SerializedName("duration_min") val durationMin: Double = 0.0,
+    @SerializedName("distance_km") val distanceKm: Double = 0.0,
+    @SerializedName("samples") val samples: List<LiveSample> = emptyList(),
+    @SerializedName("laps") val laps: List<LiveLap> = emptyList(),
+    @SerializedName("route_polyline") val routePolyline: String? = null,
+    @SerializedName("name") val name: String? = null,
+)
+
 /** One running session read from Health Connect (Roadmap A2). */
 data class HealthConnectRun(
     @SerializedName("health_connect_id") val healthConnectId: String,

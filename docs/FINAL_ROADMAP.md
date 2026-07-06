@@ -1072,11 +1072,17 @@ qui (nessun SDK): sintassi/import/bilanciamento verificati, valida `android.yml`
   samples[], laps[], route_polyline, name}` → `RunSummary` → `upsert_activity` →
   pipeline post-sync (decisione aggiornata). Test: interpolazione su serie nota,
   idempotenza (stesso `live_id` 2× → 1 riga), fallback lap/pace, endpoint+pipeline.
-- **M2 — Android: Room + coda upload che non perde mai la corsa.**
-  Room entra nel progetto (runtime/ktx/compiler); DB con `RunRecording(id, startedAt,
-  state, points JSON, laps JSON)` e `PendingUpload(recordingId, attempts, lastError)`;
-  `LiveUploadWorker` (WorkManager, backoff esponenziale, vincolo rete) che serializza
-  il recording → `POST /api/activities/live` → marca completato. Nessuna UI ancora.
+- **M2 — Android: Room + coda upload che non perde mai la corsa** ✅ FATTO — 2026-07-04.
+  Room nel progetto (2.6.1 via KSP 1.9.24-1.0.20); `AppDatabase` con
+  `RunRecordingEntity(id=UUID=live_id, startedAt, state recording→finished→uploaded,
+  date, durata/distanza, samples/laps come JSON, polyline, name)` e
+  `PendingUploadEntity(recordingId, attempts, lastError)`; DAO minimi.
+  `LiveUploadQueue.enqueueFinished()` + `LiveUploadWorker` (WorkManager unique KEEP,
+  vincolo NetworkType.CONNECTED, backoff esponenziale 30s): drena TUTTA la coda, 2xx →
+  pending rimosso + recording `uploaded`, errore → `recordFailure` + `Result.retry()`.
+  `kick()` a ogni avvio app: una coda sopravvissuta a crash/reboot riparte da sola
+  (WorkManager persiste comunque il lavoro attraverso i reboot). Il backend deduplica
+  su `live_id` (M1), quindi il retry non duplica mai. Nessuna UI (arriva con M3).
 - **M3 — Android: modulo `tracking/` + schermo live + onboarding.**
   ForegroundService (type=location) + FusedLocationProvider (1s, batch 5s), permessi
   FINE(+BACKGROUND) con flusso UX; filtro outlier/Kalman leggero; auto-pause

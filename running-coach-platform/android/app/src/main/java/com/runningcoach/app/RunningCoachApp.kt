@@ -27,6 +27,10 @@ class RunningCoachApp : Application() {
         // Background Garmin sync (Roadmap Q2): periodic + an expedited run now.
         SyncWorker.schedulePeriodic(this)
         SyncWorker.syncNowExpedited(this)
+        // Live-run upload queue (G1): if a finished recording is still waiting
+        // (crash, reboot, long offline stretch), resume its upload now. No-op
+        // with an empty queue.
+        com.runningcoach.app.tracking.LiveUploadQueue.kick(this)
         // FCM token registration (Roadmap A3): best-effort upload on boot.
         // Inert when Firebase is not configured (no google-services.json).
         runCatching {

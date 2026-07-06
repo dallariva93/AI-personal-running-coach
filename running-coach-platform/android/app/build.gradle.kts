@@ -1,6 +1,8 @@
 plugins {
     alias(libs.plugins.android.application)
     alias(libs.plugins.kotlin.android)
+    // Room's annotation processor (G1: local recording store + upload queue).
+    alias(libs.plugins.ksp)
     // Applied conditionally below — see the note before `android { }`.
     alias(libs.plugins.google.services) apply false
 }
@@ -96,4 +98,9 @@ dependencies {
     // Health Connect (Roadmap A2): the no-Garmin path — read running sessions,
     // HR, sleep and HRV from any HC-compatible app on the device.
     implementation(libs.androidx.health.connect)
+    // Room (G1/G5): crash-safe local store for live-run recordings and the
+    // offline upload queue — the run must never be lost.
+    implementation(libs.androidx.room.runtime)
+    implementation(libs.androidx.room.ktx)
+    ksp(libs.androidx.room.compiler)
 }
