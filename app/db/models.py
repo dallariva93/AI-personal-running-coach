@@ -33,6 +33,7 @@ class Activity(Base):
         UniqueConstraint("garmin_activity_id", name="uq_activity_garmin_id"),
         UniqueConstraint("strava_activity_id", name="uq_activity_strava_id"),
         UniqueConstraint("health_connect_id", name="uq_activity_health_connect_id"),
+        UniqueConstraint("live_id", name="uq_activity_live_id"),
     )
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True)
@@ -43,6 +44,9 @@ class Activity(Base):
     # Health Connect record id, when the run arrived from the Android Health
     # Connect track (A2) — the no-Garmin path. Nullable for every other source.
     health_connect_id: Mapped[str | None] = mapped_column(String(96), nullable=True, index=True)
+    # Client-generated id of a phone-recorded live run (G1). Unique so the
+    # offline upload queue can retry the same POST without ever duplicating.
+    live_id: Mapped[str | None] = mapped_column(String(64), nullable=True, index=True)
 
     date: Mapped[str] = mapped_column(String(10), index=True)  # ISO date YYYY-MM-DD
     # Local start time "HH:MM" when the payload carries it (Q6: weather-window

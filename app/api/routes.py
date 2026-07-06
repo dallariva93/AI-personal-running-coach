@@ -49,6 +49,7 @@ from app.schemas import (
     HealthConnectImportResult,
     HeatmapResponse,
     HeatmapRoute,
+    LiveRunIn,
     ManualActivityIn,
     NotificationAck,
     NotificationOut,
@@ -143,6 +144,23 @@ def create_activity(
     activity = upsert_activity(session, run)
     _commit(session)
     session.refresh(activity)
+    return activity
+
+
+@router.post("/activities/live", response_model=ActivityOut, status_code=201)
+def create_live_activity(
+    payload: LiveRunIn, session: Session = Depends(get_session)
+) -> Activity:
+    """Ingest a phone-recorded live run (G1). Idempotent on ``live_id`` so the
+    offline upload queue can retry the same POST without duplicating."""
+    from app.services.live_import import import_live_run
+
+    activity = import_live_run(session, payload)
+    _commit(session)
+    session.refresh(activity)
+    # Same post-sync pipeline as a Garmin ingest that brought a new run: the
+    # decision refreshes and the athlete gets the debrief nudge.
+    _adapt_after_change(session, run_analysis=True)
     return activity
 
 

@@ -39,6 +39,7 @@ def _activity_to_summary(a: Activity) -> RunSummary:
         garmin_activity_id=a.garmin_activity_id,
         strava_activity_id=a.strava_activity_id,
         health_connect_id=a.health_connect_id,
+        live_id=a.live_id,
         date=a.date,
         start_time=a.start_time,
         sport=a.sport,
@@ -94,11 +95,16 @@ def upsert_activity(session: Session, run: RunSummary) -> Activity:
         existing = session.scalar(
             select(Activity).where(Activity.health_connect_id == run.health_connect_id)
         )
+    if existing is None and run.live_id:
+        existing = session.scalar(
+            select(Activity).where(Activity.live_id == run.live_id)
+        )
     if existing is None:
         existing = Activity(
             garmin_activity_id=run.garmin_activity_id,
             strava_activity_id=run.strava_activity_id,
             health_connect_id=run.health_connect_id,
+            live_id=run.live_id,
         )
         session.add(existing)
     else:
@@ -106,6 +112,8 @@ def upsert_activity(session: Session, run: RunSummary) -> Activity:
             existing.strava_activity_id = run.strava_activity_id
         if run.health_connect_id and not existing.health_connect_id:
             existing.health_connect_id = run.health_connect_id
+        if run.live_id and not existing.live_id:
+            existing.live_id = run.live_id
 
     existing.date = run.date
     if run.start_time is not None:

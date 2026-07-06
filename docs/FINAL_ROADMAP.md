@@ -1060,6 +1060,35 @@ qui (nessun SDK): sintassi/import/bilanciamento verificati, valida `android.yml`
 
 **Rischi.** Doze/OEM killer (testare su Samsung/Xiaomi); GPS urbano (il filtro è essenziale); è il passo più grosso del piano — prevedere 2 iterazioni.
 
+**Piano milestone (ognuno committabile da solo, branch verde dopo ciascuno).**
+
+- **M1 — Backend: ingest corsa live idempotente** ✅ FATTO — 2026-07-04.
+  Colonna `activities.live_id` (unique, migrazione) + ramo dedupe in `upsert_activity`,
+  così il retry della coda Android non duplica mai la corsa. Funzioni pure
+  `app/processing/live.py`: splits per-km per interpolazione sulla serie campionata
+  cumulativa `(t,d)` (fallback: i lap come serie grezza), pace medio da
+  distanza+durata, HR avg/max dai campioni. `app/services/live_import.py` +
+  `POST /api/activities/live` `{live_id, date, start_time, duration_min, distance_km,
+  samples[], laps[], route_polyline, name}` → `RunSummary` → `upsert_activity` →
+  pipeline post-sync (decisione aggiornata). Test: interpolazione su serie nota,
+  idempotenza (stesso `live_id` 2× → 1 riga), fallback lap/pace, endpoint+pipeline.
+- **M2 — Android: Room + coda upload che non perde mai la corsa.**
+  Room entra nel progetto (runtime/ktx/compiler); DB con `RunRecording(id, startedAt,
+  state, points JSON, laps JSON)` e `PendingUpload(recordingId, attempts, lastError)`;
+  `LiveUploadWorker` (WorkManager, backoff esponenziale, vincolo rete) che serializza
+  il recording → `POST /api/activities/live` → marca completato. Nessuna UI ancora.
+- **M3 — Android: modulo `tracking/` + schermo live + onboarding.**
+  ForegroundService (type=location) + FusedLocationProvider (1s, batch 5s), permessi
+  FINE(+BACKGROUND) con flusso UX; filtro outlier/Kalman leggero; auto-pause
+  (<1.4 km/h >10s); scrittura Room a ogni batch (crash-safe, recovery alla riapertura);
+  schermo live (distanza, passo istantaneo lisciato 15s, passo medio, durata, lap
+  manuale) con la seduta del giorno; conferma → `PendingUpload` (M2). Onboarding
+  "Corri adesso col telefono".
+- **M4 — Android (G5): cache offline + coda azioni.**
+  `CachedOverview`/`CachedPlan` in Room con render cached-first e banner "dati di
+  ieri"; coda azioni (Today card actions, move calendario) con replay al ritorno
+  rete, riusando l'infra coda di M2.
+
 ---
 
 #### Passo 19 — G2 · Audio coach adattivo (dipende da G1)

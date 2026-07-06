@@ -33,6 +33,7 @@ class RunSummary(BaseModel):
     garmin_activity_id: str | None = None
     strava_activity_id: str | None = None
     health_connect_id: str | None = None  # A2: no-Garmin Health Connect track
+    live_id: str | None = None  # G1: phone-recorded live run (retry-safe id)
     date: str  # ISO YYYY-MM-DD
     start_time: str | None = None  # local start "HH:MM" (Q6 weather + habitual hours)
     sport: str = "run"  # run | bike | swim | strength (Feature 24)
@@ -573,6 +574,7 @@ class ActivityOut(BaseModel):
     garmin_activity_id: str | None
     strava_activity_id: str | None = None
     health_connect_id: str | None = None
+    live_id: str | None = None
     date: str
     sport: str = "run"
     activity_type: str
@@ -640,6 +642,39 @@ class ManualActivityIn(BaseModel):
     avg_hr: int | None = None
     rpe: int | None = None
     notes: str | None = None
+
+
+class LiveSample(BaseModel):
+    """One point of the sampled series of a phone-recorded run (G1)."""
+
+    t: float  # seconds since start
+    d: float  # cumulative distance, km
+    hr: int | None = None
+
+
+class LiveLap(BaseModel):
+    """A manual lap press: cumulative time/distance at the press (G1)."""
+
+    t: float
+    d: float
+
+
+class LiveRunIn(BaseModel):
+    """A run recorded live on the phone, uploaded by the offline queue (G1).
+
+    ``live_id`` is a client-generated UUID: retries of the same upload are
+    deduped on it, so the queue can retry forever without duplicating.
+    """
+
+    live_id: str
+    date: str  # ISO YYYY-MM-DD
+    start_time: str | None = None  # local "HH:MM"
+    duration_min: float
+    distance_km: float
+    samples: list[LiveSample] = Field(default_factory=list)
+    laps: list[LiveLap] = Field(default_factory=list)
+    route_polyline: str | None = None
+    name: str | None = None
 
 
 class HealthConnectRun(BaseModel):
