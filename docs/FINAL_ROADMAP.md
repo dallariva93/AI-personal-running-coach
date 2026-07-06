@@ -1083,13 +1083,19 @@ qui (nessun SDK): sintassi/import/bilanciamento verificati, valida `android.yml`
   `kick()` a ogni avvio app: una coda sopravvissuta a crash/reboot riparte da sola
   (WorkManager persiste comunque il lavoro attraverso i reboot). Il backend deduplica
   su `live_id` (M1), quindi il retry non duplica mai. Nessuna UI (arriva con M3).
-- **M3 — Android: modulo `tracking/` + schermo live + onboarding.**
-  ForegroundService (type=location) + FusedLocationProvider (1s, batch 5s), permessi
-  FINE(+BACKGROUND) con flusso UX; filtro outlier/Kalman leggero; auto-pause
-  (<1.4 km/h >10s); scrittura Room a ogni batch (crash-safe, recovery alla riapertura);
-  schermo live (distanza, passo istantaneo lisciato 15s, passo medio, durata, lap
-  manuale) con la seduta del giorno; conferma → `PendingUpload` (M2). Onboarding
-  "Corri adesso col telefono".
+- **M3 — Android: modulo `tracking/` + schermo live + onboarding** ✅ FATTO — 2026-07-06.
+  `TrackingService` (ForegroundService type=location, notifica ongoing con km/tempo) +
+  FusedLocationProvider a 1s con persist batch ogni 5s su Room (crash-safe);
+  `LocationFilter` ("Kalman leggero" onesto: reiezione outlier per accuracy>30m e
+  velocità>8m/s + smoothing esponenziale) + `PolylineEncoder` (formato Google);
+  auto-pause sotto 1.4 km/h per >10s (tempo e distanza congelati); `TrackingSession`
+  StateFlow → `LiveRunScreen` (durata, distanza, passo istantaneo lisciato 15s, passo
+  medio, lap manuale, badge auto-pausa, seduta del giorno in vista, richiesta permesso
+  FINE al primo start); stop → card di conferma "Salva e carica" (→ coda M2) / "Scarta";
+  recovery all'apertura di un recording orfano (kill a metà corsa). Entry "Corri adesso
+  col telefono" in Home (percorso senza hardware). **Deviazione:** niente
+  ACCESS_BACKGROUND_LOCATION — con un FGS type=location avviato in foreground non serve
+  (modello standard dei fitness tracker) ed evita la review Play più pesante.
 - **M4 — Android (G5): cache offline + coda azioni.**
   `CachedOverview`/`CachedPlan` in Room con render cached-first e banner "dati di
   ieri"; coda azioni (Today card actions, move calendario) con replay al ritorno

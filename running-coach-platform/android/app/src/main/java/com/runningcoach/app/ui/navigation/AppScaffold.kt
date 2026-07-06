@@ -54,6 +54,7 @@ import com.runningcoach.app.ui.screens.CoachLogScreen
 import com.runningcoach.app.ui.screens.CrossTrainingScreen
 import com.runningcoach.app.ui.screens.HeatmapScreen
 import com.runningcoach.app.ui.screens.HomeScreen
+import com.runningcoach.app.ui.screens.LiveRunScreen
 import com.runningcoach.app.ui.screens.MapFullscreenScreen
 import com.runningcoach.app.ui.screens.PlanCalendarScreen
 import com.runningcoach.app.ui.screens.PlanScreen
@@ -262,6 +263,16 @@ fun AppScaffold(
                         onOpenSettings = {
                             navController.navigate("settings") { launchSingleTop = true }
                         },
+                        // G1: record a run with the phone, no hardware needed.
+                        onStartLiveRun = {
+                            navController.navigate("live-run") { launchSingleTop = true }
+                        },
+                    )
+                }
+                composable("live-run") {
+                    LiveRunScreen(
+                        todaySessionTitle = state.overview?.todayDecision?.headline,
+                        onBack = { navController.popBackStack() },
                     )
                 }
                 composable("coachlog") {

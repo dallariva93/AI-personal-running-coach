@@ -103,4 +103,6 @@ dependencies {
     implementation(libs.androidx.room.runtime)
     implementation(libs.androidx.room.ktx)
     ksp(libs.androidx.room.compiler)
+    // FusedLocationProvider (G1): the live GPS tracking engine.
+    implementation(libs.play.services.location)
 }

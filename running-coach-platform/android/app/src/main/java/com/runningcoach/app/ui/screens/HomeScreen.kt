@@ -17,11 +17,13 @@ import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.CheckCircle
 import androidx.compose.material.icons.filled.ChevronRight
+import androidx.compose.material.icons.filled.DirectionsRun
 import androidx.compose.material.icons.filled.ExpandLess
 import androidx.compose.material.icons.filled.ExpandMore
 import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material.icons.filled.Sync
 import androidx.compose.material.icons.outlined.Circle
+import androidx.compose.material3.Button
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
@@ -69,6 +71,7 @@ fun HomeScreen(
     onOpenCoachLog: () -> Unit = {},
     onOpenWeeklyRecap: () -> Unit = {},
     onOpenSettings: () -> Unit = {},
+    onStartLiveRun: () -> Unit = {},
 ) {
     val ov: Overview? = state.overview
     Column(
@@ -101,6 +104,14 @@ fun HomeScreen(
             }
         }
         Spacer(Modifier.height(16.dp))
+
+        // ── "Corri adesso col telefono" (G1): the no-hardware first path ────
+        Button(onClick = onStartLiveRun, modifier = Modifier.fillMaxWidth()) {
+            Icon(Icons.Filled.DirectionsRun, contentDescription = null)
+            Spacer(Modifier.width(8.dp))
+            Text("Corri adesso col telefono")
+        }
+        Spacer(Modifier.height(14.dp))
 
         // ── Onboarding checklist (Roadmap #4) ───────────────────────────────
         ov?.onboarding?.let { onboarding ->

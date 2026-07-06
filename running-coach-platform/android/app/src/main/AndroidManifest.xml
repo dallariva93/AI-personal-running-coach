@@ -8,6 +8,14 @@
     <!-- On-device voice debrief transcription (Roadmap A4). -->
     <uses-permission android:name="android.permission.RECORD_AUDIO" />
 
+    <!-- Live GPS tracking (G1). A foreground service with type=location keeps
+         recording with the screen off WITHOUT needing the heavyweight
+         ACCESS_BACKGROUND_LOCATION permission (standard fitness-tracker model). -->
+    <uses-permission android:name="android.permission.ACCESS_FINE_LOCATION" />
+    <uses-permission android:name="android.permission.ACCESS_COARSE_LOCATION" />
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_LOCATION" />
+
     <!-- Health Connect READ permissions (Roadmap A2): the no-Garmin path. -->
     <uses-permission android:name="android.permission.health.READ_EXERCISE" />
     <uses-permission android:name="android.permission.health.READ_DISTANCE" />
@@ -62,6 +70,12 @@
                 <category android:name="android.intent.category.HEALTH_PERMISSIONS" />
             </intent-filter>
         </activity-alias>
+
+        <!-- Live GPS tracking (G1): records the run, batch-writes to Room. -->
+        <service
+            android:name=".tracking.TrackingService"
+            android:exported="false"
+            android:foregroundServiceType="location" />
 
         <!-- FCM push delivery (Roadmap A3). Inert without google-services.json. -->
         <service
