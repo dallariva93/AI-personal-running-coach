@@ -47,18 +47,20 @@ class PlanViewModel(
                 }
             }
             _state.update { it.copy(loading = it.plan == null, error = null) }
-            runCatching { repository.getCurrentPlan() }
-                .onSuccess { plan ->
-                    offlineCache?.writePlan(plan)
-                    _state.update { it.copy(loading = false, plan = plan) }
-                }
-                .onFailure { e ->
-                    if (isNetworkError(e) && _state.value.plan != null) {
-                        _state.update { it.copy(loading = false) }  // keep the cache
-                    } else {
-                        _state.update { it.copy(loading = false, error = friendly(e)) }
-                    }
-                }
+            // The repository already swallows failures (returns null both for
+            // "no active plan" and for a network error), so a null answer must
+            // NOT clobber a cached plan we are showing — keep the snapshot and
+            // let the next successful fetch replace it. Archiving locally still
+            // clears the plan through archivePlan's own success path.
+            val plan = repository.getCurrentPlan()
+            if (plan != null) {
+                offlineCache?.writePlan(plan)
+                _state.update { it.copy(loading = false, plan = plan) }
+            } else if (_state.value.plan == null) {
+                _state.update { it.copy(loading = false, plan = null) }
+            } else {
+                _state.update { it.copy(loading = false) }  // keep the cache
+            }
         }
     }
 
