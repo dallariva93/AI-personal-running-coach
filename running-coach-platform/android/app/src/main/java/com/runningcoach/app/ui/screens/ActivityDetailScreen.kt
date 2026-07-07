@@ -2,7 +2,6 @@ package com.runningcoach.app.ui.screens
 
 import android.content.Intent
 import android.net.Uri
-import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -44,9 +43,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
-import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.graphics.Path
 import androidx.compose.ui.graphics.toArgb
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalFocusManager
@@ -56,7 +53,9 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import com.google.gson.JsonParser
 import com.runningcoach.app.data.model.Activity
+import com.runningcoach.app.ui.components.ChartStat
 import com.runningcoach.app.ui.components.GradientCard
+import com.runningcoach.app.ui.components.MetricAreaChart
 import com.runningcoach.app.ui.components.Pill
 import com.runningcoach.app.ui.components.RouteMap
 import com.runningcoach.app.ui.components.SectionTitle
@@ -139,14 +138,19 @@ fun ActivityDetailScreen(
         Spacer(Modifier.height(14.dp))
         PerformanceSection(activity)
 
-        // Combined elevation + pace profile over distance (Strava-style overlay).
+        // Garmin-style per-km profiles: pace and elevation, each its own chart
+        // with a stat header, labelled axes with units, and an average line.
         val splitSeconds = remember(activity.splitsKm) {
             activity.splitsKm?.map { paceToSeconds(it) }?.takeIf { secs -> secs.all { it > 0 } }
         }
         val altitude = activity.altitudeProfile?.takeIf { it.size >= 2 }
-        if (altitude != null || (splitSeconds != null && splitSeconds.size >= 2)) {
+        if (splitSeconds != null && splitSeconds.size >= 2) {
             Spacer(Modifier.height(14.dp))
-            RouteAnalysisSection(altitude = altitude, paceSeconds = splitSeconds)
+            PaceProfileSection(splitSeconds, distanceKm = activity.distanceKm)
+        }
+        if (altitude != null) {
+            Spacer(Modifier.height(14.dp))
+            ElevationProfileSection(altitude, distanceKm = activity.distanceKm)
         }
 
         activity.splitsKm?.takeIf { it.size >= 2 }?.let {
@@ -534,73 +538,56 @@ private fun MetricGrid(items: List<Pair<String, String>>) {
 }
 
 /**
- * Combined elevation + pace profile over distance, overlaid on a shared x-axis
- * (km), the way Garmin/Strava show it: elevation as a filled green area, pace as
- * a coral line (inverted so peaks = faster). Each series is scaled to its own
- * range and labelled in the legend.
+ * Per-km pace profile, Garmin-style: an inverted, blue filled area (faster =
+ * higher) with a Media / Migliore header, a labelled pace axis and a dashed
+ * average line. Built on the reusable [MetricAreaChart].
  */
 @Composable
-private fun RouteAnalysisSection(altitude: List<Double>?, paceSeconds: List<Int>?) {
-    val green = BrandGreen
-    val greenFill = BrandGreen.copy(alpha = 0.22f)
-    val coral = Coral
+private fun PaceProfileSection(paceSeconds: List<Int>, distanceKm: Double) {
+    val avg = paceSeconds.average().toFloat()
     SurfaceCard {
-        SectionTitle("Profilo: altitudine & passo")
-        Spacer(Modifier.height(10.dp))
-        Canvas(Modifier.fillMaxWidth().height(150.dp)) {
-            val h = size.height
-            val w = size.width
-            if (altitude != null && altitude.size >= 2) {
-                val minA = altitude.min().toFloat()
-                val range = (altitude.max().toFloat() - minA).coerceAtLeast(1f)
-                val step = w / (altitude.size - 1)
-                val pts = altitude.mapIndexed { i, a ->
-                    Offset(i * step, h - (a.toFloat() - minA) / range * h * 0.85f - h * 0.05f)
-                }
-                val fill = Path().apply {
-                    moveTo(pts.first().x, h)
-                    pts.forEach { lineTo(it.x, it.y) }
-                    lineTo(pts.last().x, h)
-                    close()
-                }
-                drawPath(fill, color = greenFill)
-                for (i in 0 until pts.size - 1) drawLine(green, pts[i], pts[i + 1], strokeWidth = 4f)
-            }
-            if (paceSeconds != null && paceSeconds.size >= 2) {
-                val minP = paceSeconds.min().toFloat()
-                val range = (paceSeconds.max().toFloat() - minP).coerceAtLeast(1f)
-                val step = w / (paceSeconds.size - 1)
-                // Invert: faster (smaller seconds) sits higher on the chart.
-                val pts = paceSeconds.mapIndexed { i, p ->
-                    Offset(i * step, h * 0.1f + (p.toFloat() - minP) / range * h * 0.8f)
-                }
-                for (i in 0 until pts.size - 1) drawLine(coral, pts[i], pts[i + 1], strokeWidth = 4f)
-            }
-        }
-        Spacer(Modifier.height(10.dp))
-        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(16.dp)) {
-            altitude?.let {
-                LegendItem("Altitudine ${it.min().roundToInt()}–${it.max().roundToInt()} m", green)
-            }
-            paceSeconds?.let {
-                LegendItem("Passo ${secToPace(it.min())}–${secToPace(it.max())}", coral)
-            }
-        }
-    }
-}
-
-@Composable
-private fun LegendItem(text: String, color: Color) {
-    Row(verticalAlignment = Alignment.CenterVertically) {
-        Box(Modifier.size(8.dp).clip(RoundedCornerShape(50)).background(color))
-        Spacer(Modifier.size(6.dp))
-        Text(
-            text,
-            style = MaterialTheme.typography.labelSmall,
-            color = MaterialTheme.colorScheme.onSurfaceVariant,
+        MetricAreaChart(
+            title = "Passo",
+            values = paceSeconds.map { it.toFloat() },
+            color = Zone2,
+            inverted = true,
+            average = avg,
+            yFormatter = { secToPace(it.roundToInt()) },
+            stats = listOf(
+                ChartStat(secToPace(avg.roundToInt()), "/km", "Media"),
+                ChartStat(secToPace(paceSeconds.min()), "/km", "Migliore"),
+            ),
+            xLabels = kmAxisLabels(distanceKm),
+            xCaption = "Distanza (km)",
         )
     }
 }
+
+/**
+ * Per-km elevation profile, Garmin-style: a green filled area with a Min / Max
+ * header and a labelled metre axis. Built on the reusable [MetricAreaChart].
+ */
+@Composable
+private fun ElevationProfileSection(altitude: List<Double>, distanceKm: Double) {
+    SurfaceCard {
+        MetricAreaChart(
+            title = "Elevazione",
+            values = altitude.map { it.toFloat() },
+            color = BrandGreen,
+            yFormatter = { it.roundToInt().toString() },
+            stats = listOf(
+                ChartStat(altitude.min().roundToInt().toString(), "m", "Min"),
+                ChartStat(altitude.max().roundToInt().toString(), "m", "Max"),
+            ),
+            xLabels = kmAxisLabels(distanceKm),
+            xCaption = "Distanza (km)",
+        )
+    }
+}
+
+/** Five evenly-spaced km markers "0 … total" for a chart's X axis. */
+private fun kmAxisLabels(distanceKm: Double): List<String> =
+    (0..4).map { j -> (j / 4.0 * distanceKm).roundToInt().toString() }
 
 /** Real OSM map of the route (start = green dot, finish = coral dot). */
 @Composable
