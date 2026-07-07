@@ -31,38 +31,55 @@ def _parse_plan_chat_reply(raw: str) -> tuple[str, bool, str | None]:
     """Split a plan-chat reply into ``(visible_message, is_complete, ctx_json)``.
 
     The negotiation ends when the model appends a ``§CTX§{…}§/CTX§`` JSON block
-    and a ``§READY§`` marker. Models are unreliable at emitting exact sentinels,
-    so this is deliberately tolerant — otherwise the athlete sees the final
-    "settimana tipo" summary but no plan is ever produced (the reported bug):
+    and a ``§READY§`` marker. Models are unreliable at emitting exact sentinels;
+    this function is deliberately tolerant to prevent the "settimana tipo shown
+    but no plan created" dead-end:
 
-    * completion is signalled by EITHER ``§READY§`` OR a parseable ``§CTX§``
-      block, so a forgotten ``§READY§`` no longer swallows the whole plan;
-    * the ``§CTX§`` payload is JSON-validated (and an optional ```` ```json ````
-      fence stripped) before it is trusted — a half-written block yields no
-      context rather than crashing generation downstream.
-
-    When the model closed (``is_complete``) but the JSON could not be recovered,
-    completion still stands with ``ctx_json=None``: the app falls back to the
-    normal generate dialog instead of dead-ending in the chat.
+    * The closing ``§/CTX§`` tag is OPTIONAL — the model often omits it.  We
+      extract everything after ``§CTX§`` up to the first ``§/CTX§``, ``§READY§``,
+      or end-of-string, then locate the outermost ``{…}`` object and validate it
+      as JSON.  This makes parsing work regardless of whether the model emits the
+      closing tag.
+    * Completion is signalled by ``§READY§`` OR a successfully parsed ``§CTX§``
+      block, so a forgotten ``§READY§`` no longer loses the plan.
+    * If the model closed but the JSON is unrecoverable, completion still stands
+      with ``ctx_json=None`` so the app falls back to the normal generate dialog
+      instead of staying silent.
     """
     runner_context: str | None = None
-    ctx_match = re.search(r"§CTX§(.*?)§/CTX§", raw, re.DOTALL)
-    if ctx_match:
-        candidate = ctx_match.group(1).strip()
-        # Drop an optional ```json … ``` fence the model sometimes wraps around
-        # the object, then require it to actually parse as JSON.
-        candidate = re.sub(r"^```[a-zA-Z]*\s*", "", candidate)
-        candidate = re.sub(r"\s*```$", "", candidate).strip()
-        try:
-            json.loads(candidate)
-            runner_context = candidate
-        except (ValueError, TypeError):
-            logger.warning("Plan chat §CTX§ block did not parse as JSON; ignoring")
+
+    ctx_start = raw.find("§CTX§")
+    if ctx_start >= 0:
+        # Take everything after §CTX§; stop at §/CTX§ or §READY§ if present.
+        payload = raw[ctx_start + len("§CTX§"):]
+        for end_marker in ("§/CTX§", "§READY§"):
+            pos = payload.find(end_marker)
+            if pos >= 0:
+                payload = payload[:pos]
+                break
+        payload = payload.strip()
+        # Strip an optional ```json … ``` fence.
+        payload = re.sub(r"^```[a-zA-Z]*\s*", "", payload)
+        payload = re.sub(r"\s*```$", "", payload).strip()
+        # Find the outermost {…} object (tolerates extra text before/after).
+        brace_open = payload.find("{")
+        brace_close = payload.rfind("}")
+        if brace_open >= 0 and brace_close > brace_open:
+            candidate = payload[brace_open : brace_close + 1]
+            try:
+                json.loads(candidate)
+                runner_context = candidate
+            except (ValueError, TypeError):
+                logger.warning("Plan chat §CTX§ block did not parse as JSON; ignoring")
 
     is_complete = ("§READY§" in raw) or runner_context is not None
 
-    # Strip the machine sentinels from what the athlete actually reads.
-    message = re.sub(r"§CTX§.*?§/CTX§", "", raw, flags=re.DOTALL)
+    # Strip everything from §CTX§ to end-of-string (the block is always the
+    # tail of the model's reply — nothing human-readable follows it).
+    if "§CTX§" in raw:
+        message = raw[: raw.find("§CTX§")].rstrip()
+    else:
+        message = raw
     message = message.replace("§READY§", "").strip()
     return message, is_complete, runner_context
 

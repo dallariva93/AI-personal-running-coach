@@ -164,6 +164,51 @@ def test_chat_for_plan_context_without_ready_marker_still_completes(monkeypatch)
     assert json.loads(runner_context)["weekly_km"] == 35
 
 
+def test_chat_for_plan_no_closing_tag_still_completes(monkeypatch):
+    """The model omitting §/CTX§ (most common real failure) must still work.
+
+    This is the exact case seen on device: the model produces the §CTX§ block
+    with valid JSON but no closing §/CTX§ and no §READY§ — the old regex
+    requires §/CTX§ so it fails to extract the context, leaves §CTX§ visible
+    in the message, and never shows the Genera il piano button.
+    """
+    ctx_obj = {
+        "weekly_km": 30,
+        "long_run_km": 18,
+        "threshold_pace": "4:26/km",
+        "easy_pace": "5:30/km",
+        "race_pbs": {"5k": None, "10k": None, "half": "1:34:40", "marathon": None},
+        "injuries": None,
+        "training_days": 5,
+        "week_structure": [{"day": "lun", "type": "rest"}],
+        "fixed_sessions": [],
+        "constraints": [],
+        "notes": "",
+    }
+    # Exactly what the device screenshot showed: no §/CTX§, no §READY§
+    raw = (
+        "Strategia verso il 25 ottobre:\n"
+        "- Luglio-metà agosto: stabilizzazione 30-35 km/sett\n\n"
+        "Il piano nell'app costruirà le sedute settimana per settimana. Sei pronto? 🚀\n\n"
+        "---\n\n"
+        "§CTX§\n" + json.dumps(ctx_obj)
+    )
+    coach = AICoach()
+    monkeypatch.setattr(coach, "_call_chat", lambda system, messages: raw)
+
+    message, is_complete, runner_context = coach.chat_for_plan(
+        [{"role": "user", "content": "confermo"}]
+    )
+    assert is_complete is True
+    # §CTX§ must NOT appear in the visible message
+    assert "§CTX§" not in message
+    assert "Sei pronto" in message
+    # The JSON context is correctly extracted
+    parsed = json.loads(runner_context)
+    assert parsed["weekly_km"] == 30
+    assert parsed["threshold_pace"] == "4:26/km"
+
+
 def test_chat_for_plan_ready_with_broken_context_still_completes(monkeypatch):
     """§READY§ with an unparseable §CTX§ block completes with no context.
 
