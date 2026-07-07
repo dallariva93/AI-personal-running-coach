@@ -54,7 +54,7 @@ fun ChatScreen(
     state: ChatUiState,
     onSend: (String) -> Unit,
     onNewSession: () -> Unit,
-    onGeneratePlan: (String) -> Unit = {},
+    onGeneratePlan: (String?) -> Unit = {},
 ) {
     val listState = rememberLazyListState()
 
@@ -136,8 +136,12 @@ fun ChatScreen(
             )
         }
 
-        // Plan negotiation complete (A8): hand the §CTX§ to the generator.
-        if (state.planReady && state.runnerContext != null) {
+        // Plan negotiation complete (A8): hand the §CTX§ to the generator. The
+        // button appears as soon as the chat signals completion — even if the
+        // §CTX§ context could not be recovered — so a missing/garbled block
+        // falls back to the plain generate dialog instead of dead-ending with
+        // the "settimana tipo" as the last message and no way forward.
+        if (state.planReady) {
             Button(
                 onClick = { onGeneratePlan(state.runnerContext) },
                 modifier = Modifier

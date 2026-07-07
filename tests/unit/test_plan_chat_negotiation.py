@@ -127,3 +127,62 @@ def test_chat_for_plan_intermediate_turn_not_complete(monkeypatch):
     assert is_complete is False
     assert runner_context is None
     assert message == raw
+
+
+def test_chat_for_plan_context_in_code_fence_still_parses(monkeypatch):
+    """The model wrapping the §CTX§ JSON in a ```json fence must not break it."""
+    ctx_obj = {"weekly_km": 40, "threshold_pace": "4:40/km"}
+    raw = (
+        "Ecco la settimana tipo: lun riposo, mar ripetute, dom lungo.\n"
+        "§CTX§\n```json\n" + json.dumps(ctx_obj) + "\n```\n§/CTX§\n§READY§"
+    )
+    coach = AICoach()
+    monkeypatch.setattr(coach, "_call_chat", lambda system, messages: raw)
+
+    message, is_complete, runner_context = coach.chat_for_plan(
+        [{"role": "user", "content": "40 km a settimana"}]
+    )
+    assert is_complete is True
+    assert "```" not in message and "§CTX§" not in message
+    assert json.loads(runner_context)["weekly_km"] == 40
+
+
+def test_chat_for_plan_context_without_ready_marker_still_completes(monkeypatch):
+    """A parseable §CTX§ block completes even if the model forgets §READY§."""
+    ctx_obj = {"weekly_km": 35}
+    raw = (
+        "Riepilogo finale, settimana tipo giorno per giorno...\n"
+        "§CTX§\n" + json.dumps(ctx_obj) + "\n§/CTX§"
+    )
+    coach = AICoach()
+    monkeypatch.setattr(coach, "_call_chat", lambda system, messages: raw)
+
+    _message, is_complete, runner_context = coach.chat_for_plan(
+        [{"role": "user", "content": "35 km"}]
+    )
+    assert is_complete is True
+    assert json.loads(runner_context)["weekly_km"] == 35
+
+
+def test_chat_for_plan_ready_with_broken_context_still_completes(monkeypatch):
+    """§READY§ with an unparseable §CTX§ block completes with no context.
+
+    This is the reported dead-end: the athlete saw the settimana tipo but no
+    plan. Completion must stand so the app can fall back to the generate dialog
+    instead of hiding the "Genera il piano" button forever.
+    """
+    raw = (
+        "Ecco la tua settimana tipo: lun riposo, mar tempo, dom lungo.\n"
+        "§CTX§\n{weekly_km: 45, oops not valid json,}\n§/CTX§\n§READY§"
+    )
+    coach = AICoach()
+    monkeypatch.setattr(coach, "_call_chat", lambda system, messages: raw)
+
+    message, is_complete, runner_context = coach.chat_for_plan(
+        [{"role": "user", "content": "45 km"}]
+    )
+    assert is_complete is True
+    assert runner_context is None
+    # The visible summary survives, sentinels stripped.
+    assert "settimana tipo" in message
+    assert "§CTX§" not in message and "§READY§" not in message

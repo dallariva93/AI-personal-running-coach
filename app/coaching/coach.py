@@ -27,6 +27,46 @@ from app.utils import retry_call
 logger = get_logger("app.coaching")
 
 
+def _parse_plan_chat_reply(raw: str) -> tuple[str, bool, str | None]:
+    """Split a plan-chat reply into ``(visible_message, is_complete, ctx_json)``.
+
+    The negotiation ends when the model appends a ``§CTX§{…}§/CTX§`` JSON block
+    and a ``§READY§`` marker. Models are unreliable at emitting exact sentinels,
+    so this is deliberately tolerant — otherwise the athlete sees the final
+    "settimana tipo" summary but no plan is ever produced (the reported bug):
+
+    * completion is signalled by EITHER ``§READY§`` OR a parseable ``§CTX§``
+      block, so a forgotten ``§READY§`` no longer swallows the whole plan;
+    * the ``§CTX§`` payload is JSON-validated (and an optional ```` ```json ````
+      fence stripped) before it is trusted — a half-written block yields no
+      context rather than crashing generation downstream.
+
+    When the model closed (``is_complete``) but the JSON could not be recovered,
+    completion still stands with ``ctx_json=None``: the app falls back to the
+    normal generate dialog instead of dead-ending in the chat.
+    """
+    runner_context: str | None = None
+    ctx_match = re.search(r"§CTX§(.*?)§/CTX§", raw, re.DOTALL)
+    if ctx_match:
+        candidate = ctx_match.group(1).strip()
+        # Drop an optional ```json … ``` fence the model sometimes wraps around
+        # the object, then require it to actually parse as JSON.
+        candidate = re.sub(r"^```[a-zA-Z]*\s*", "", candidate)
+        candidate = re.sub(r"\s*```$", "", candidate).strip()
+        try:
+            json.loads(candidate)
+            runner_context = candidate
+        except (ValueError, TypeError):
+            logger.warning("Plan chat §CTX§ block did not parse as JSON; ignoring")
+
+    is_complete = ("§READY§" in raw) or runner_context is not None
+
+    # Strip the machine sentinels from what the athlete actually reads.
+    message = re.sub(r"§CTX§.*?§/CTX§", "", raw, flags=re.DOTALL)
+    message = message.replace("§READY§", "").strip()
+    return message, is_complete, runner_context
+
+
 class Coach(Protocol):
     def analyze_run(
         self,
@@ -273,17 +313,7 @@ class AICoach:
             logger.error("Plan chat AI call failed, using offline: %s", exc)
             return self._fallback.chat_for_plan(messages)
 
-        is_complete = "§READY§" in raw
-        runner_context: str | None = None
-        if is_complete:
-            ctx_match = re.search(r"§CTX§\s*(.*?)\s*§/CTX§", raw, re.DOTALL)
-            if ctx_match:
-                runner_context = ctx_match.group(1).strip()
-
-        # Strip sentinels from the message shown to the user
-        message = re.sub(r"§CTX§.*?§/CTX§", "", raw, flags=re.DOTALL)
-        message = message.replace("§READY§", "").strip()
-        return message, is_complete, runner_context
+        return _parse_plan_chat_reply(raw)
 
     def chat_message(
         self,
