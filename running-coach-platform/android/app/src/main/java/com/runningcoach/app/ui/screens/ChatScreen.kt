@@ -64,7 +64,7 @@ fun ChatScreen(
         if (target > 0) listState.animateScrollToItem(target - 1)
     }
 
-    Column(modifier = Modifier.fillMaxSize()) {
+    Column(modifier = Modifier.fillMaxSize().imePadding()) {
         TopAppBar(
             title = {
                 Row(verticalAlignment = Alignment.CenterVertically) {
@@ -149,7 +149,6 @@ fun ChatScreen(
         ChatInput(
             enabled = !state.loading,
             onSend = onSend,
-            modifier = Modifier.imePadding(),
         )
     }
 }
