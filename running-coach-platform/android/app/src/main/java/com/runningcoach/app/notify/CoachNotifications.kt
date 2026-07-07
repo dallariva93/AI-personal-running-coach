@@ -59,23 +59,26 @@ object CoachNotifications {
             .setStyle(NotificationCompat.BigTextStyle().bigText(n.body))
             .setPriority(NotificationCompat.PRIORITY_DEFAULT)
             .setAutoCancel(true)
-        contentIntent(context, n)?.let { builder.setContentIntent(it) }
+            .setContentIntent(contentIntent(context, n))
         runCatching {
             NotificationManagerCompat.from(context).notify(n.id, builder.build())
         }
     }
 
     /**
-     * Tapping a deep-linked notification (Roadmap A4) reopens the app with
-     * extras that trigger the matching surface — today, the voice-debrief
-     * bottom-sheet. Plain notifications get no explicit intent (default launch).
+     * The intent fired when the notification is tapped. EVERY notification must
+     * have one — without a contentIntent Android does nothing on tap (there is
+     * no implicit "open the app" behaviour). A deep-linked notification
+     * (Roadmap A4) carries extras that reopen straight onto the matching surface
+     * (today the voice-debrief bottom-sheet); a plain one just launches the app.
      */
-    private fun contentIntent(context: Context, n: AppNotification): PendingIntent? {
-        if (n.deepLink != MainActivity.DEEP_LINK_DEBRIEF) return null
+    private fun contentIntent(context: Context, n: AppNotification): PendingIntent {
         val intent = Intent(context, MainActivity::class.java).apply {
             flags = Intent.FLAG_ACTIVITY_SINGLE_TOP or Intent.FLAG_ACTIVITY_CLEAR_TOP
-            putExtra(MainActivity.EXTRA_DEEP_LINK, n.deepLink)
-            n.activityId?.let { putExtra(MainActivity.EXTRA_ACTIVITY_ID, it) }
+            if (n.deepLink == MainActivity.DEEP_LINK_DEBRIEF) {
+                putExtra(MainActivity.EXTRA_DEEP_LINK, n.deepLink)
+                n.activityId?.let { putExtra(MainActivity.EXTRA_ACTIVITY_ID, it) }
+            }
         }
         val flags = PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
         return PendingIntent.getActivity(context, n.id, intent, flags)
