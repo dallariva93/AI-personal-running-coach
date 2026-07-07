@@ -5,6 +5,7 @@ import android.net.Uri
 import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.consumeWindowInsets
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.padding
 import androidx.compose.material.icons.Icons
@@ -241,7 +242,7 @@ fun AppScaffold(
             NavHost(
                 navController = navController,
                 startDestination = Dest.Home.route,
-                modifier = Modifier.padding(padding),
+                modifier = Modifier.padding(padding).consumeWindowInsets(padding),
             ) {
                 val openActivity: (Int) -> Unit = { id ->
                     navController.navigate("activity/$id") { launchSingleTop = true }
