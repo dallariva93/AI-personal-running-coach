@@ -17,6 +17,11 @@ class RunningCoachApp : Application() {
     lateinit var repository: CoachRepository
         private set
 
+    /** Offline façade (G5): snapshot cache + queued-action enqueue. */
+    val offlineCache: com.runningcoach.app.data.local.OfflineCache by lazy {
+        com.runningcoach.app.data.local.OfflineCache(this)
+    }
+
     override fun onCreate() {
         super.onCreate()
         settingsStore = SettingsStore(this)
@@ -31,6 +36,8 @@ class RunningCoachApp : Application() {
         // (crash, reboot, long offline stretch), resume its upload now. No-op
         // with an empty queue.
         com.runningcoach.app.tracking.LiveUploadQueue.kick(this)
+        // Offline action queue (G5): replay any action taken without network.
+        com.runningcoach.app.tracking.ActionQueue.kick(this)
         // FCM token registration (Roadmap A3): best-effort upload on boot.
         // Inert when Firebase is not configured (no google-services.json).
         runCatching {

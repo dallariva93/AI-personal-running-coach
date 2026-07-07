@@ -26,7 +26,10 @@ data class PlanUiState(
     val runnerContext: String? = null,
 )
 
-class PlanViewModel(private val repository: CoachRepository) : ViewModel() {
+class PlanViewModel(
+    private val repository: CoachRepository,
+    private val offlineCache: com.runningcoach.app.data.local.OfflineCache? = null,
+) : ViewModel() {
 
     private val _state = MutableStateFlow(PlanUiState(loading = true))
     val state: StateFlow<PlanUiState> = _state.asStateFlow()
@@ -37,10 +40,25 @@ class PlanViewModel(private val repository: CoachRepository) : ViewModel() {
 
     fun load() {
         viewModelScope.launch {
+            // Cached-first (G5): show the last known plan immediately.
+            if (_state.value.plan == null) {
+                offlineCache?.readPlan()?.let { cached ->
+                    _state.update { it.copy(loading = false, plan = cached.value) }
+                }
+            }
             _state.update { it.copy(loading = it.plan == null, error = null) }
             runCatching { repository.getCurrentPlan() }
-                .onSuccess { plan -> _state.update { it.copy(loading = false, plan = plan) } }
-                .onFailure { e -> _state.update { it.copy(loading = false, error = friendly(e)) } }
+                .onSuccess { plan ->
+                    offlineCache?.writePlan(plan)
+                    _state.update { it.copy(loading = false, plan = plan) }
+                }
+                .onFailure { e ->
+                    if (isNetworkError(e) && _state.value.plan != null) {
+                        _state.update { it.copy(loading = false) }  // keep the cache
+                    } else {
+                        _state.update { it.copy(loading = false, error = friendly(e)) }
+                    }
+                }
         }
     }
 
@@ -134,6 +152,15 @@ class PlanViewModel(private val repository: CoachRepository) : ViewModel() {
                     }
                 }
                 .onFailure { e ->
+                    if (isNetworkError(e) && offlineCache != null) {
+                        // Offline (G5): queue the move and replay it later.
+                        offlineCache.enqueuePlanMove(sessionId, targetDate)
+                        _state.update {
+                            it.copy(successMessage = "Sei offline: spostamento in coda, " +
+                                "lo applico al ritorno della rete.", lastMove = null)
+                        }
+                        return@onFailure
+                    }
                     // Surface the backend's Italian reason for invalid moves
                     // (race day, completed session, past date…) instead of a
                     // generic HTTP error.
@@ -147,6 +174,10 @@ class PlanViewModel(private val repository: CoachRepository) : ViewModel() {
                 }
         }
     }
+
+    private fun isNetworkError(e: Throwable): Boolean =
+        e is java.net.ConnectException || e is java.net.UnknownHostException ||
+            e is java.net.SocketTimeoutException || e is java.io.IOException
 
     /** The calendar date ``sessionId`` currently sits on, from its week/day-of-week. */
     private fun sourceDateOf(plan: TrainingPlan, sessionId: Int): String? {

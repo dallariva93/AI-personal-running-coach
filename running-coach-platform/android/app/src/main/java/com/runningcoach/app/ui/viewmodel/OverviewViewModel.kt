@@ -2,6 +2,7 @@ package com.runningcoach.app.ui.viewmodel
 
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
+import com.runningcoach.app.data.local.OfflineCache
 import com.runningcoach.app.data.model.AthleteProfile
 import com.runningcoach.app.data.model.Goal
 import com.runningcoach.app.data.model.Overview
@@ -22,11 +23,16 @@ data class OverviewUiState(
     val overview: Overview? = null,
     val error: String? = null,
     val message: String? = null,
+    // G5 (M4): true when the overview shown is the cached snapshot because the
+    // network is unreachable; updatedAtMillis feeds the "dati di ieri" banner.
+    val offline: Boolean = false,
+    val cacheUpdatedAtMillis: Long? = null,
 )
 
 class OverviewViewModel(
     private val repository: CoachRepository,
     private val settingsStore: SettingsStore,
+    private val offlineCache: OfflineCache? = null,
 ) : ViewModel() {
 
     private val _state = MutableStateFlow(OverviewUiState(loading = true))
@@ -43,10 +49,35 @@ class OverviewViewModel(
 
     fun refresh() {
         viewModelScope.launch {
+            // Cached-first (G5): render the last snapshot immediately, then let
+            // the network response replace it. The app is usable in a tunnel.
+            if (_state.value.overview == null) {
+                offlineCache?.readOverview()?.let { cached ->
+                    _state.update {
+                        it.copy(
+                            loading = false, overview = cached.value,
+                            offline = true, cacheUpdatedAtMillis = cached.updatedAtMillis,
+                        )
+                    }
+                }
+            }
             _state.update { it.copy(loading = it.overview == null, error = null) }
             runCatching { repository.overview() }
-                .onSuccess { ov -> _state.update { it.copy(loading = false, overview = ov) } }
-                .onFailure { e -> _state.update { it.copy(loading = false, error = friendly(e)) } }
+                .onSuccess { ov ->
+                    offlineCache?.writeOverview(ov)
+                    _state.update {
+                        it.copy(loading = false, overview = ov,
+                            offline = false, cacheUpdatedAtMillis = null)
+                    }
+                }
+                .onFailure { e ->
+                    if (isNetworkError(e) && _state.value.overview != null) {
+                        // Keep showing the cache; the banner says it's stale.
+                        _state.update { it.copy(loading = false, offline = true) }
+                    } else {
+                        _state.update { it.copy(loading = false, error = friendly(e)) }
+                    }
+                }
         }
     }
 
@@ -107,7 +138,10 @@ class OverviewViewModel(
     fun updateActivity(id: Int, rpe: Int? = null, notes: String? = null) =
         action("Attività aggiornata") { repository.patchActivity(id, rpe = rpe, notes = notes) }
 
-    /** Act on today's coaching decision (done | reduce | defer | problem). */
+    /** Act on today's coaching decision (done | reduce | defer | problem).
+
+    Offline (G5): the action is queued in Room and replayed when the network
+    returns, instead of being lost with an error toast. */
     fun coachAction(action: String, detail: String? = null) {
         val msg = when (action) {
             "done" -> "Seduta segnata come fatta"
@@ -116,7 +150,27 @@ class OverviewViewModel(
             "problem" -> "Segnalato: il coach ha adattato"
             else -> "Fatto"
         }
-        action(msg) { repository.coachAction(action, detail) }
+        viewModelScope.launch {
+            _state.update { it.copy(working = true, error = null, message = null) }
+            runCatching { repository.coachAction(action, detail) }
+                .onSuccess {
+                    val ov = runCatching { repository.overview() }.getOrNull()
+                    _state.update {
+                        it.copy(working = false, overview = ov ?: it.overview, message = msg)
+                    }
+                }
+                .onFailure { e ->
+                    if (isNetworkError(e) && offlineCache != null) {
+                        offlineCache.enqueueCoachAction(action, detail)
+                        _state.update {
+                            it.copy(working = false, offline = true,
+                                message = "Sei offline: azione in coda, la applico al ritorno della rete.")
+                        }
+                    } else {
+                        _state.update { it.copy(working = false, error = friendly(e)) }
+                    }
+                }
+        }
     }
 
     /** Mark coach notifications as delivered (after posting them locally). */
@@ -154,6 +208,10 @@ class OverviewViewModel(
     }
 
     fun clearMessage() = _state.update { it.copy(message = null, error = null) }
+
+    private fun isNetworkError(e: Throwable): Boolean =
+        e is java.net.ConnectException || e is java.net.UnknownHostException ||
+            e is java.net.SocketTimeoutException || e is java.io.IOException
 
     private fun friendly(e: Throwable): String = when (e) {
         is retrofit2.HttpException ->

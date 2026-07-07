@@ -3,6 +3,7 @@ package com.runningcoach.app.ui.screens
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -104,6 +105,27 @@ fun HomeScreen(
             }
         }
         Spacer(Modifier.height(16.dp))
+
+        // ── Offline banner (G5): the app renders the cached snapshot ────────
+        if (state.offline && ov != null) {
+            Text(
+                "Offline — dati di ieri" + (state.cacheUpdatedAtMillis?.let {
+                    " (agg. " + java.time.Instant.ofEpochMilli(it)
+                        .atZone(java.time.ZoneId.systemDefault())
+                        .format(java.time.format.DateTimeFormatter.ofPattern("dd/MM HH:mm")) + ")"
+                } ?: ""),
+                style = MaterialTheme.typography.labelMedium,
+                color = MaterialTheme.colorScheme.onErrorContainer,
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .background(
+                        MaterialTheme.colorScheme.errorContainer,
+                        RoundedCornerShape(8.dp),
+                    )
+                    .padding(horizontal = 12.dp, vertical = 8.dp),
+            )
+            Spacer(Modifier.height(14.dp))
+        }
 
         // ── "Corri adesso col telefono" (G1): the no-hardware first path ────
         Button(onClick = onStartLiveRun, modifier = Modifier.fillMaxWidth()) {

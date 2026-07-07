@@ -1046,7 +1046,14 @@ qui (nessun SDK): sintassi/import/bilanciamento verificati, valida `android.yml`
 
 ### FASE 2 — Il coach entra nella corsa (mesi 3-5)
 
-#### Passo 18 — G1+G5 · Live GPS tracking + fondamenta offline-first (inseparabili)
+#### Passo 18 — G1+G5 · Live GPS tracking + fondamenta offline-first (inseparabili) ✅ FATTO (M1-M4) — 2026-07-06
+
+> Tutti e 4 i milestone del piano sotto sono implementati e verdi in CI. La parte
+> di accettazione eseguibile solo su hardware reale resta da fare a mano: corsa
+> vera 5 km in aereo-mode (la catena Room→coda→upload→decisione è testata a
+> livello di componenti), consumo batteria <7%/h, comportamento Doze/OEM killer
+> su Samsung/Xiaomi. Attesa la seconda iterazione prevista dal brief dopo il
+> primo test su strada.
 
 **Obiettivo.** Registrare una corsa dal telefono, con guida a schermo, robusta senza rete. G5 non è una feature separata: il live tracking È scrittura locale + sync differita.
 
@@ -1096,10 +1103,18 @@ qui (nessun SDK): sintassi/import/bilanciamento verificati, valida `android.yml`
   col telefono" in Home (percorso senza hardware). **Deviazione:** niente
   ACCESS_BACKGROUND_LOCATION — con un FGS type=location avviato in foreground non serve
   (modello standard dei fitness tracker) ed evita la review Play più pesante.
-- **M4 — Android (G5): cache offline + coda azioni.**
-  `CachedOverview`/`CachedPlan` in Room con render cached-first e banner "dati di
-  ieri"; coda azioni (Today card actions, move calendario) con replay al ritorno
-  rete, riusando l'infra coda di M2.
+- **M4 — Android (G5): cache offline + coda azioni** ✅ FATTO — 2026-07-06.
+  Room v2 (migration additiva 1→2 — mai destructive: un recording non caricato non si
+  tocca): `cached_payloads` (chiavi overview/plan = CachedOverview/CachedPlan del piano,
+  una tabella generica) + `pending_actions`. Façade `OfflineCache` (lettura/scrittura
+  snapshot + enqueue azioni). Render **cached-first**: Overview e Piano mostrano subito
+  l'ultimo snapshot, la rete lo sostituisce quando risponde; su errore di rete la cache
+  resta con banner "Offline — dati di ieri (agg. dd/MM HH:mm)" in Home. Coda azioni:
+  Today-card action e move calendario falliti per RETE → `pending_actions` →
+  `ActionReplayWorker` (stessa disciplina della coda M2: vincolo rete, backoff, KEEP,
+  kick all'avvio) li rigioca in ordine; un rifiuto HTTP del server viene registrato e
+  scartato (ripeterlo per sempre sarebbe sbagliato). Messaggio esplicito all'utente
+  "Sei offline: azione in coda".
 
 ---
 
