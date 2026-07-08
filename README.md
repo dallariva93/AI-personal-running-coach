@@ -135,6 +135,7 @@ Documentazione interattiva su `http://localhost:8000/docs`.
 | `POST` | `/api/activities` | Inserimento manuale di una corsa |
 | `POST` | `/api/activities/live` | Upload live run da Android |
 | `PATCH` | `/api/activities/{id}` | Aggiorna RPE/notes |
+| `DELETE` | `/api/activities/{id}` | Elimina attività (cascade delete) |
 | `POST` | `/api/ingest` | Scarica e salva le corse Garmin |
 | `POST` | `/api/ingest/wellness` | Sync wellness Garmin |
 | `POST` | `/api/ingest/daily-wellness` | Snapshot wellness nativo Garmin |

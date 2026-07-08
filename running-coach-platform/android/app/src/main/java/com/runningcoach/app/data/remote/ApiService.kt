@@ -131,6 +131,9 @@ interface ApiService {
     @PATCH("api/activities/{id}")
     suspend fun patchActivity(@Path("id") id: Int, @Body patch: ActivityPatch): Activity
 
+    @DELETE("api/activities/{id}")
+    suspend fun deleteActivity(@Path("id") id: Int): Map<String, Boolean>
+
     @GET("api/stats")
     suspend fun getStats(@Query("period") period: String = "all-time"): PeriodStats
 

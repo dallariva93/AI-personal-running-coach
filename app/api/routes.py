@@ -183,6 +183,19 @@ def patch_activity(
     return activity
 
 
+@router.delete("/activities/{activity_id}")
+def delete_activity(
+    activity_id: int, session: Session = Depends(get_session)
+) -> dict:
+    """Delete an activity and its cascade-dependent records (coaching reports, etc.)."""
+    activity = session.get(Activity, activity_id)
+    if activity is None:
+        raise HTTPException(status_code=404, detail="Attività non trovata.")
+    session.delete(activity)
+    _commit(session)
+    return {"deleted": True}
+
+
 def _adapt_after_change(session: Session, run_analysis: bool = False) -> None:
     """Best-effort post-sync pipeline: score executions, then adapt the plan.
 
