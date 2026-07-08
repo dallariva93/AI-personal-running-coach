@@ -10,7 +10,10 @@ from __future__ import annotations
 import json as _json
 from typing import Any
 
+from app.logging_config import get_logger
 from app.schemas import RunSummary
+
+logger = get_logger("app.collection.synthesize")
 
 # Keyword search on the activity name only. Used as the first signal because
 # when the athlete renames their session ("Tempo Padova", "Ripetute 1000"),
@@ -500,6 +503,146 @@ def _extract_gps_from_metric_stream(details: dict[str, Any]) -> dict[str, Any]:
         step_alt = max(1, len(all_alts) // 100)
         out["altitude_profile"] = [round(a, 1) for a in all_alts[::step_alt]]
 
+    return out
+
+
+# ── Per-second sample streams (Fase 1) ────────────────────────────────────
+
+# Garmin ``metricsKey`` (lowercased) → output stream name. Speed stays in m/s
+# (A4: pace is derived in UI/processing, never stored). Unknown descriptors are
+# ignored (A11), so adding/renaming Garmin metrics never breaks extraction.
+_STREAM_METRIC_KEYS: dict[str, str] = {
+    "directheartrate": "hr",
+    "directspeed": "speed",
+    "directpower": "power",
+    "directruncadence": "cadence",
+    "directdoublecadence": "cadence",
+    "directelevation": "elevation",
+    "directaltitude": "elevation",
+    "sumdistance": "distance",
+}
+
+# metricsKey candidates for the time axis. Duration keys are seconds from
+# start; the timestamp key is epoch milliseconds (converted to seconds).
+_DURATION_KEYS = ("sumduration", "sumelapsedduration", "summovingduration")
+_TIMESTAMP_KEY = "directtimestamp"
+
+# Streams rounded to int; every other stream is a float.
+_INT_STREAMS = {"hr", "cadence"}
+
+
+def _target_points(duration_min: float) -> int:
+    """Adaptive point budget per stream by session duration (A8)."""
+    if duration_min <= 30:
+        return 300
+    if duration_min <= 90:
+        return 600
+    return 1200
+
+
+def _at(vals: list, idx: int) -> Any:
+    return vals[idx] if 0 <= idx < len(vals) else None
+
+
+def _round_stream(name: str, value: float | None) -> int | float | None:
+    if value is None:
+        return None
+    if name in _INT_STREAMS:
+        return int(round(value))
+    if name == "speed":
+        return round(value, 3)
+    return round(value, 1)
+
+
+def extract_sample_streams(details: Any) -> dict[str, list]:
+    """Extract aligned per-second streams from ``get_activity_details``.
+
+    Generalises :func:`_extract_gps_from_metric_stream`: instead of only GPS it
+    reads every stream we care about (heart rate, speed in m/s [A4], power,
+    cadence, elevation, cumulative distance) from the ``activityDetailMetrics``
+    matrix, keyed by ``metricDescriptors``. Tolerant (A11): unknown descriptors
+    are skipped and a missing/garbled matrix yields ``{}`` — never an exception.
+    The aligned series are adaptively downsampled to a point budget that scales
+    with duration (A8).
+
+    Returns a JSON-serialisable dict ``{"t": [seconds], "<stream>": [...]}``
+    holding ``t`` plus only the streams that carried at least one real value.
+    Value gaps are preserved as ``None`` so every stream stays index-aligned
+    with ``t``.
+    """
+    if not isinstance(details, dict):
+        return {}
+    descriptors = details.get("metricDescriptors")
+    rows = details.get("activityDetailMetrics")
+    if not isinstance(descriptors, list) or not isinstance(rows, list):
+        return {}
+
+    col_to_stream: dict[int, str] = {}
+    assigned: set[str] = set()
+    duration_idx: int | None = None
+    timestamp_idx: int | None = None
+    unknown: set[str] = set()
+    for i, desc in enumerate(descriptors):
+        if not isinstance(desc, dict):
+            continue
+        key = str(desc.get("metricsKey", "")).lower()
+        name = _STREAM_METRIC_KEYS.get(key)
+        if name is not None:
+            if name not in assigned:  # first descriptor wins per stream
+                col_to_stream[i] = name
+                assigned.add(name)
+        elif key in _DURATION_KEYS and duration_idx is None:
+            duration_idx = i
+        elif key == _TIMESTAMP_KEY and timestamp_idx is None:
+            timestamp_idx = i
+        elif key:
+            unknown.add(key)
+    if unknown:
+        logger.debug(
+            "sample_streams: ignoring %d unmapped descriptor(s): %s",
+            len(unknown), sorted(unknown),
+        )
+
+    times: list[float] = []
+    collected: dict[str, list[float | None]] = {name: [] for name in assigned}
+    first_ts: float | None = None
+    for idx, row in enumerate(rows):
+        vals = row.get("metrics") if isinstance(row, dict) else None
+        if not isinstance(vals, list):
+            continue
+        t: float | None = None
+        if duration_idx is not None:
+            t = _num(_at(vals, duration_idx))
+        if t is None and timestamp_idx is not None:
+            ts = _num(_at(vals, timestamp_idx))
+            if ts is not None:
+                if first_ts is None:
+                    first_ts = ts
+                t = (ts - first_ts) / 1000.0
+        if t is None:
+            t = float(idx)  # assume ~1 Hz when no time column is present
+        times.append(t)
+        for col, name in col_to_stream.items():
+            collected[name].append(_num(_at(vals, col)))
+
+    n = len(times)
+    if n < 2:
+        return {}
+
+    streams = {
+        name: vals for name, vals in collected.items()
+        if any(v is not None for v in vals)
+    }
+
+    duration_min = max(0.0, times[-1] - times[0]) / 60.0
+    step = max(1, n // _target_points(duration_min))
+    keep = list(range(0, n, step))
+    if keep[-1] != n - 1:
+        keep.append(n - 1)
+
+    out: dict[str, list] = {"t": [int(round(times[i])) for i in keep]}
+    for name, vals in streams.items():
+        out[name] = [_round_stream(name, vals[i]) for i in keep]
     return out
 
 

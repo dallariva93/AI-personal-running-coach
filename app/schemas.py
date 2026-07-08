@@ -137,6 +137,28 @@ _WELLNESS_METRIC_FIELDS: tuple[str, ...] = (
 )
 
 
+class StreamFeatures(BaseModel):
+    """Scalar features derived from per-second ``sample_streams`` (Fase 1).
+
+    The raw series live in a JSON blob (not queryable in SQL); these derived
+    scalars are what the app aggregates across activities ("monthly drift",
+    "pace CV"), so they map to indexable columns (GARMIN_DATA_PLAN.md A9). All
+    optional: a run without HR/speed samples simply yields ``None``.
+    """
+
+    model_config = ConfigDict(extra="ignore")
+
+    # Aerobic decoupling: % drop of the speed:HR ratio from the first to the
+    # second half. Positive = efficiency degraded (drift); negative = negative
+    # split. None when HR and speed streams aren't both present.
+    decoupling_pct: float | None = None
+    # Cardiac drift: % rise of average HR from the first to the second half.
+    hr_drift_pct: float | None = None
+    # Coefficient of variation of speed (std/mean) over moving samples, as a
+    # percentage: low = very even pacing, high = surging/intervals.
+    speed_cv: float | None = None
+
+
 class AthleteModelEstimate(BaseModel):
     """One learned athlete constant (Roadmap A5 · Digital Twin v0).
 

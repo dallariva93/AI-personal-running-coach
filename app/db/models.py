@@ -93,6 +93,15 @@ class Activity(Base):
     # GPS / elevation profile (populated when Garmin split data is available).
     altitude_profile: Mapped[list | None] = mapped_column(JSON, nullable=True)
     route_polyline: Mapped[str | None] = mapped_column(Text, nullable=True)
+    # Per-second sample streams (Fase 1): a single JSON blob of aligned series
+    # (t + hr/speed/power/cadence/elevation/distance), adaptively downsampled.
+    # Kept as JSON on purpose (A9): read per-activity, never queried in SQL.
+    sample_streams: Mapped[dict | None] = mapped_column(JSON, nullable=True)
+    # Indexable scalar features derived from sample_streams (A9): the columns
+    # the app aggregates cross-activity, unlike the raw series above.
+    decoupling_pct: Mapped[float | None] = mapped_column(Float, nullable=True)
+    hr_drift_pct: Mapped[float | None] = mapped_column(Float, nullable=True)
+    speed_cv: Mapped[float | None] = mapped_column(Float, nullable=True)
     # Optional shoe reference for mileage tracking (Roadmap #6).
     shoe_id: Mapped[int | None] = mapped_column(Integer, nullable=True, index=True)
 
