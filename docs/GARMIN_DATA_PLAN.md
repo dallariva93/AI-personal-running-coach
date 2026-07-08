@@ -246,6 +246,30 @@ altre serie sopravvivono.
 
 Riesaminare solo se emerge un caso d'uso concreto.
 
+## A13. Decisione storage: bucket object-store (scelto: **Tigris**)
+
+Il carico è leggero (FIT ~0,3–1 MB + JSON, scritti pochi alla volta, riletti di
+rado → ~1,5–3 GB per un singolo utente in 10 anni): **lo spazio non è il
+vincolo**, qualsiasi free tier da 5–10 GB basta per anni. Contano **attrito di
+setup** ed **egress**.
+
+| Servizio | Spazio free | Egress | Prestazioni | Attrito setup |
+|----------|-------------|--------|-------------|---------------|
+| **Tigris** (Fly.io) | ~5 GB | incluso | Globale, bassa latenza | **Minimo** — `fly storage create` inietta le credenziali |
+| Cloudflare R2 | 10 GB | €0 sempre | Globale, ottime | Medio — account CF + variabili a mano |
+| Backblaze B2 | 10 GB | ~3× storage/giorno | Buone | Medio |
+| Scaleway | 75 GB | limitato | Buone (EU) | Medio, meno mainstream |
+| AWS S3 | 5 GB (12 mesi) | a pagamento | Ottime | Alto + rischio bolletta |
+
+**Scelta: Tigris su Fly.io.** Motivo: attrito minimo (il progetto è già pensato
+per Fly.io — vedi `docs/DEPLOY_FLY_ANDROID.md`; `config.py` legge già gli alias
+`AWS_*` che Tigris inietta), storage distribuito, egress incluso, ~5 GB free
+sufficienti per anni d'uso singolo. **Alternativa di riserva: Cloudflare R2**
+(10 GB, egress gratuito per sempre) se un giorno si esce da Fly.io o si prevede
+di rileggere spesso molti FIT.
+*(I numeri dei free tier cambiano: verificare la pagina pricing prima di
+impegnarsi.)*
+
 ---
 
 # PARTE B — Piano d'implementazione (ordinato per valore + scadenza)
@@ -261,19 +285,25 @@ già invocato (`ingest.py:218`): **appena un bucket è configurato, l'archivio
 parte da solo** (`raw_archive_active = raw_archive_enabled and s3_enabled`).
 Il primo passo è quindi **configurazione, non codice**.
 
-**0a. Configurare un bucket gratuito — PRIMO STEP (nessun codice).** Opzioni free:
-- **Tigris su Fly.io** — `fly storage create` provisiona il bucket e inietta da
-  solo `AWS_ENDPOINT_URL_S3`, `AWS_ACCESS_KEY_ID`, `AWS_SECRET_ACCESS_KEY`,
-  `AWS_REGION`, `BUCKET_NAME`, già letti come alias in `config.py`. Nient'altro:
-  `s3_enabled` diventa `True` e l'archiviazione si attiva.
-- **Cloudflare R2** (10 GB free) o **Backblaze B2** — impostare
-  `S3_ENDPOINT_URL`, `S3_ACCESS_KEY_ID`, `S3_SECRET_ACCESS_KEY`, `S3_BUCKET`
-  (e `S3_REGION=auto`).
+**0a. Configurare il bucket Tigris — PRIMO STEP (nessun codice).**
+Scelta motivata in A13. Passi su Fly.io (dalla cartella dell'app):
 
-  Verifica: dopo il primo sync la tabella `raw_activity_assets` si popola e nel
-  bucket compaiono le chiavi `garmin/<activity_id>/…`.
-  *(Alternativa senza cloud, opzionale e solo per sviluppo locale: un
-  `LocalObjectStore` su filesystem. Non necessario se si usa un bucket.)*
+1. `fly storage create` — provisiona un bucket Tigris e imposta da solo, come
+   secret dell'app Fly, `AWS_ENDPOINT_URL_S3`, `AWS_ACCESS_KEY_ID`,
+   `AWS_SECRET_ACCESS_KEY`, `AWS_REGION`, `BUCKET_NAME` (tutti già letti come
+   alias in `config.py`).
+2. `fly deploy` (o restart) così il processo rilegge i secret. A questo punto
+   `s3_enabled` → `True`, `raw_archive_active` → `True`: l'archiviazione parte
+   da sola al prossimo sync. Le chiavi useranno il prefisso `garmin/` (default
+   `s3_key_prefix`).
+3. **Verifica**: dopo il primo sync, la tabella `raw_activity_assets` si popola
+   e nel bucket compaiono le chiavi `garmin/<activity_id>/…` (ispezionabili da
+   `fly storage dashboard` / console Tigris).
+
+*Riserva (A13): Cloudflare R2 — impostare a mano `S3_ENDPOINT_URL`,
+`S3_ACCESS_KEY_ID`, `S3_SECRET_ACCESS_KEY`, `S3_BUCKET`, `S3_REGION=auto`.
+Alternativa solo-locale, opzionale: un `LocalObjectStore` su filesystem — non
+necessario con un bucket.*
 
 **0b. Ridurre l'archivio a FIT + JSON (piccola modifica codice).** Oggi
 `_DOWNLOAD_KINDS` archivia GPX+TCX+FIT: dismettere GPX/TCX (rigenerabili dal FIT,
