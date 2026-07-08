@@ -23,6 +23,7 @@ def db_env(tmp_path, monkeypatch):
     from app.db.database import init_db, reset_engine
     from app.services.auth_service import reset_cache as reset_auth_cache
     from app.services.cache import invalidate_all
+    from app.storage import get_object_store
 
     db_file = tmp_path / "test.db"
     monkeypatch.setenv("DATABASE_URL", f"sqlite:///{db_file}")
@@ -43,10 +44,15 @@ def db_env(tmp_path, monkeypatch):
     # A10 rotated-token hash cache.
     invalidate_all()
     reset_auth_cache()
+    # The object-store client is @lru_cache'd on settings: drop it so a test that
+    # expects "no S3 configured" isn't served a real store cached by an earlier
+    # test (fragile only when a local .env carries real S3 credentials).
+    get_object_store.cache_clear()
     init_db()
     yield
     reset_engine()
     get_settings.cache_clear()
+    get_object_store.cache_clear()
 
 
 @pytest.fixture

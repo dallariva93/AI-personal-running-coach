@@ -295,6 +295,21 @@ def post_ingest_wellness(session: Session = Depends(get_session)) -> dict:
     return {"days_upserted": count}
 
 
+@router.post("/ingest/daily-wellness")
+def post_snapshot_daily_wellness(session: Session = Depends(get_session)) -> dict:
+    """Snapshot Garmin's native daily wellness into ``daily_wellness``.
+
+    Captures the *live* values (body battery, training readiness, overnight HRV,
+    stress, resting HR, sleep) verbatim before Garmin stops exposing them (A3).
+    Meant to be called daily by an external cron alongside ``/ingest/wellness``.
+    """
+    from app.services.snapshot_wellness import snapshot_daily_wellness
+
+    count = snapshot_daily_wellness(session)
+    _commit(session)
+    return {"days_written": count}
+
+
 @router.post("/import/health-connect", response_model=HealthConnectImportResult)
 def post_import_health_connect(
     payload: HealthConnectImportIn, session: Session = Depends(get_session)

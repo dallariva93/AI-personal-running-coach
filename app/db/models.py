@@ -195,9 +195,11 @@ class RawActivityAsset(Base):
     * ``power_in_timezones``     - get_activity_power_in_timezones JSON
     * ``exercise_sets``          - get_activity_exercise_sets JSON
     * ``gear``                   - get_activity_gear JSON
-    * ``gpx``                    - download_activity GPX
-    * ``tcx``                    - download_activity TCX
     * ``original_fit_zip``       - download_activity ORIGINAL (FIT inside zip)
+
+    GPX and TCX are not archived: they are regenerable from the original FIT
+    (docs/GARMIN_DATA_PLAN.md A10). Rows with those kinds may still exist from
+    archives created before phase 0b.
     """
 
     __tablename__ = "raw_activity_assets"
@@ -339,6 +341,41 @@ class DailyCheckinRow(Base):
 
     def __repr__(self) -> str:  # pragma: no cover - debug helper
         return f"<DailyCheckin {self.date} fatigue={self.fatigue}>"
+
+
+class DailyWellnessRow(Base):
+    """Garmin's native daily wellness snapshot (GARMIN_DATA_PLAN.md phase 0c).
+
+    One row per date, storing Garmin's own *live* values verbatim (body-battery
+    flow, training readiness, overnight HRV, resting HR, stress, sleep) so the
+    metrics Garmin may stop exposing over time (A3) are captured the day they
+    exist. Separate from :class:`DailyCheckinRow`, which holds the subjective
+    1-10 check-in the coach reasons over.
+    """
+
+    __tablename__ = "daily_wellness"
+    __table_args__ = (UniqueConstraint("date", name="uq_daily_wellness_date"),)
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    date: Mapped[str] = mapped_column(String(10), index=True)  # ISO YYYY-MM-DD
+    sleep_seconds: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    sleep_score: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    hrv_last_night_avg: Mapped[float | None] = mapped_column(Float, nullable=True)
+    hrv_status: Mapped[str | None] = mapped_column(String(32), nullable=True)
+    resting_hr: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    body_battery_charged: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    body_battery_drained: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    stress_avg: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    training_readiness_score: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    training_readiness_level: Mapped[str | None] = mapped_column(String(32), nullable=True)
+    source: Mapped[str] = mapped_column(String(20), default="garmin")
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=_utcnow)
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime, default=_utcnow, onupdate=_utcnow
+    )
+
+    def __repr__(self) -> str:  # pragma: no cover - debug helper
+        return f"<DailyWellness {self.date}>"
 
 
 class TrainingPlan(Base):

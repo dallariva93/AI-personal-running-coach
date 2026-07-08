@@ -1,8 +1,8 @@
 """Object storage for raw activity archival (Tigris / S3-compatible).
 
 A thin wrapper over an S3-compatible bucket used to archive the raw Garmin
-payloads (summary JSON, per-second detail streams, splits, weather, gear,
-GPX, TCX, FIT) for *every* activity, not only running ones.
+payloads (summary JSON, per-second detail streams, splits, weather, gear and
+the original FIT) for *every* activity, not only running ones.
 
 The whole module is optional: ``boto3`` is imported lazily and
 :func:`get_object_store` returns ``None`` when no bucket is configured, so the

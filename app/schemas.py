@@ -91,6 +91,52 @@ class DailyCheckin(BaseModel):
     source: str | None = None
 
 
+class DailyWellnessSnapshot(BaseModel):
+    """Garmin's native daily wellness values (GARMIN_DATA_PLAN.md phase 0c).
+
+    Unlike :class:`DailyCheckin` (subjective 1-10 scales), this keeps Garmin's
+    own numbers verbatim so the *live* metrics Garmin may stop exposing over
+    time (A3 — body battery, training readiness, overnight HRV, stress) are
+    captured the day they exist. Every metric is optional: a device that lacks
+    one still produces a partial row.
+    """
+
+    model_config = ConfigDict(extra="ignore")
+
+    date: str  # ISO YYYY-MM-DD
+    sleep_seconds: int | None = None  # Garmin's measured sleep time
+    sleep_score: int | None = None  # 0-100 overall sleep score
+    hrv_last_night_avg: float | None = None  # ms, Garmin's overnight RMSSD average
+    hrv_status: str | None = None  # e.g. BALANCED, UNBALANCED, LOW, POOR
+    resting_hr: int | None = None  # bpm
+    body_battery_charged: int | None = None  # points gained over the day
+    body_battery_drained: int | None = None  # points spent over the day
+    stress_avg: int | None = None  # 0-100, Garmin's daily average stress
+    training_readiness_score: int | None = None  # 0-100
+    training_readiness_level: str | None = None  # e.g. READY, LOW, MODERATE
+    source: str = "garmin"
+
+    def is_empty(self) -> bool:
+        """True when no metric was captured, so the snapshot is not worth storing."""
+        return all(getattr(self, name) is None for name in _WELLNESS_METRIC_FIELDS)
+
+
+# Metric fields of DailyWellnessSnapshot (excludes date/source): a snapshot with
+# all of these None carries no Garmin data and is skipped by the capture job.
+_WELLNESS_METRIC_FIELDS: tuple[str, ...] = (
+    "sleep_seconds",
+    "sleep_score",
+    "hrv_last_night_avg",
+    "hrv_status",
+    "resting_hr",
+    "body_battery_charged",
+    "body_battery_drained",
+    "stress_avg",
+    "training_readiness_score",
+    "training_readiness_level",
+)
+
+
 class AthleteModelEstimate(BaseModel):
     """One learned athlete constant (Roadmap A5 · Digital Twin v0).
 

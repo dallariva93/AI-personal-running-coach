@@ -3,8 +3,13 @@
 Where :mod:`app.collection.synthesize` distils a Garmin activity into the
 compact :class:`~app.schemas.RunSummary`, this module keeps the full fidelity:
 it pulls every endpoint Garmin exposes for an activity (summary, per-second
-detail streams, splits, weather, gear, training-effect zones, GPX/TCX/FIT
-downloads) and hands the bytes to an :class:`~app.storage.ObjectStore`.
+detail streams, splits, weather, gear, training-effect zones and the original
+FIT download) and hands the bytes to an :class:`~app.storage.ObjectStore`.
+
+GPX and TCX are intentionally not archived: both are lossy views derived from
+the original FIT and can be regenerated on demand from it, so storing them
+would roughly double the raw footprint for no added information (see
+docs/GARMIN_DATA_PLAN.md A10 / phase 0b).
 
 Everything here is best-effort: any endpoint that the installed
 ``garminconnect`` version does not support, or that fails for a given
@@ -54,9 +59,8 @@ _JSON_KINDS: dict[str, str] = {
 
 # Binary downloads via ``download_activity(id, dl_fmt=...)``:
 # kind -> (ActivityDownloadFormat attribute, extension, content type).
+# Only the original FIT is archived; GPX/TCX are regenerable from it (A10).
 _DOWNLOAD_KINDS: dict[str, tuple[str, str, str]] = {
-    "gpx": ("GPX", "gpx", "application/gpx+xml"),
-    "tcx": ("TCX", "tcx", "application/vnd.garmin.tcx+xml"),
     "original_fit_zip": ("ORIGINAL", "zip", "application/zip"),
 }
 

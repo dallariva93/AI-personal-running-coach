@@ -107,9 +107,10 @@ class Settings(BaseSettings):
 
     # -- Raw activity object storage (Tigris / S3-compatible) ---------------
     # Used to archive every raw Garmin payload (summary JSON, details streams,
-    # splits, weather, gear, GPX, FIT/ORIGINAL, TCX) for every activity, not
-    # only running ones. Leave empty to disable raw archival; the rest of the
-    # app continues to work.
+    # splits, weather, gear and the original FIT) for every activity, not
+    # only running ones. GPX/TCX are not archived (regenerable from the FIT,
+    # A10). Leave empty to disable raw archival; the rest of the app continues
+    # to work.
     #
     # On Fly.io with Tigris ("fly storage create") the platform injects
     # AWS_ACCESS_KEY_ID, AWS_SECRET_ACCESS_KEY, AWS_REGION, AWS_ENDPOINT_URL_S3

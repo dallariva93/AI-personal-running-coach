@@ -305,16 +305,45 @@ Scelta motivata in A13. Passi su Fly.io (dalla cartella dell'app):
 Alternativa solo-locale, opzionale: un `LocalObjectStore` su filesystem — non
 necessario con un bucket.*
 
-**0b. Ridurre l'archivio a FIT + JSON (piccola modifica codice).** Oggi
-`_DOWNLOAD_KINDS` archivia GPX+TCX+FIT: dismettere GPX/TCX (rigenerabili dal FIT,
+**0b. Ridurre l'archivio a FIT + JSON (piccola modifica codice). ✅ FATTO — 2026-07-08.**
+Oggi `_DOWNLOAD_KINDS` archivia GPX+TCX+FIT: dismettere GPX/TCX (rigenerabili dal FIT,
 A10) e tenere **FIT + details.json** → ~2× storage in meno. Test: idempotenza,
 `delete` per erasure.
+Implementato: `_DOWNLOAD_KINDS` in `app/collection/garmin_raw.py` ora contiene solo
+`original_fit_zip`; i 10 `kind` JSON (incluso `details`) restano. GPX/TCX non
+vengono più né scaricati né archiviati. L'erasure itera per `s3_key` a prescindere
+dal `kind`, quindi il path di `delete` è invariato. Nessuna migrazione (nessun
+cambio di schema): righe `gpx`/`tcx` pregresse restano valide.
 
-**0c. Snapshot wellness giornaliero (cattura subito, UI dopo)** — job periodico
-che salva in nuova tabella `daily_wellness(date PK, …)` gli snapshot **live**
-(body battery, readiness, stress, HRV, RHR, sleep). Serve **subito** perché
-questi dati scadono (A3). Anche solo scrivere le righe senza UI protegge la
+**0c. Snapshot wellness giornaliero (cattura subito, UI dopo). ✅ FATTO — 2026-07-08.**
+Job periodico che salva in nuova tabella `daily_wellness(date PK, …)` gli snapshot
+**live** (body battery, readiness, stress, HRV, RHR, sleep). Serve **subito**
+perché questi dati scadono (A3). Anche solo scrivere le righe senza UI protegge la
 storia. Aggiornare `erasure._DELETE_ORDER`.
+Implementato:
+- Tabella `daily_wellness` (`DailyWellnessRow`) con i valori **nativi** Garmin
+  (sleep_seconds/score, hrv_last_night_avg/status, resting_hr, body_battery
+  charged/drained, stress_avg, training_readiness score/level). Distinta da
+  `daily_checkins` (che è la scala soggettiva 1-10 del coach). Migrazione
+  `d4e5f6a7b8c9`.
+- Estrazione **pura e tollerante** in `app/collection/wellness_snapshot.py`
+  (una forma di payload inattesa → None, mai eccezioni; A11).
+- Service `app/services/snapshot_wellness.py::snapshot_daily_wellness`: upsert
+  idempotente per data (unique `date`), rifetch di oggi, mai azzera valori già
+  catturati. Client iniettabile per i test.
+- Endpoint `POST /api/ingest/daily-wellness` (mirror di `/api/ingest/wellness`),
+  pensato per il cron giornaliero. Nessuno scheduler in-process: il deploy deve
+  chiamare l'endpoint quotidianamente accanto a `/ingest/wellness`.
+- `erasure._DELETE_ORDER` aggiornato (coperto da
+  `test_delete_my_data_empties_every_table`, che itera tutte le tabelle).
+- Curva intraday del body battery rinviata (A1): qui si tiene solo charged/drained
+  (chiavi stabili), per non indovinare la forma dell'array dei campioni.
+
+Caveat ambientale (preesistente, non 0c): con credenziali S3 reali in `.env`,
+`test_sync_raw_assets_noStore_returnsEmpty` fallisce se eseguito **dopo**
+`test_security_a10` perché `get_object_store()` è `@lru_cache` e non viene
+invalidato dalla fixture `db_env`. In CI `.env` è gitignored, quindi verde.
+Fix suggerito (fuori scope): `get_object_store.cache_clear()` in `db_env`.
 
 ## FASE 1 — Serie per-secondo (Tier A) — 3 milestone
 **Effort: L. Il salto UX+coaching maggiore; dati già scaricati.**

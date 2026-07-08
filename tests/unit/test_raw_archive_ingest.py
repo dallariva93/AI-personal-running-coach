@@ -107,9 +107,10 @@ def test_sync_raw_assets_storesRowsAndBlobs_forAllActivityTypes(session, fake_so
     rows = sync_raw_assets(session, fake_source, limit=10, store=store)
     session.commit()
 
-    # 13 kinds per activity * 2 activities (running + cycling).
-    assert len(rows) == 26
-    assert _count_rows(session) == 26
+    # 11 kinds per activity * 2 activities (running + cycling): 10 JSON kinds
+    # plus the original FIT. GPX/TCX are not archived (phase 0b).
+    assert len(rows) == 22
+    assert _count_rows(session) == 22
     # Every recorded row points at an object that actually exists.
     for row in rows:
         assert store.exists(row.s3_key)

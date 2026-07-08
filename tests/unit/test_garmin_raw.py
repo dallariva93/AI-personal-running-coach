@@ -124,11 +124,12 @@ def test_fetch_all_archivesEveryKind_andRecordsBytes():
         "power_in_timezones",
         "exercise_sets",
         "gear",
-        "gpx",
-        "tcx",
         "original_fit_zip",
     }
     assert kinds == expected_kinds
+    # GPX/TCX are regenerable from the FIT and must not be archived (A10, 0b).
+    assert "gpx" not in kinds
+    assert "tcx" not in kinds
 
     # Keys are namespaced under the configured prefix and activity id.
     for asset in assets:
@@ -136,6 +137,21 @@ def test_fetch_all_archivesEveryKind_andRecordsBytes():
         assert store.exists(asset.s3_key)
         assert asset.size_bytes == len(store.get_bytes(asset.s3_key))
         assert asset.activity_type_key == "running"
+
+
+def test_fetch_all_neverDownloadsGpxOrTcx():
+    """Phase 0b: GPX/TCX are regenerable from the FIT, so the fetcher must not
+    even call ``download_activity`` for them, even when the client offers them."""
+    client = _make_client_with_all_payloads()
+    store = InMemoryObjectStore()
+    fetcher = GarminRawFetcher(client=client, store=store, key_prefix="garmin")
+
+    fetcher.fetch_all(activity_id="321", activity_type_key="running")
+
+    assert (f"download:{_FakeDownloadFormat.GPX}", "321") not in client.calls
+    assert (f"download:{_FakeDownloadFormat.TCX}", "321") not in client.calls
+    # The canonical FIT download still happens.
+    assert (f"download:{_FakeDownloadFormat.ORIGINAL}", "321") in client.calls
 
 
 def test_fetch_all_skipsKindsAlreadyArchived():
@@ -146,16 +162,16 @@ def test_fetch_all_skipsKindsAlreadyArchived():
     assets = fetcher.fetch_all(
         activity_id=99,
         activity_type_key="cycling",
-        already_archived_kinds={"summary", "gpx", "details"},
+        already_archived_kinds={"summary", "original_fit_zip", "details"},
     )
     kinds = {a.kind for a in assets}
     assert "summary" not in kinds
-    assert "gpx" not in kinds
+    assert "original_fit_zip" not in kinds
     assert "details" not in kinds
     # And the calls to those endpoints were not made
     assert ("get_activity", "99") not in client.calls
     assert ("get_activity_details", "99") not in client.calls
-    assert (f"download:{_FakeDownloadFormat.GPX}", "99") not in client.calls
+    assert (f"download:{_FakeDownloadFormat.ORIGINAL}", "99") not in client.calls
 
 
 def test_fetch_all_failingEndpoint_doesNotAbortOthers(monkeypatch):
@@ -173,7 +189,7 @@ def test_fetch_all_failingEndpoint_doesNotAbortOthers(monkeypatch):
     kinds = {a.kind for a in assets}
     assert "weather" not in kinds
     assert "summary" in kinds
-    assert "gpx" in kinds
+    assert "original_fit_zip" in kinds
 
 
 def test_fetch_all_jsonPayload_storedAsCompactJson():
