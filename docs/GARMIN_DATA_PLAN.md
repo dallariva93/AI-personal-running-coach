@@ -23,9 +23,10 @@ Ogni fase segue il workflow di `docs/AGENT_PROMPT.md` (contratto in
 - `synthesize.py` distilla un sottoinsieme compatto in `RunSummary` (HR
   media/max, cadenza media, split per-km, zone HR, VO2max, TE, GAP…). Niente
   serie temporali, potenza, ripetute, dinamica.
-- `GarminRawFetcher` archivierebbe i grezzi completi ma è gated su `s3_enabled`
-  → senza bucket non conserviamo nulla. Esistono solo `ObjectStore` (S3) e
-  `InMemoryObjectStore` (test): **manca** uno store su filesystem.
+- `GarminRawFetcher` + `ObjectStore` (S3) archivierebbero i grezzi completi, e
+  `_try_sync_raw_assets` è **già invocato** in `ingest.py:218`. Ma l'archiviazione
+  è gated su `s3_enabled`: **senza un bucket configurato non conserviamo nulla**.
+  Il codice storage esiste già — manca **solo la configurazione di un bucket**.
 
 ## A1. Matrice decisionale principale
 
@@ -252,20 +253,35 @@ Riesaminare solo se emerge un caso d'uso concreto.
 Ordine derivato dall'analisi: prima ciò che **vale di più** e ciò che **non è
 recuperabile dopo** (dati live, A3), non ciò che è più comodo.
 
-## FASE 0 — Fondamenta: archivio grezzo su filesystem + cattura wellness
-**Effort: S–M. Sblocca tutto e ferma la perdita di dati irripetibili.**
+## FASE 0 — Fondamenta: attivare l'archivio grezzo + cattura wellness
+**Effort: S. Sblocca tutto e ferma la perdita di dati irripetibili.**
 
-Due mosse indipendenti ma entrambe "non perdere dati":
+Il codice di archiviazione esiste già (`GarminRawFetcher` + `ObjectStore`) ed è
+già invocato (`ingest.py:218`): **appena un bucket è configurato, l'archivio
+parte da solo** (`raw_archive_active = raw_archive_enabled and s3_enabled`).
+Il primo passo è quindi **configurazione, non codice**.
 
-**0a. Archivio grezzo locale** — `LocalObjectStore` (filesystem, stessa
-interfaccia); `config.raw_archive_dir`; `get_object_store()` lo usa quando
-`raw_archive_enabled and not s3_enabled`. `_try_sync_raw_assets` è già invocato
-(`ingest.py:218`). Archiviare **FIT + details.json** (A10), non GPX/TCX. Tabella
-`raw_activity_assets` già esistente. Test: round-trip, idempotenza, `delete`
-per erasure.
+**0a. Configurare un bucket gratuito — PRIMO STEP (nessun codice).** Opzioni free:
+- **Tigris su Fly.io** — `fly storage create` provisiona il bucket e inietta da
+  solo `AWS_ENDPOINT_URL_S3`, `AWS_ACCESS_KEY_ID`, `AWS_SECRET_ACCESS_KEY`,
+  `AWS_REGION`, `BUCKET_NAME`, già letti come alias in `config.py`. Nient'altro:
+  `s3_enabled` diventa `True` e l'archiviazione si attiva.
+- **Cloudflare R2** (10 GB free) o **Backblaze B2** — impostare
+  `S3_ENDPOINT_URL`, `S3_ACCESS_KEY_ID`, `S3_SECRET_ACCESS_KEY`, `S3_BUCKET`
+  (e `S3_REGION=auto`).
 
-**0b. Snapshot wellness giornaliero (cattura, UI dopo)** — job periodico che
-salva in nuova tabella `daily_wellness(date PK, …)` gli snapshot **live**
+  Verifica: dopo il primo sync la tabella `raw_activity_assets` si popola e nel
+  bucket compaiono le chiavi `garmin/<activity_id>/…`.
+  *(Alternativa senza cloud, opzionale e solo per sviluppo locale: un
+  `LocalObjectStore` su filesystem. Non necessario se si usa un bucket.)*
+
+**0b. Ridurre l'archivio a FIT + JSON (piccola modifica codice).** Oggi
+`_DOWNLOAD_KINDS` archivia GPX+TCX+FIT: dismettere GPX/TCX (rigenerabili dal FIT,
+A10) e tenere **FIT + details.json** → ~2× storage in meno. Test: idempotenza,
+`delete` per erasure.
+
+**0c. Snapshot wellness giornaliero (cattura subito, UI dopo)** — job periodico
+che salva in nuova tabella `daily_wellness(date PK, …)` gli snapshot **live**
 (body battery, readiness, stress, HRV, RHR, sleep). Serve **subito** perché
 questi dati scadono (A3). Anche solo scrivere le righe senza UI protegge la
 storia. Aggiornare `erasure._DELETE_ORDER`.
@@ -312,7 +328,7 @@ Il resto (A12) resta escluso per scelta.
 
 | Ordine | Fase | Perché | Tier | Effort |
 |--------|------|--------|------|--------|
-| 1 | **0 — grezzo + cattura wellness** | Ferma la perdita di dati; i live scadono (A3) | — / B | S–M |
+| 1 | **0 — bucket + cattura wellness** | Configurare un bucket gratuito attiva l'archivio senza codice; i live scadono (A3) | — / B | S |
 | 2 | **1 — serie per-secondo** | Valore massimo, dati già scaricati | A | L |
 | 3 | **2 — ripetute** | Scoring per-rep vs piano | A | M |
 | 4 | **3 — potenza** | Piccola dopo Fase 1 | A/B | S |
@@ -320,6 +336,6 @@ Il resto (A12) resta escluso per scelta.
 | 6 | **5 — dinamica di corsa** | Economica, device-dependent | C | M |
 | 7 | **6 — contorno** | Solo su caso d'uso | C | S |
 
-**Pilota consigliato**: Fase 0 (0a+0b) + Fase 1/M1 con la sola **serie HR**,
+**Pilota consigliato**: Fase 0 (bucket + FIT/JSON + wellness) + Fase 1/M1 con la sola **serie HR**,
 come prova end-to-end del parser tollerante, del downsampling adattivo e dello
 schema `sample_streams`, prima di allargare a tutte le serie.
