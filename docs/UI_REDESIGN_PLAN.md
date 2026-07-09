@@ -60,11 +60,26 @@ hex, spaziature, copy) per limitare il rischio di scostamento.
     equivalenti) **non implementate**: richiedono dati non presenti nel
     modello `Activity` (lavoro backend, fuori scope redesign UI).
 
-- **M3 — Piano (1c) + Calendario (1i)**
-  - File: `PlanScreen.kt`, `Components.kt` (`PhaseCard`/`PredictionCard` già
-    vicini al target — verificare vs markup 1c), `PlanCalendarScreen.kt`.
-  - Timeline fasi con larghezza ∝ settimane e fase corrente evidenziata
-    (`PhaseCard` sembra già implementarlo — controllare colori/copy esatti).
+- **M3 — Piano (1c) + Calendario (1i)** ✅ FATTO — 2026-07-09
+  - Nuova `PeriodizationTimeline` in `PlanScreen.kt`: raggruppa le settimane
+    del piano per fase consecutiva (`PlanWeek.phase`), larghezza del segmento
+    ∝ numero di settimane, fase corrente evidenziata (colore pieno + "Nw ·
+    ora"), riga "Fase attuale: X — descrizione" + volume target sotto.
+    Costruita direttamente da `TrainingPlan.weeks` — **non** da
+    `PeriodizationPlan`/`PhaseCard` (`Components.kt`): quel componente esiste
+    ma non è mai chiamato da nessuno screen, e richiederebbe di passare
+    `Overview` dentro `PlanScreen` (wiring cross-schermo, rischio più alto
+    per lo stesso risultato visivo). Segnalato qui come componente morto da
+    valutare per rimozione in futuro.
+  - `PlanCalendarScreen.kt`: la cella giorno ora mostra una barra colorata in
+    fondo (larghezza 60%, altezza 4dp) invece di un pallino centrato — più
+    leggibile a colpo d'occhio su un mese intero, come nel mockup.
+  - Non toccato (già solido, rischio/beneficio sfavorevole a toccarlo):
+    `RaceCountdownCard` (mostra countdown/completamento, concettualmente
+    diverso dalla "previsione tempo gara" del mockup — quella vive in
+    `PredictionCard`, oggi mostrata solo in Home; wiring cross-schermo
+    rimandato), `SessionRow` (checkbox interattiva reale, più ricca del
+    markup statico — non c'è motivo di impoverirla per somiglianza visiva).
 
 - **M4 — Coach AI (1d) + Statistiche (1e)**
   - File: `ChatScreen.kt`, `StatsScreen.kt`.

@@ -67,9 +67,12 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.text.SpanStyle
+import androidx.compose.ui.text.buildAnnotatedString
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextDecoration
 import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.text.withStyle
 import androidx.compose.ui.unit.dp
 import com.runningcoach.app.data.model.PlanGenerateRequest
 import com.runningcoach.app.data.model.PlanSession
@@ -200,6 +203,8 @@ fun PlanScreen(
                     EmptyPlanCard(onStartPlanChat)
                 } else {
                     RaceCountdownCard(plan)
+                    Spacer(Modifier.height(12.dp))
+                    PeriodizationTimeline(plan)
                     Spacer(Modifier.height(12.dp))
                     CurrentWeekCard(plan, onToggleSession)
                     Spacer(Modifier.height(12.dp))
@@ -362,6 +367,129 @@ private fun RaceCountdownCard(plan: TrainingPlan) {
             color = BrandGreen,
             trackColor = MaterialTheme.colorScheme.surfaceVariant,
         )
+    }
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Periodization timeline (handoff 1c)
+// ─────────────────────────────────────────────────────────────────────────────
+
+/** One contiguous run of plan weeks sharing the same phase. */
+private data class PhaseSegment(val phase: String, val weeks: Int)
+
+/** Groups consecutive weeks by [PlanWeek.phase], preserving week order. */
+private fun groupPhaseSegments(weeks: List<PlanWeek>): List<PhaseSegment> {
+    if (weeks.isEmpty()) return emptyList()
+    val sorted = weeks.sortedBy { it.weekNumber }
+    val out = mutableListOf<PhaseSegment>()
+    var phase = sorted.first().phase
+    var count = 0
+    for (week in sorted) {
+        if (week.phase == phase) {
+            count++
+        } else {
+            out.add(PhaseSegment(phase, count))
+            phase = week.phase
+            count = 1
+        }
+    }
+    out.add(PhaseSegment(phase, count))
+    return out
+}
+
+private fun phaseShortLabel(phase: String): String = when (phase.lowercase()) {
+    "base" -> "BASE"
+    "build" -> "BUILD"
+    "specifico", "peak", "specific" -> "SPEC"
+    "taper" -> "TAPER"
+    "race", "gara" -> "🏁"
+    else -> phase.take(4).uppercase()
+}
+
+private val PhaseRaceColor = Color(0xFFF43F5E)
+
+private fun phaseAccentColor(phase: String): Color =
+    if (phase.lowercase() in setOf("race", "gara")) PhaseRaceColor else BrandGreen
+
+/**
+ * Macrocycle timeline (handoff 1c): consecutive plan weeks grouped by phase,
+ * each segment's width proportional to its week count, with the phase
+ * containing the current week highlighted — mirrors Garmin's periodization
+ * bar. Built directly from [TrainingPlan.weeks]/[PlanWeek.phase], no
+ * dependency on the separate (and unused) PeriodizationPlan/PhaseCard.
+ */
+@Composable
+private fun PeriodizationTimeline(plan: TrainingPlan) {
+    val segments = remember(plan.weeks) { groupPhaseSegments(plan.weeks) }
+    if (segments.size < 2) return
+    var weekCursor = 0
+    SurfaceCard {
+        Text(
+            "Periodizzazione — ${plan.weeksRemaining} sett. alla gara",
+            style = MaterialTheme.typography.titleSmall,
+            fontWeight = FontWeight.Bold,
+        )
+        Spacer(Modifier.height(14.dp))
+        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+            segments.forEach { seg ->
+                val startWeek = weekCursor + 1
+                val endWeek = weekCursor + seg.weeks
+                weekCursor = endWeek
+                val current = plan.currentWeekNumber in startWeek..endWeek
+                val accent = phaseAccentColor(seg.phase)
+                Column(
+                    Modifier.weight(seg.weeks.coerceAtLeast(1).toFloat()),
+                    horizontalAlignment = Alignment.CenterHorizontally,
+                ) {
+                    Box(
+                        Modifier
+                            .fillMaxWidth()
+                            .height(30.dp)
+                            .clip(RoundedCornerShape(8.dp))
+                            .background(if (current) accent else MaterialTheme.colorScheme.surfaceVariant),
+                        contentAlignment = Alignment.Center,
+                    ) {
+                        Text(
+                            phaseShortLabel(seg.phase),
+                            style = MaterialTheme.typography.labelSmall,
+                            fontWeight = FontWeight.Black,
+                            color = if (current) {
+                                Color(0xFF00210F)
+                            } else {
+                                MaterialTheme.colorScheme.onSurfaceVariant
+                            },
+                        )
+                    }
+                    Spacer(Modifier.height(3.dp))
+                    Text(
+                        if (current) "${seg.weeks}w · ora" else "${seg.weeks}w",
+                        style = MaterialTheme.typography.labelSmall,
+                        fontWeight = if (current) FontWeight.Bold else FontWeight.Normal,
+                        color = if (current) accent else MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                }
+            }
+        }
+        val currentWeek = plan.currentWeek
+        if (currentWeek != null) {
+            Spacer(Modifier.height(14.dp))
+            Text(
+                buildAnnotatedString {
+                    append("Fase attuale: ")
+                    withStyle(SpanStyle(fontWeight = FontWeight.Bold)) {
+                        append(phaseLabel(currentWeek.phase).uppercase())
+                    }
+                    currentWeek.description?.takeIf { it.isNotBlank() }?.let { append(" — $it") }
+                },
+                style = MaterialTheme.typography.bodyMedium,
+            )
+            Spacer(Modifier.height(3.dp))
+            Text(
+                "Volume target ~${currentWeek.targetKm.toInt()} km/sett.",
+                style = MaterialTheme.typography.labelMedium,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+        }
     }
 }
 

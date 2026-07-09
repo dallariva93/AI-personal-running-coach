@@ -428,7 +428,13 @@ private fun PlanDayCell(
             .clickable(enabled = inPlan, onClick = onClick),
         contentAlignment = Alignment.Center,
     ) {
-        Column(horizontalAlignment = Alignment.CenterHorizontally) {
+        // Redesign (handoff 1i): a bottom accent bar spanning most of the cell
+        // width, the way the mockup marks a day's session type — reads clearer
+        // at a glance across a whole month than a small centered dot.
+        Column(
+            Modifier.fillMaxSize().padding(vertical = 4.dp),
+            horizontalAlignment = Alignment.CenterHorizontally,
+        ) {
             Text(
                 "$day",
                 style = MaterialTheme.typography.bodySmall.copy(fontSize = 13.sp),
@@ -439,12 +445,13 @@ private fun PlanDayCell(
                     else -> MaterialTheme.colorScheme.onSurface
                 },
             )
+            Spacer(Modifier.weight(1f))
             if (dotColor != null) {
-                Spacer(Modifier.height(2.dp))
                 Box(
                     Modifier
-                        .size(if (session?.completed == true) 5.dp else 7.dp)
-                        .clip(CircleShape)
+                        .fillMaxWidth(0.6f)
+                        .height(4.dp)
+                        .clip(RoundedCornerShape(2.dp))
                         .background(dotColor.copy(alpha = if (session?.completed == true) 0.45f else 1f)),
                 )
             }
