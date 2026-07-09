@@ -1,6 +1,7 @@
 package com.runningcoach.app.ui.screens
 
 import androidx.compose.foundation.background
+import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -17,6 +18,7 @@ import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.rememberLazyListState
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.foundation.text.KeyboardOptions
@@ -44,8 +46,14 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.Brush
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.unit.dp
+import com.runningcoach.app.ui.theme.BrandGreen
+import com.runningcoach.app.ui.theme.BrandGreenBright
 import com.runningcoach.app.ui.viewmodel.ChatDisplayMessage
 import com.runningcoach.app.ui.viewmodel.ChatUiState
 
@@ -70,14 +78,45 @@ fun ChatScreen(
             windowInsets = WindowInsets(0, 0, 0, 0),
             title = {
                 Row(verticalAlignment = Alignment.CenterVertically) {
-                    Icon(
-                        Icons.Filled.AutoAwesome,
-                        contentDescription = null,
-                        tint = MaterialTheme.colorScheme.primary,
-                        modifier = Modifier.size(20.dp),
-                    )
-                    Spacer(Modifier.width(8.dp))
-                    Text(state.sessionTitle)
+                    // Redesign (handoff 1d): a gradient avatar box instead of a
+                    // bare icon — the coach's recognisable "face" in the chat.
+                    Box(
+                        modifier = Modifier
+                            .size(36.dp)
+                            .clip(RoundedCornerShape(11.dp))
+                            .background(Brush.linearGradient(listOf(BrandGreen, BrandGreenBright))),
+                        contentAlignment = Alignment.Center,
+                    ) {
+                        Icon(
+                            Icons.Filled.AutoAwesome,
+                            contentDescription = null,
+                            tint = Color(0xFF00210F),
+                            modifier = Modifier.size(18.dp),
+                        )
+                    }
+                    Spacer(Modifier.width(10.dp))
+                    Column {
+                        Text(state.sessionTitle, fontWeight = FontWeight.Bold)
+                        // The status line only claims what's actually true in
+                        // general mode: episodic memory (coach_memory) is only
+                        // extracted/consulted there, not during plan negotiation.
+                        if (state.mode == "general") {
+                            Row(verticalAlignment = Alignment.CenterVertically) {
+                                Box(
+                                    Modifier
+                                        .size(6.dp)
+                                        .clip(RoundedCornerShape(50))
+                                        .background(BrandGreen),
+                                )
+                                Spacer(Modifier.width(5.dp))
+                                Text(
+                                    "online · ricorda la tua storia",
+                                    style = MaterialTheme.typography.labelSmall,
+                                    color = BrandGreen,
+                                )
+                            }
+                        }
+                    }
                 }
             },
             actions = {
@@ -152,6 +191,13 @@ fun ChatScreen(
             ) { Text("Genera il piano") }
         }
 
+        // Conversation starters (handoff 1d): only before the first message —
+        // once a dialogue is under way, static example prompts stop being
+        // relevant to what's actually being discussed.
+        if (state.mode == "general" && state.messages.isEmpty() && !state.loading) {
+            SuggestionRow(onSend)
+        }
+
         ChatInput(
             enabled = !state.loading,
             onSend = onSend,
@@ -172,6 +218,33 @@ private fun PlanModeBanner() {
             color = MaterialTheme.colorScheme.onPrimaryContainer,
             modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp),
         )
+    }
+}
+
+private val CHAT_STARTERS = listOf(
+    "Come vado per la maratona?",
+    "Spiega il mio TSB",
+)
+
+/** A row of static conversation-starter chips (handoff 1d), tap to send as-is. */
+@Composable
+private fun SuggestionRow(onSend: (String) -> Unit) {
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .horizontalScroll(rememberScrollState())
+            .padding(horizontal = 16.dp, vertical = 6.dp),
+        horizontalArrangement = Arrangement.spacedBy(8.dp),
+    ) {
+        CHAT_STARTERS.forEach { prompt ->
+            SuggestionChip(
+                onClick = { onSend(prompt) },
+                label = { Text(prompt, style = MaterialTheme.typography.labelMedium) },
+                colors = SuggestionChipDefaults.suggestionChipColors(
+                    containerColor = MaterialTheme.colorScheme.surface,
+                ),
+            )
+        }
     }
 }
 

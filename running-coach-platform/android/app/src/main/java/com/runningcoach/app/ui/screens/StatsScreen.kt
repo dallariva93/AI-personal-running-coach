@@ -1,5 +1,6 @@
 package com.runningcoach.app.ui.screens
 
+import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -114,8 +115,11 @@ fun StatsScreen(
 @Composable
 private fun StatsGrid(stats: PeriodStats) {
     val items = buildList {
-        add("Corse" to "${stats.totalRuns}")
+        // Km totali leads (handoff 1e): the one hero stat, highlighted in
+        // brand green, with the rest in a neutral tone for visual hierarchy —
+        // matches the mockup instead of every tile shouting the same color.
         add("Km totali" to "${stats.totalKm} km")
+        add("Corse" to "${stats.totalRuns}")
         add("Ore in corsa" to "${stats.totalDurationH} h")
         add("Dislivello tot." to "${stats.totalElevationM} m")
         if (stats.avgPace != null) add("Passo medio" to stats.avgPace)
@@ -124,10 +128,15 @@ private fun StatsGrid(stats: PeriodStats) {
     }
 
     Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
-        items.chunked(2).forEach { row ->
+        items.chunked(2).forEachIndexed { rowIndex, row ->
             Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-                row.forEach { (label, value) ->
-                    StatCard(label, value, Modifier.weight(1f))
+                row.forEachIndexed { colIndex, (label, value) ->
+                    StatCard(
+                        label,
+                        value,
+                        Modifier.weight(1f),
+                        highlight = rowIndex == 0 && colIndex == 0,
+                    )
                 }
                 if (row.size == 1) Spacer(Modifier.weight(1f))
             }
@@ -186,21 +195,21 @@ private fun Vo2maxCard(history: Vo2maxHistory) {
 }
 
 @Composable
-private fun StatCard(label: String, value: String, modifier: Modifier = Modifier) {
+private fun StatCard(label: String, value: String, modifier: Modifier = Modifier, highlight: Boolean = false) {
     Surface(
         modifier = modifier,
-        shape = RoundedCornerShape(12.dp),
-        color = MaterialTheme.colorScheme.surfaceVariant,
-        tonalElevation = 2.dp,
+        shape = RoundedCornerShape(18.dp),
+        color = MaterialTheme.colorScheme.surface,
+        border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant),
     ) {
-        Column(Modifier.padding(14.dp)) {
+        Column(Modifier.padding(16.dp)) {
             Text(
                 value,
-                style = MaterialTheme.typography.titleMedium,
+                style = MaterialTheme.typography.headlineSmall,
                 fontWeight = FontWeight.Bold,
-                color = BrandGreen,
+                color = if (highlight) BrandGreen else MaterialTheme.colorScheme.onSurface,
             )
-            Spacer(Modifier.height(2.dp))
+            Spacer(Modifier.height(3.dp))
             Text(
                 label,
                 style = MaterialTheme.typography.labelSmall,

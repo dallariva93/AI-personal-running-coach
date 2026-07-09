@@ -81,12 +81,26 @@ hex, spaziature, copy) per limitare il rischio di scostamento.
     rimandato), `SessionRow` (checkbox interattiva reale, più ricca del
     markup statico — non c'è motivo di impoverirla per somiglianza visiva).
 
-- **M4 — Coach AI (1d) + Statistiche (1e)**
-  - File: `ChatScreen.kt`, `StatsScreen.kt`.
-  - Dal markup: bolle con radius asimmetrico (18/18/18/6 coach,
-    18/18/6/18 utente), quick-reply button dentro la bolla coach, suggestion
-    chips scrollabili.
-  - Stats: grid 2×2 big stat, record personali tile tint rosso.
+- **M4 — Coach AI (1d) + Statistiche (1e)** ✅ FATTO — 2026-07-09
+  - Chat: header con avatar a gradiente (36dp, sparkle scuro su verde) al
+    posto della sola icona, riga di stato "online · ricorda la tua storia"
+    (mostrata solo in modalità `general`: la memoria episodica —
+    `coach_memory` — è estratta/consultata solo lì, non in
+    `plan_negotiation`, quindi l'affermazione resta sempre vera). Nuova riga
+    di suggestion chip ("Come vado per la maratona?", "Spiega il mio TSB")
+    mostrata solo prima del primo messaggio in modalità `general`.
+  - Statistiche: gerarchia visiva nella grid — solo "Km totali" evidenziato
+    in verde brand, gli altri in tono neutro (prima tutte le tile verdi,
+    nessuna gerarchia); tile allineate allo stile bordo standard dell'app
+    (`outlineVariant` + radius 18dp) al posto del `Surface` a tonalElevation
+    isolato.
+  - Non implementato (richiede endpoint/dati non presenti): bolle con
+    quick-reply button contestuali (servirebbe uno schema strutturato per
+    le risposte rapide, oggi `ChatDisplayMessage` ha solo role/content/tier);
+    grafico "distanza per mese" e grid record personali su Statistiche
+    (`PeriodStats`/`StatsUiState` non hanno breakdown mensile né PR — lavoro
+    backend). Bolle radius 16/4dp vs 18/6dp del mockup: differenza
+    trascurabile, non toccato.
 
 - **M5 — Check-in giornaliero (1f, NUOVA schermata) + Live run (1g)**
   - 1f non esiste ancora come schermo dedicato (readiness/check-in — verificare
