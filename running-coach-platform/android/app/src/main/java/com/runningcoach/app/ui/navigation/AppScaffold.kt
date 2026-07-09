@@ -50,6 +50,7 @@ import com.runningcoach.app.data.model.AthleteProfile
 import com.runningcoach.app.ui.screens.ActivitiesScreen
 import com.runningcoach.app.ui.screens.ActivityDetailScreen
 import com.runningcoach.app.ui.screens.CalendarScreen
+import com.runningcoach.app.ui.screens.CheckinScreen
 import com.runningcoach.app.ui.screens.ChatScreen
 import com.runningcoach.app.ui.screens.CoachLogScreen
 import com.runningcoach.app.ui.screens.CrossTrainingScreen
@@ -101,6 +102,7 @@ fun AppScaffold(
     val planVm: PlanViewModel = viewModel(factory = factory)
     val workoutVm: WorkoutViewModel = viewModel(factory = factory)
     val chatVm: ChatViewModel = viewModel(factory = factory)
+    val checkinVm: com.runningcoach.app.ui.viewmodel.CheckinViewModel = viewModel(factory = factory)
 
     val state by overviewVm.state.collectAsState()
     val syncStatus by overviewVm.syncStatus.collectAsState()
@@ -268,12 +270,27 @@ fun AppScaffold(
                         onStartLiveRun = {
                             navController.navigate("live-run") { launchSingleTop = true }
                         },
+                        onOpenCheckin = {
+                            navController.navigate("checkin") { launchSingleTop = true }
+                        },
                     )
                 }
                 composable("live-run") {
                     LiveRunScreen(
                         todaySessionTitle = state.overview?.todayDecision?.headline,
                         onBack = { navController.popBackStack() },
+                    )
+                }
+                composable("checkin") {
+                    val checkinState by checkinVm.state.collectAsState()
+                    CheckinScreen(
+                        state = checkinState,
+                        onBack = { navController.popBackStack() },
+                        onSleepChange = checkinVm::setSleepH,
+                        onFatigueChange = checkinVm::setFatigue,
+                        onSorenessChange = checkinVm::setSoreness,
+                        onMotivationChange = checkinVm::setMotivation,
+                        onSubmit = checkinVm::submit,
                     )
                 }
                 composable("coachlog") {

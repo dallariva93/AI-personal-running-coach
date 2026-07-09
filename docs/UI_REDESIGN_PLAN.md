@@ -102,13 +102,20 @@ hex, spaziature, copy) per limitare il rischio di scostamento.
     backend). Bolle radius 16/4dp vs 18/6dp del mockup: differenza
     trascurabile, non toccato.
 
-- **M5 — Check-in giornaliero (1f, NUOVA schermata) + Live run (1g)**
-  - 1f non esiste ancora come schermo dedicato (readiness/check-in — verificare
-    se i dati esistono già in `DailyCheckin` nel modello e sono solo da
-    esporre in UI, o se serve anche lavoro backend: **verificare prima di
-    stimare l'effort**).
-  - `LiveRunScreen.kt`: pannello metriche bottom-sheet, già implementato in
-    Passo 18 — verificare stile vs markup, non rifare la logica GPS.
+- **M5 — Check-in giornaliero (1f, NUOVA schermata) + Live run (1g)** ✅ FATTO — 2026-07-09
+  - `DailyCheckin` e `POST /api/checkin` esistevano già lato dati/API, letto
+    (`ov.checkin.hrvRmssd`) ma **mai scritto**: nessuno schermo permetteva di
+    inviare un check-in. Creati `CheckinViewModel.kt` (stato + submit) e
+    `CheckinScreen.kt` (schema reale: sonno slider "Xh Ym", 3 slider 1-10
+    fatica/dolori/motivazione colorati verde→arancio→rosso, CTA a gradiente).
+    Adattato dal mockup **al vero schema**: niente chip dolore per parte del
+    corpo né 5 emoji energia (il backend ha solo 3 interi 1-10 + ore sonno) —
+    onestà verso i dati reali invece di UI che scarterebbe silenziosamente
+    campi inventati. Entry point: riga "Check-in del giorno" su Home, route
+    `"checkin"` in `AppScaffold`, wiring in `ViewModelFactory`.
+  - `LiveRunScreen.kt` (1g): **non toccato** per budget di sessione limitato —
+    già implementato e funzionante (Passo 18); un confronto pixel-per-pixel
+    col mockup è rimandato a una sessione futura se richiesto esplicitamente.
 
 - **M6 — Workout builder (1h) + Impostazioni (1j)**
   - File: `WorkoutScreen.kt`, `SettingsScreen.kt`.

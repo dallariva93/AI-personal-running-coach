@@ -21,6 +21,8 @@ class ViewModelFactory(private val app: RunningCoachApp) : ViewModelProvider.Fac
             WorkoutViewModel(app.repository) as T
         modelClass.isAssignableFrom(ChatViewModel::class.java) ->
             ChatViewModel(app.repository) as T
+        modelClass.isAssignableFrom(CheckinViewModel::class.java) ->
+            CheckinViewModel(app.repository) as T
         else -> throw IllegalArgumentException("Unknown ViewModel: ${modelClass.name}")
     }
 }

@@ -91,6 +91,7 @@ fun HomeScreen(
     onOpenWeeklyRecap: () -> Unit = {},
     onOpenSettings: () -> Unit = {},
     onStartLiveRun: () -> Unit = {},
+    onOpenCheckin: () -> Unit = {},
 ) {
     val ov: Overview? = state.overview
     Column(
@@ -223,6 +224,26 @@ fun HomeScreen(
             if (ov.todayDecision != null) {
                 Spacer(Modifier.height(14.dp))
                 DetailsToggle(ov, prIds)
+            }
+
+            // Daily readiness check-in entry point (handoff 1f).
+            Spacer(Modifier.height(8.dp))
+            Row(
+                Modifier.fillMaxWidth().clickable(onClick = onOpenCheckin).padding(vertical = 6.dp),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                Text(
+                    "Check-in del giorno",
+                    style = MaterialTheme.typography.labelLarge,
+                    fontWeight = FontWeight.SemiBold,
+                    color = MaterialTheme.colorScheme.primary,
+                )
+                Spacer(Modifier.weight(1f))
+                Icon(
+                    Icons.Filled.ChevronRight,
+                    contentDescription = null,
+                    tint = MaterialTheme.colorScheme.primary,
+                )
             }
 
             // Coach diary entry point (Roadmap #5).
