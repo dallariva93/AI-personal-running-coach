@@ -1,6 +1,7 @@
 package com.runningcoach.app.ui.components
 
 import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
@@ -28,6 +29,9 @@ import androidx.compose.material.icons.filled.Sick
 import androidx.compose.material.icons.filled.TrendingDown
 import androidx.compose.material.icons.filled.Tune
 import androidx.compose.material.icons.filled.WarningAmber
+import androidx.compose.material3.ButtonDefaults
+import androidx.compose.material3.Card
+import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
@@ -40,7 +44,9 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.lerp
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontStyle
@@ -83,7 +89,28 @@ fun TodayWorkoutCard(
     val style = styleFor(decision.decision)
     var expanded by remember { mutableStateOf(false) }
 
-    SurfaceCard(modifier) {
+    // Redesign (handoff 1a): a raw Card (not SurfaceCard) so a full-bleed
+    // accent bar can sit flush with the top rounded corners, above the padded
+    // content — the "cosa fare oggi" card is the dominant element on Home and
+    // the accent bar is its most recognisable visual cue.
+    Card(
+        modifier = modifier.fillMaxWidth(),
+        shape = RoundedCornerShape(22.dp),
+        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
+        elevation = CardDefaults.cardElevation(defaultElevation = 0.dp),
+        border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant),
+    ) {
+        Box(
+            Modifier
+                .fillMaxWidth()
+                .height(4.dp)
+                .background(
+                    Brush.horizontalGradient(
+                        listOf(style.color, lerp(style.color, Color.White, 0.35f)),
+                    ),
+                ),
+        )
+        Column(Modifier.padding(18.dp)) {
         Row(verticalAlignment = Alignment.CenterVertically) {
             Box(
                 Modifier
@@ -154,11 +181,18 @@ fun TodayWorkoutCard(
         }
 
         // ── Actions: make the card a coaching interface, not just content ──
+        // Redesign (handoff 1a): "Fatto" is emphasized (primary border + tint
+        // + primary content) so the positive path pops; the other three stay
+        // neutral/muted — the same "one clear affordance, three quiet options"
+        // pattern as the mockup.
         if (actionsEnabled) {
             Spacer(Modifier.height(14.dp))
             val pad = PaddingValues(horizontal = 8.dp, vertical = 6.dp)
             Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                ActionButton(stringResource(R.string.action_done), Icons.Filled.CheckCircle, Modifier.weight(1f), pad) {
+                ActionButton(
+                    stringResource(R.string.action_done), Icons.Filled.CheckCircle, Modifier.weight(1f), pad,
+                    emphasized = true,
+                ) {
                     onAction("done", null)
                 }
                 ActionButton(stringResource(R.string.action_reduce), Icons.Filled.TrendingDown, Modifier.weight(1f), pad) {
@@ -207,6 +241,7 @@ fun TodayWorkoutCard(
                 DetailList(stringResource(R.string.detail_missing_data), decision.missingData)
             }
         }
+        }
     }
 }
 
@@ -216,9 +251,27 @@ private fun ActionButton(
     icon: ImageVector,
     modifier: Modifier,
     pad: PaddingValues,
+    emphasized: Boolean = false,
     onClick: () -> Unit,
 ) {
-    OutlinedButton(onClick = onClick, modifier = modifier, contentPadding = pad) {
+    val contentColor = if (emphasized) {
+        MaterialTheme.colorScheme.primary
+    } else {
+        MaterialTheme.colorScheme.onSurfaceVariant
+    }
+    OutlinedButton(
+        onClick = onClick,
+        modifier = modifier,
+        contentPadding = pad,
+        colors = ButtonDefaults.outlinedButtonColors(
+            containerColor = if (emphasized) contentColor.copy(alpha = 0.1f) else Color.Transparent,
+            contentColor = contentColor,
+        ),
+        border = BorderStroke(
+            1.dp,
+            if (emphasized) contentColor else MaterialTheme.colorScheme.outline,
+        ),
+    ) {
         Icon(icon, contentDescription = null, modifier = Modifier.size(16.dp))
         Spacer(Modifier.width(6.dp))
         Text(label, style = MaterialTheme.typography.labelMedium, maxLines = 1, softWrap = false)

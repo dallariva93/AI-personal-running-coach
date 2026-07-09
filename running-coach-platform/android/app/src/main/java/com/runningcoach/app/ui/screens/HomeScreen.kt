@@ -24,7 +24,6 @@ import androidx.compose.material.icons.filled.ExpandMore
 import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material.icons.filled.Sync
 import androidx.compose.material.icons.outlined.Circle
-import androidx.compose.material3.Button
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
@@ -37,10 +36,14 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.Brush
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.res.pluralStringResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
 import com.runningcoach.app.R
 import com.runningcoach.app.data.model.Overview
 import com.runningcoach.app.data.settings.SyncStatus
@@ -56,11 +59,26 @@ import com.runningcoach.app.ui.components.StreakCard
 import com.runningcoach.app.ui.components.TodayWorkoutCard
 import com.runningcoach.app.ui.components.WeeklyChart
 import com.runningcoach.app.ui.theme.BrandGreen
+import com.runningcoach.app.ui.theme.BrandGreenBright
 import com.runningcoach.app.ui.theme.Coral
 import com.runningcoach.app.ui.viewmodel.OverviewUiState
 import java.time.Instant
+import java.time.LocalDate
 import java.time.ZoneId
 import java.time.format.DateTimeFormatter
+import java.util.Locale
+
+// Fixed dark text on the BrandGreen→BrandGreenBright gradient CTA — matches
+// DarkColors.onPrimary exactly, kept constant across themes (same convention
+// as the white text GradientCard uses on its own fixed gradient).
+private val OnBrandGreenGradient = Color(0xFF00210F)
+
+/** Uppercase "date · settimana N" eyebrow shown above the "Oggi" title. */
+private fun homeEyebrow(activeWeekNumber: Int?): String {
+    val date = LocalDate.now().format(DateTimeFormatter.ofPattern("EEE d MMM", Locale.ITALIAN))
+    val text = if (activeWeekNumber != null) "$date · settimana $activeWeekNumber" else date
+    return text.uppercase()
+}
 
 @Composable
 fun HomeScreen(
@@ -83,11 +101,20 @@ fun HomeScreen(
             .padding(horizontal = 16.dp, vertical = 12.dp),
     ) {
         Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
-            ScreenTitle(
-                stringResource(R.string.home_title),
-                stringResource(R.string.home_subtitle),
-                Modifier.weight(1f),
-            )
+            Column(Modifier.weight(1f)) {
+                // Redesign (handoff 1a): a mono-style uppercase eyebrow — today's
+                // date, plus the active plan's week when one is running — reads
+                // as scene-setting context above the big "Oggi" title.
+                Text(
+                    homeEyebrow(ov?.activePlan?.currentWeekNumber),
+                    style = MaterialTheme.typography.labelMedium,
+                    color = MaterialTheme.colorScheme.primary,
+                    fontWeight = FontWeight.Bold,
+                    letterSpacing = 1.5.sp,
+                )
+                Spacer(Modifier.height(2.dp))
+                ScreenTitle(stringResource(R.string.home_title), stringResource(R.string.home_subtitle))
+            }
             ov?.let {
                 Column(horizontalAlignment = Alignment.End) {
                     Pill(it.mode.uppercase(), BrandGreen)
@@ -128,10 +155,26 @@ fun HomeScreen(
         }
 
         // ── "Corri adesso col telefono" (G1): the no-hardware first path ────
-        Button(onClick = onStartLiveRun, modifier = Modifier.fillMaxWidth()) {
-            Icon(Icons.Filled.DirectionsRun, contentDescription = null)
+        // Redesign (handoff 1a): the brand two-tone gradient CTA, always dark
+        // text on the vivid green regardless of theme (same convention as
+        // GradientCard's fixed white-on-gradient text).
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .height(52.dp)
+                .clip(RoundedCornerShape(16.dp))
+                .background(Brush.horizontalGradient(listOf(BrandGreen, BrandGreenBright)))
+                .clickable(onClick = onStartLiveRun),
+            horizontalArrangement = Arrangement.Center,
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            Icon(Icons.Filled.DirectionsRun, contentDescription = null, tint = OnBrandGreenGradient)
             Spacer(Modifier.width(8.dp))
-            Text("Corri adesso col telefono")
+            Text(
+                "Corri adesso col telefono",
+                color = OnBrandGreenGradient,
+                fontWeight = FontWeight.Bold,
+            )
         }
         Spacer(Modifier.height(14.dp))
 
