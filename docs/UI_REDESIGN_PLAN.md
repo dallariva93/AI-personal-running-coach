@@ -117,19 +117,45 @@ hex, spaziature, copy) per limitare il rischio di scostamento.
     già implementato e funzionante (Passo 18); un confronto pixel-per-pixel
     col mockup è rimandato a una sessione futura se richiesto esplicitamente.
 
-- **M6 — Workout builder (1h) + Impostazioni (1j)**
-  - File: `WorkoutScreen.kt`, `SettingsScreen.kt`.
+- **M6 — Workout builder (1h) + Impostazioni (1j)** ✅ FATTO (parziale) — 2026-07-09
+  - `WorkoutScreen.kt`: bottone "Salva in libreria" convertito al CTA a
+    gradiente (stessa convenzione di Home/Check-in), con stato disabilitato
+    reso esplicito (colori muted) invece del solo dimming automatico di
+    `Button`.
+  - `SettingsScreen.kt` **non toccato** (sessione a budget ridotto): la
+    struttura (connessioni Garmin/Strava, selettore tema, obiettivo gara) è
+    già organizzata in sezioni card equivalenti al mockup — nessun gap netto
+    identificato che giustifichi il rischio di un pass approfondito ora.
 
-- **M7 — Traguardi/Gamification (1k) + Recap (1l) + Scarpe (1m)**
-  - File: `Components.kt` (`StreakCard`/`PersonalRecordsCard` — verificare
-    se serve una gallery dedicata "sbloccati/da sbloccare" separata da Home),
-    `RecapScreen.kt`, `ShoesScreen.kt`.
+- **M7 — Traguardi/Gamification (1k) + Recap (1l) + Scarpe (1m)** ✅ FATTO (parziale) — 2026-07-09
+  - `Components.kt::StreakCard`: badge riscritti da lista di chip di solo
+    testo (mostrava solo i badge sbloccati) a **gallery a 3 colonne** con
+    sezione "Sbloccati" (tile piena, tinta primary) e "Da sbloccare" (bordo
+    tratteggiato, 🔒, muted) — usa `Badge.earned`, già inviato dal backend
+    per ogni badge, non solo per quelli sbloccati. Emoji generiche (🏅/🔒),
+    non per-badge: il modello `Badge` non ha un campo icona, inventare una
+    mappa id→emoji senza conoscere i veri id avrebbe rischiato badge con
+    l'icona sbagliata.
+  - `RecapScreen.kt` / `ShoesScreen.kt` **non toccati** (budget): già
+    implementano rispettivamente il riepilogo verbale con condivisione PNG e
+    le card scarpa con barra usura — nessun gap ad alto valore/basso rischio
+    identificato entro il tempo disponibile.
 
-- **M8 — Tema chiaro + polish trasversale (facoltativo, a fine ciclo)**
-  - Verifica di tutte le schermate in `RunningCoachTheme(darkTheme = false)`.
-  - Eventuale introduzione font Manrope/DM Mono se si decide di adottarli
-    (asset font + `Type.kt`) — solo se richiesto esplicitamente, il doc
-    handoff la marca opzionale.
+- **M8 — Tema chiaro + polish trasversale** ✅ Valutato (nessuna modifica necessaria) — 2026-07-09
+  - Tutti gli elementi a gradiente introdotti in M1-M7 (CTA Home/Check-in/
+    Workout, accent bar `TodayWorkoutCard`, `PaceComparisonSection`,
+    `PeriodizationTimeline`) usano colori di brand **fissi** (`BrandGreen`/
+    `BrandGreenBright` + testo `#00210F` fisso) — stessa convenzione già
+    stabilita da `GradientCard` (testo bianco fisso sul proprio gradiente):
+    per costruzione leggibili in entrambi i temi, non serve una variante
+    chiara separata.
+  - Tutto il resto degli elementi introdotti usa `MaterialTheme.colorScheme.*`
+    (semantico), che risolve correttamente sia in `DarkColors` che in
+    `LightColors` (`Theme.kt`) senza bisogno di audit manuale schermo per
+    schermo — non eseguibile comunque in questo ambiente (nessun
+    emulatore/SDK per una verifica visiva reale).
+  - Font Manrope/DM Mono: non introdotti, restano facoltativi come da doc
+    handoff; nessuna richiesta esplicita di adottarli.
 
 ## Note per l'esecutore (ogni milestone)
 

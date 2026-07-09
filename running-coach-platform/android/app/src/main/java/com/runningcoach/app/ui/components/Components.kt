@@ -1,6 +1,8 @@
 package com.runningcoach.app.ui.components
 
+import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -18,11 +20,14 @@ import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import com.runningcoach.app.data.model.Activity
+import com.runningcoach.app.data.model.Badge
 import com.runningcoach.app.data.model.PeriodizationPlan
 import com.runningcoach.app.data.model.RacePrediction
 import com.runningcoach.app.data.model.Report
@@ -435,42 +440,82 @@ fun StreakCard(gamification: GamificationData, modifier: Modifier = Modifier) {
                 )
             }
         }
-        // Earned badges row.
+        // Redesign (handoff 1k): a 3-column badge gallery — earned tiles in
+        // brand tint, locked ones dashed/muted — instead of a plain text-chip
+        // list that only ever showed the earned half. Uses badge.earned,
+        // already sent by the backend for every badge (not just earned ones).
         val earned = gamification.badges.filter { it.earned }
+        val locked = gamification.badges.filter { !it.earned }
         if (earned.isNotEmpty()) {
             Spacer(Modifier.height(12.dp))
             ThinDivider()
             Spacer(Modifier.height(10.dp))
             Text(
-                "Badge sbloccati",
+                "Sbloccati",
                 style = MaterialTheme.typography.labelMedium,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
-            Spacer(Modifier.height(6.dp))
-            earned.chunked(2).forEach { pair ->
-                Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                    pair.forEach { badge ->
-                        Box(
-                            Modifier
-                                .weight(1f)
-                                .clip(RoundedCornerShape(8.dp))
-                                .background(MaterialTheme.colorScheme.primary.copy(alpha = 0.12f))
-                                .padding(horizontal = 10.dp, vertical = 6.dp),
-                        ) {
-                            Text(
-                                badge.label,
-                                style = MaterialTheme.typography.labelSmall,
-                                fontWeight = FontWeight.SemiBold,
-                                color = MaterialTheme.colorScheme.primary,
-                            )
-                        }
-                    }
-                    // Fill last row if odd count.
-                    if (pair.size == 1) Spacer(Modifier.weight(1f))
-                }
-                Spacer(Modifier.height(6.dp))
-            }
+            Spacer(Modifier.height(8.dp))
+            BadgeGallery(earned, locked = false)
         }
+        if (locked.isNotEmpty()) {
+            Spacer(Modifier.height(14.dp))
+            Text(
+                "Da sbloccare",
+                style = MaterialTheme.typography.labelMedium,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+            Spacer(Modifier.height(8.dp))
+            BadgeGallery(locked, locked = true)
+        }
+    }
+}
+
+/** A 3-column badge grid; [locked] tiles are dashed-outline and muted. */
+@Composable
+private fun BadgeGallery(badges: List<Badge>, locked: Boolean) {
+    badges.chunked(3).forEach { row ->
+        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+            row.forEach { badge ->
+                Column(
+                    modifier = Modifier
+                        .weight(1f)
+                        .clip(RoundedCornerShape(14.dp))
+                        .then(
+                            if (locked) {
+                                Modifier.border(
+                                    BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant),
+                                    RoundedCornerShape(14.dp),
+                                )
+                            } else {
+                                Modifier.background(MaterialTheme.colorScheme.surfaceVariant)
+                            },
+                        )
+                        .padding(vertical = 12.dp, horizontal = 6.dp),
+                    horizontalAlignment = Alignment.CenterHorizontally,
+                ) {
+                    Text(
+                        if (locked) "🔒" else "🏅",
+                        style = MaterialTheme.typography.headlineSmall,
+                        modifier = if (locked) Modifier.alpha(0.4f) else Modifier,
+                    )
+                    Spacer(Modifier.height(6.dp))
+                    Text(
+                        badge.label,
+                        style = MaterialTheme.typography.labelSmall,
+                        fontWeight = FontWeight.SemiBold,
+                        color = if (locked) {
+                            MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.6f)
+                        } else {
+                            MaterialTheme.colorScheme.onSurface
+                        },
+                        textAlign = TextAlign.Center,
+                    )
+                }
+            }
+            repeat(3 - row.size) { Spacer(Modifier.weight(1f)) }
+        }
+        Spacer(Modifier.height(10.dp))
     }
 }
 

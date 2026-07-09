@@ -66,6 +66,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.text.font.FontWeight
@@ -76,6 +77,7 @@ import com.runningcoach.app.data.model.WorkoutTemplate
 import com.runningcoach.app.ui.components.SurfaceCard
 import com.runningcoach.app.ui.components.ThinDivider
 import com.runningcoach.app.ui.theme.BrandGreen
+import com.runningcoach.app.ui.theme.BrandGreenBright
 import com.runningcoach.app.ui.theme.Coral
 import com.runningcoach.app.ui.theme.Zone1
 import com.runningcoach.app.ui.viewmodel.WorkoutUiState
@@ -345,14 +347,38 @@ private fun BuilderTab(
                 OutlinedButton(onClick = onClearBuilder, modifier = Modifier.weight(1f)) {
                     Text("Pulisci")
                 }
-                Button(
-                    onClick = onSave,
-                    modifier = Modifier.weight(2f),
-                    enabled = state.currentName.isNotBlank() && state.currentBuilder.isNotEmpty(),
+                // Redesign (handoff 1h): the brand gradient CTA, same convention
+                // as Home's "Corri adesso" and Check-in's submit button.
+                val saveEnabled = state.currentName.isNotBlank() && state.currentBuilder.isNotEmpty()
+                val saveContentColor = if (saveEnabled) {
+                    Color(0xFF00210F)
+                } else {
+                    MaterialTheme.colorScheme.onSurfaceVariant
+                }
+                Row(
+                    modifier = Modifier
+                        .weight(2f)
+                        .clip(RoundedCornerShape(12.dp))
+                        .background(
+                            if (saveEnabled) {
+                                Brush.horizontalGradient(listOf(BrandGreen, BrandGreenBright))
+                            } else {
+                                Brush.horizontalGradient(
+                                    listOf(
+                                        MaterialTheme.colorScheme.surfaceVariant,
+                                        MaterialTheme.colorScheme.surfaceVariant,
+                                    ),
+                                )
+                            },
+                        )
+                        .clickable(enabled = saveEnabled, onClick = onSave)
+                        .padding(vertical = 12.dp),
+                    horizontalArrangement = Arrangement.Center,
+                    verticalAlignment = Alignment.CenterVertically,
                 ) {
-                    Icon(Icons.Filled.Save, contentDescription = null)
+                    Icon(Icons.Filled.Save, contentDescription = null, tint = saveContentColor)
                     Spacer(Modifier.width(6.dp))
-                    Text("Salva in libreria")
+                    Text("Salva in libreria", color = saveContentColor, fontWeight = FontWeight.Bold)
                 }
             }
         }
