@@ -3,14 +3,18 @@ package com.runningcoach.app.ui.screens
 import android.content.Intent
 import android.net.Uri
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
@@ -43,6 +47,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.toArgb
 import androidx.compose.ui.platform.LocalContext
@@ -59,9 +64,10 @@ import com.runningcoach.app.ui.components.MetricAreaChart
 import com.runningcoach.app.ui.components.Pill
 import com.runningcoach.app.ui.components.RouteMap
 import com.runningcoach.app.ui.components.SectionTitle
-import com.runningcoach.app.ui.components.StackedBar
 import com.runningcoach.app.ui.components.StatItem
 import com.runningcoach.app.ui.components.SurfaceCard
+import com.runningcoach.app.ui.theme.ActivityHard
+import com.runningcoach.app.ui.theme.ActivityTempo
 import com.runningcoach.app.ui.theme.BrandGreen
 import com.runningcoach.app.ui.theme.BrandGreenDeep
 import com.runningcoach.app.ui.theme.Coral
@@ -167,6 +173,9 @@ fun ActivityDetailScreen(
             Spacer(Modifier.height(14.dp))
             TrainingEffectSection(activity)
         }
+
+        Spacer(Modifier.height(14.dp))
+        RpeSliderSection(activity.rpe, onSaveRpe)
 
         Spacer(Modifier.height(14.dp))
         EnvironmentSection(activity)
@@ -309,34 +318,64 @@ private fun HeartRateSection(a: Activity) {
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
         } else {
+            // Redesign (handoff 1b): one bar per zone, width proportional to its
+            // share of total time — matches Garmin's own zone breakdown instead
+            // of a single stacked bar plus a separate dot-list.
             val colors = listOf(Zone1, Zone2, Zone3, Zone4, Zone5)
             val minutes = (1..5).map { zones["z$it"] ?: 0.0 }
-            Spacer(Modifier.height(8.dp))
-            StackedBar(segments = minutes.mapIndexed { i, v -> v.toFloat() to colors[i] })
+            val total = minutes.sum().takeIf { it > 0.0 } ?: 1.0
             Spacer(Modifier.height(10.dp))
             minutes.forEachIndexed { i, v ->
-                if (v > 0.0) ZoneRow("Z${i + 1}", v, colors[i])
+                ZoneBarRow("Z${i + 1}", v, (v / total).toFloat(), colors[i])
+                if (i < minutes.lastIndex) Spacer(Modifier.height(8.dp))
             }
         }
     }
 }
 
+/** One HR-zone row: label, a track+fill bar sized to the zone's time share, time. */
 @Composable
-private fun ZoneRow(name: String, minutes: Double, color: Color) {
-    Row(
-        Modifier.fillMaxWidth().padding(vertical = 3.dp),
-        verticalAlignment = Alignment.CenterVertically,
-    ) {
-        Box(Modifier.size(10.dp).clip(RoundedCornerShape(50)).background(color))
-        Spacer(Modifier.size(8.dp))
-        Text(name, style = MaterialTheme.typography.labelMedium, fontWeight = FontWeight.SemiBold)
-        Spacer(Modifier.size(8.dp))
+private fun ZoneBarRow(name: String, minutes: Double, share: Float, color: Color) {
+    Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
         Text(
-            "${fmt(minutes)} min",
-            style = MaterialTheme.typography.bodySmall,
+            name,
+            modifier = Modifier.width(24.dp),
+            style = MaterialTheme.typography.labelSmall,
+            fontWeight = FontWeight.Bold,
+            color = color,
+        )
+        Box(
+            Modifier
+                .weight(1f)
+                .height(14.dp)
+                .clip(RoundedCornerShape(5.dp))
+                .background(MaterialTheme.colorScheme.background),
+        ) {
+            if (share > 0f) {
+                Box(
+                    Modifier
+                        .fillMaxWidth(share.coerceIn(0.03f, 1f))
+                        .height(14.dp)
+                        .clip(RoundedCornerShape(5.dp))
+                        .background(color),
+                )
+            }
+        }
+        Spacer(Modifier.width(8.dp))
+        Text(
+            minutesToClock(minutes),
+            modifier = Modifier.width(44.dp),
+            style = MaterialTheme.typography.labelSmall,
             color = MaterialTheme.colorScheme.onSurfaceVariant,
+            textAlign = TextAlign.End,
         )
     }
+}
+
+/** Decimal minutes ("4.6") as a Garmin-style "m:ss" clock string ("4:38"). */
+private fun minutesToClock(minutes: Double): String {
+    val totalSec = (minutes * 60.0).roundToInt().coerceAtLeast(0)
+    return "${totalSec / 60}:${(totalSec % 60).toString().padStart(2, '0')}"
 }
 
 @Composable
@@ -392,6 +431,84 @@ private fun TrainingEffectBar(label: String, value: Double, caption: String?) {
     caption?.let {
         Spacer(Modifier.height(4.dp))
         Text(it, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+    }
+}
+
+/**
+ * Visual RPE gauge (handoff 1b): a green→orange→red track with a thumb
+ * positioned at the current value, tap-to-edit via the same [RpeEditDialog]
+ * the hero header's quick-edit icon uses. Shows a neutral 5/10 placeholder
+ * (thumb at mid-track, muted color) when no RPE has been logged yet.
+ */
+@Composable
+private fun RpeSliderSection(rpe: Int?, onSaveRpe: (Int) -> Unit) {
+    var showDialog by remember { mutableStateOf(false) }
+    val value = rpe ?: 5
+    val frac = ((value - 1) / 9f).coerceIn(0f, 1f)
+    val color = when {
+        rpe == null -> MaterialTheme.colorScheme.onSurfaceVariant
+        rpe <= 3 -> BrandGreen
+        rpe <= 6 -> ActivityTempo
+        else -> ActivityHard
+    }
+    SurfaceCard(Modifier.clickable { showDialog = true }) {
+        Row(
+            Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.SpaceBetween,
+            verticalAlignment = Alignment.Bottom,
+        ) {
+            SectionTitle("Sforzo percepito")
+            Text(
+                rpe?.toString() ?: "–",
+                style = MaterialTheme.typography.headlineSmall,
+                fontWeight = FontWeight.Bold,
+                color = color,
+            )
+        }
+        Spacer(Modifier.height(12.dp))
+        BoxWithConstraints(Modifier.fillMaxWidth().height(22.dp)) {
+            Box(
+                Modifier
+                    .align(Alignment.CenterStart)
+                    .fillMaxWidth()
+                    .height(8.dp)
+                    .clip(RoundedCornerShape(4.dp))
+                    .background(Brush.horizontalGradient(listOf(BrandGreen, ActivityTempo, ActivityHard))),
+            )
+            val thumbSize = 20.dp
+            Box(
+                Modifier
+                    .align(Alignment.CenterStart)
+                    .offset(x = (maxWidth - thumbSize) * frac)
+                    .size(thumbSize)
+                    .clip(RoundedCornerShape(50))
+                    .background(Color.White)
+                    .border(3.dp, color, RoundedCornerShape(50)),
+            )
+        }
+        Spacer(Modifier.height(8.dp))
+        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
+            Text(
+                "1 facile",
+                style = MaterialTheme.typography.labelSmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+            Text(
+                "10 massimale",
+                style = MaterialTheme.typography.labelSmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+        }
+    }
+    if (showDialog) {
+        RpeEditDialog(
+            current = rpe,
+            onConfirm = { newRpe ->
+                onSaveRpe(newRpe)
+                showDialog = false
+            },
+            onDismiss = { showDialog = false },
+        )
     }
 }
 
@@ -767,46 +884,74 @@ private fun NotesSection(initialNotes: String?, onSave: (String) -> Unit) {
     }
 }
 
+/**
+ * Actual-vs-target pace, redesigned (handoff 1b) as a compact brand-gradient
+ * card: the real pace on the left, the signed per-km delta and target on the
+ * right — mirrors the "PASSO vs OBIETTIVO GARA" hero block in the mockup.
+ */
 @Composable
 private fun PaceComparisonSection(actualPace: String, targetPace: String) {
     val actualSec = paceToSeconds(actualPace)
     val targetSec = paceToSeconds(targetPace)
-    val diffSec = targetSec - actualSec // positive = faster than target
-    val (diffText, diffColor) = when {
-        actualSec <= 0 || targetSec <= 0 -> "–" to MaterialTheme.colorScheme.onSurfaceVariant
-        diffSec > 5 -> "+${diffSec}s/km più veloce" to BrandGreen
-        diffSec < -5 -> "${-diffSec}s/km più lento" to MaterialTheme.colorScheme.error
-        else -> "In linea con l'obiettivo" to BrandGreen
+    val hasDiff = actualSec > 0 && targetSec > 0
+    // Negative = actual pace is faster (fewer seconds/km) than the target.
+    val diffSec = actualSec - targetSec
+    val deltaLabel = if (hasDiff) {
+        (if (diffSec <= 0) "-" else "+") + "${kotlin.math.abs(diffSec)}″"
+    } else {
+        "–"
     }
-    SurfaceCard {
-        SectionTitle("Confronto passo obiettivo")
-        Spacer(Modifier.height(8.dp))
+    val deltaCaption = when {
+        !hasDiff -> ""
+        diffSec < 0 -> "sotto target $targetPace"
+        diffSec > 0 -> "sopra target $targetPace"
+        else -> "esattamente il target"
+    }
+    GradientCard(colors = listOf(BrandGreenDeep, BrandGreen)) {
         Row(
             Modifier.fillMaxWidth(),
             horizontalArrangement = Arrangement.SpaceBetween,
+            verticalAlignment = Alignment.CenterVertically,
         ) {
-            Column(horizontalAlignment = Alignment.CenterHorizontally) {
+            Column {
                 Text(
-                    actualPace,
-                    style = MaterialTheme.typography.titleLarge,
+                    "PASSO vs OBIETTIVO GARA",
+                    style = MaterialTheme.typography.labelSmall,
                     fontWeight = FontWeight.Bold,
+                    color = Color.White.copy(alpha = 0.85f),
                 )
-                Text("Passo effettivo", style = MaterialTheme.typography.labelSmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant)
+                Spacer(Modifier.height(2.dp))
+                Row(verticalAlignment = Alignment.Bottom) {
+                    Text(
+                        actualPace,
+                        style = MaterialTheme.typography.titleLarge,
+                        fontWeight = FontWeight.Bold,
+                        color = Color.White,
+                    )
+                    Spacer(Modifier.width(4.dp))
+                    Text(
+                        "reale",
+                        style = MaterialTheme.typography.labelMedium,
+                        color = Color.White.copy(alpha = 0.85f),
+                    )
+                }
             }
-            Column(horizontalAlignment = Alignment.CenterHorizontally) {
+            Column(horizontalAlignment = Alignment.End) {
                 Text(
-                    targetPace,
+                    deltaLabel,
                     style = MaterialTheme.typography.titleLarge,
                     fontWeight = FontWeight.Bold,
-                    color = MaterialTheme.colorScheme.primary,
+                    color = Color.White,
                 )
-                Text("Passo gara obiettivo", style = MaterialTheme.typography.labelSmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant)
+                if (deltaCaption.isNotEmpty()) {
+                    Text(
+                        deltaCaption,
+                        style = MaterialTheme.typography.labelSmall,
+                        color = Color.White.copy(alpha = 0.85f),
+                    )
+                }
             }
         }
-        Spacer(Modifier.height(8.dp))
-        Text(diffText, style = MaterialTheme.typography.bodyMedium, color = diffColor)
     }
 }
 

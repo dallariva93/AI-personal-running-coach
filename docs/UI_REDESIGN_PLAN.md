@@ -43,14 +43,22 @@ hex, spaziature, copy) per limitare il rischio di scostamento.
     doc handoff), `MetricRing` 96dp vs 116dp attuale (cosmetico, basso rischio
     ma basso valore), copy `home_subtitle`.
 
-- **M2 — Dettaglio corsa (1b)**
-  - File: `ActivityDetailScreen.kt`, `RouteMap.kt`, `Charts.kt`.
-  - Dal markup: hero mappa 220dp con bottoni back/fullscreen in overlay
-    (verificare se già cosà); card passo-vs-obiettivo; splits con barra
-    relativa colorata per zona; RPE slider con track a gradiente
-    verde→arancio→rosso; trail metrics in 3 card.
-  - `MetricAreaChart` (Passo 18) già copre altitudine/passo — verificare
-    coerenza stilistica col resto (non rifare).
+- **M2 — Dettaglio corsa (1b)** ✅ FATTO — 2026-07-09
+  - Zone FC: barre individuali per zona (larghezza ∝ quota di tempo, label
+    "m:ss" in stile Garmin) al posto di StackedBar + lista a pallini.
+  - Nuova `RpeSliderSection`: track a gradiente verde→arancio→rosso con
+    thumb posizionato sul valore corrente, tap per aprire lo stesso
+    `RpeEditDialog` già usato dall'icona nell'hero.
+  - `PaceComparisonSection` restilizzata come card a gradiente compatta
+    (passo reale a sinistra, delta con segno + target a destra), come il
+    blocco "PASSO vs OBIETTIVO GARA" del mockup.
+  - Non toccato (già conforme, o fuori scope UI): hero mappa/hero header a
+    gradiente (struttura diversa dal mockup ma pattern di brand consolidato,
+    rifarlo è un cambio strutturale più ampio, rimandato); `MetricAreaChart`
+    (Passo 18) per altitudine/passo, splits Strava-style, Performance/
+    Environment/Recovery grid — già coerenti. Trail metrics (VAM, km piani
+    equivalenti) **non implementate**: richiedono dati non presenti nel
+    modello `Activity` (lavoro backend, fuori scope redesign UI).
 
 - **M3 — Piano (1c) + Calendario (1i)**
   - File: `PlanScreen.kt`, `Components.kt` (`PhaseCard`/`PredictionCard` già
