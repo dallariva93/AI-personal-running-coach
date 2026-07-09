@@ -238,8 +238,14 @@ def test_cardiac_drift_tooFewSamples_returnsNone():
 def test_cardiac_drift_handlesGaps():
     # HR with None gaps, only real values used - need enough samples after filtering
     streams = {
-        "t": [0, 30, 60, 90, 120, 150, 180, 210, 240, 270, 300, 330, 360, 390, 420, 450, 480, 510, 540, 570, 600],
-        "hr": [140, 141, None, 142, 143, None, 144, 145, None, 146, 147, None, 148, 149, None, 150, 151, None, 152, 153, 154],
+        "t": [
+            0, 30, 60, 90, 120, 150, 180, 210, 240, 270, 300,
+            330, 360, 390, 420, 450, 480, 510, 540, 570, 600,
+        ],
+        "hr": [
+            140, 141, None, 142, 143, None, 144, 145, None, 146, 147,
+            None, 148, 149, None, 150, 151, None, 152, 153, 154,
+        ],
     }
     drift = cardiac_drift(streams)
     assert drift is not None
