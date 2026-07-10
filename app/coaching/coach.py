@@ -4,7 +4,6 @@ from __future__ import annotations
 
 import json
 import re
-from datetime import date, timedelta
 from typing import Protocol
 
 from app.coaching import prompts
@@ -1020,85 +1019,18 @@ class OfflineCoach:
         metrics: TrainingMetrics | None,
         ramp_pct: float | None = None,
     ) -> dict:
-        """Generate a complete multi-week plan using deterministic templates."""
-        from datetime import datetime as _dt
+        """Generate a complete multi-week plan via the periodization engine.
 
-        try:
-            race_date = _dt.strptime(request.goal_date[:10], "%Y-%m-%d").date()
-        except (ValueError, TypeError):
-            race_date = date.today() + timedelta(weeks=16)
+        Delegates to :func:`build_plan_spec` (Fase A) — a pure, deterministic
+        engine that turns the chat context, the athlete's metrics and the goal
+        into a phased plan with a smooth volume progression, ACWR-aware deloads
+        and the chat-agreed weekly skeleton honoured verbatim.
+        """
+        from app.processing.periodization import build_plan_spec
 
-        today = date.today()
-        start_date = today - timedelta(days=today.weekday())  # Monday of current week
-
-        days_to_race = (race_date - today).days
-        weeks_total = max(4, min(24, (days_to_race + 6) // 7))
-
-        baseline_km = 30.0
-        if metrics:
-            baseline_km = max(metrics.chronic_load_km, metrics.acute_load_km, 20.0)
-
-        long_day = request.long_run_day  # 0=Mon, 6=Sun
-        dpw = max(3, min(6, request.days_per_week))
-
-        # Build phase allocation
-        taper_weeks = {"marathon": 3, "half": 2, "10k": 1, "5k": 1}.get(
-            request.goal_type, 2
+        return build_plan_spec(
+            request, profile=profile, metrics=metrics, ramp_pct=ramp_pct
         )
-        race_weeks = 1
-        taper_weeks = min(taper_weeks, max(0, weeks_total - race_weeks))
-        prep_weeks = max(0, weeks_total - taper_weeks - race_weeks)
-
-        base_w = max(1, round(prep_weeks * 0.35))
-        build_w = max(1, round(prep_weeks * 0.30))
-        specific_w = max(1, round(prep_weeks * 0.20))
-        peak_w = max(0, prep_weeks - base_w - build_w - specific_w)
-
-        phase_alloc = [
-            ("Base", base_w),
-            ("Build", build_w),
-            ("Specifico", specific_w),
-            ("Peak", peak_w),
-            ("Taper", taper_weeks),
-            ("Gara", race_weeks),
-        ]
-
-        paces = _compute_paces(request.level, request.goal_type, request.goal_time)
-
-        weeks_out = []
-        week_num = 1
-        for phase_name, phase_len in phase_alloc:
-            if phase_len <= 0:
-                continue
-            for _i in range(phase_len):
-                is_cutback = (week_num % 4 == 0) and phase_name not in ("Taper", "Gara")
-                vol_factor = _phase_volume_factor(phase_name, is_cutback)
-                target_km = round(baseline_km * vol_factor, 1)
-                phase_desc = _phase_description(phase_name, week_num, is_cutback)
-                sessions = _build_week_sessions(
-                    phase_name=phase_name,
-                    week_number=week_num,
-                    days_per_week=dpw,
-                    long_run_day=long_day,
-                    target_km=target_km,
-                    paces=paces,
-                    goal_type=request.goal_type,
-                    is_cutback=is_cutback,
-                )
-                weeks_out.append({
-                    "week_number": week_num,
-                    "phase": phase_name,
-                    "target_km": target_km,
-                    "description": phase_desc,
-                    "sessions": sessions,
-                })
-                week_num += 1
-
-        return {
-            "weeks_total": len(weeks_out),
-            "start_date": start_date.isoformat(),
-            "weeks": weeks_out,
-        }
 
 
 # ── JSON parsing helpers ─────────────────────────────────────────────────────
