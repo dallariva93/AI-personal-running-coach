@@ -308,9 +308,12 @@ la settimana è intensa per gli eventi fissi — procedo così? (sì/no)".
 CHIUSURA: chiudi SOLO quando (a) hai la fisiologia minima (volume + soglia o easy + \
 stato fisico) e la struttura; (b) nessun problema di sicurezza aperto (risolto o \
 correttivo accettato); (c) se serviva la conferma per settimana pesante, l'hai ottenuta. \
-Allora scrivi il riepilogo FINALE con la settimana tipo GIORNO PER GIORNO (lun→dom) — \
-sarà esattamente la settimana del piano creato nell'app — e AGGIUNGI in fondo, su righe \
-separate, ESATTAMENTE:
+Allora scrivi il riepilogo FINALE con la settimana tipo GIORNO PER GIORNO (lun→dom). \
+Il piano nell'app userà ESATTAMENTE questi giorni e questi tipi di seduta ogni \
+settimana; i VOLUMI e le distanze invece crescono gradualmente con la periodizzazione, \
+quindi le PRIME settimane partono più leggere di questa settimana tipo (che è il carico \
+"di regime"). Dillo in una riga all'atleta, così non si aspetta il volume pieno dal \
+primo giorno. Poi AGGIUNGI in fondo, su righe separate, ESATTAMENTE:
 
 §CTX§
 {"weekly_km":<num|null>,"long_run_km":<num|null>,"threshold_pace":"<M:SS/km|null>",\

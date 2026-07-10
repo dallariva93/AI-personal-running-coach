@@ -154,3 +154,36 @@ def test_no_context_no_changes():
     out, notes = enforce_week_structure(plan, None)
     assert notes == []
     assert out["weeks"][0]["sessions"][0]["session_type"] == "easy"
+
+
+def test_agreed_pace_reconciles_description_for_steady_session():
+    """The description's pace is normalized to the agreed/enforced one.
+
+    Reproduces the reported inconsistency: chip says 5:45/km but the prose the
+    generator wrote said 5:01/km. After enforcement both must agree.
+    """
+    sess = _session(0, "easy", 6.0, "5:01/km")
+    sess["description"] = "Corsa facile in Z2 a 5:01/km. Ritmo di conversazione."
+    plan = _plan([[sess]])
+    ctx = _ctx(week_structure=[{"day": "lun", "type": "easy", "pace": "5:45/km"}])
+    out, _ = enforce_week_structure(plan, ctx)
+    result = out["weeks"][0]["sessions"][0]
+    assert result["target_pace"] == "5:45/km"
+    assert "5:01/km" not in result["description"]
+    assert "5:45/km" in result["description"]
+
+
+def test_intervals_description_paces_left_untouched():
+    """Interval descriptions list several paces (work + recovery); don't clobber."""
+    sess = _session(1, "intervals", 10.0, "4:15-4:20/km")
+    sess["description"] = "6×1000m a 4:05/km con 90s recupero a 6:00/km."
+    plan = _plan([[sess]])
+    ctx = _ctx(
+        week_structure=[{"day": "mar", "type": "intervals", "pace": "4:15-4:20/km"}]
+    )
+    out, _ = enforce_week_structure(plan, ctx)
+    result = out["weeks"][0]["sessions"][0]
+    # Structured pace enforced, but the multi-pace prose is preserved as-is.
+    assert result["target_pace"] == "4:15-4:20/km"
+    assert "4:05/km" in result["description"]
+    assert "6:00/km" in result["description"]

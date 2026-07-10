@@ -16,7 +16,34 @@ left untouched (race week has its own structure).
 from __future__ import annotations
 
 import json
+import re
 from typing import Any
+
+# A pace token like "5:45/km" or a range "4:15-4:20/km" (any dash, optional
+# spaces around "/"). Used to reconcile the generator's prose with the enforced
+# structured pace.
+_PACE_TOKEN_RE = re.compile(r"\d{1,2}:\d{2}(?:\s*[–-]\s*\d{1,2}:\d{2})?\s*/\s*km")
+
+# Steady-pace session types: one target pace describes the whole run, so it's
+# safe to normalize the description's pace to match. Intervals are excluded —
+# their descriptions legitimately list several paces (work + recovery).
+_STEADY_TYPES = {"easy", "long", "tempo"}
+
+
+def _apply_agreed_pace(session: dict, pace: str, stype: str) -> None:
+    """Set ``target_pace`` and, for steady-pace sessions, make the description's
+    embedded pace match it.
+
+    The generator (a separate model call) writes a free-text ``description`` with
+    its own pace, which can contradict the pace agreed in chat and enforced into
+    ``target_pace`` — the athlete then sees "5:45/km" on the chip but "5:01/km"
+    in the description. Rewriting the pace tokens keeps the two in sync.
+    """
+    session["target_pace"] = pace
+    if stype in _STEADY_TYPES:
+        desc = session.get("description")
+        if isinstance(desc, str) and _PACE_TOKEN_RE.search(desc):
+            session["description"] = _PACE_TOKEN_RE.sub(pace, desc)
 
 # Day-name → day_of_week (0=Mon). Accepts Italian/English names and integers.
 _DAY_MAP = {
@@ -163,7 +190,7 @@ def enforce_week_structure(
 
             if _canonical_type(current.get("session_type")) == want:
                 if entry["pace"] and want not in ("rest", "cross"):
-                    current["target_pace"] = entry["pace"]
+                    _apply_agreed_pace(current, entry["pace"], want)
                 locked.add(dow)
                 continue
 
@@ -184,7 +211,7 @@ def enforce_week_structure(
                 donor["day_of_week"], current["day_of_week"] = dow, donor_day
                 by_day[dow], by_day[donor_day] = donor, current
                 if entry["pace"] and want not in ("rest", "cross"):
-                    donor["target_pace"] = entry["pace"]
+                    _apply_agreed_pace(donor, entry["pace"], want)
                 notes.append(
                     f"settimana {week_no}: {want} spostata a "
                     f"{_DAY_NAMES[dow]} (era {_DAY_NAMES[donor_day]})"
@@ -202,7 +229,7 @@ def enforce_week_structure(
                     if entry["distance_km"] is not None:
                         current["target_distance_km"] = entry["distance_km"]
                     if entry["pace"]:
-                        current["target_pace"] = entry["pace"]
+                        _apply_agreed_pace(current, entry["pace"], want)
                 notes.append(
                     f"settimana {week_no}: {_DAY_NAMES[dow]} impostato a {want}"
                 )
