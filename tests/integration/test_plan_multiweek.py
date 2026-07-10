@@ -223,6 +223,24 @@ def test_delete_plan_404_on_bad_id(client):
     assert resp.status_code == 404
 
 
+def test_plan_sessions_expose_structured_segments(client):
+    """Fase E: quality sessions carry Workout-Builder segments in the API."""
+    resp = client.post("/api/plan/generate", json=_GENERATE_PAYLOAD)
+    assert resp.status_code == 201, resp.text
+    body = resp.json()
+
+    structured = 0
+    for week in body["weeks"]:
+        for s in week["sessions"]:
+            if s["session_type"] in ("tempo", "intervals"):
+                seg_types = [seg["segment_type"] for seg in s["segments"]]
+                assert "warmup" in seg_types and "cooldown" in seg_types
+                structured += 1
+            elif s["session_type"] == "rest":
+                assert s["segments"] == []
+    assert structured > 0, "a marathon block must contain quality sessions"
+
+
 def test_generate_plan_honors_chat_agreed_week_structure(client):
     """The app plan must match the week agreed in the pre-plan chat.
 

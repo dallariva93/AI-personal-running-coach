@@ -245,6 +245,7 @@ def move_session(
 
     # Swap positions (and weeks, for cross-week moves).
     source_dow = sess.day_of_week
+    source_week_no = week.week_number
     sess.day_of_week = target_dow
     if other is not None:
         other.day_of_week = source_dow
@@ -255,6 +256,12 @@ def move_session(
     # week_id was swapped directly, so the in-memory week.sessions collections
     # are stale — expire everything and let the ORM reload fresh state.
     db.expire_all()
+
+    # Reshape, don't just warn (Fase E): re-space quality days in the weeks the
+    # move touched, keeping the just-placed session and any locked day fixed.
+    anchors = {target_week_no: {target_dow}}
+    anchors.setdefault(source_week_no, set()).add(source_dow)
+    rebalanced = _rebalance_after_move(db, plan, anchors)
 
     warnings = _move_warnings(plan, start, {source_date, target})
 
@@ -274,7 +281,48 @@ def move_session(
         plan_session_id=sess.id,
     )
 
-    return PlanMoveResult(plan=_compute_plan_out(plan), warnings=warnings)
+    return PlanMoveResult(
+        plan=_compute_plan_out(plan), warnings=warnings, rebalanced=rebalanced
+    )
+
+
+def _rebalance_after_move(
+    db: Session, plan: TrainingPlan, anchors: dict[int, set[int]]
+) -> list[str]:
+    """Re-space quality days in the touched weeks; return the reshape notes.
+
+    ``anchors`` maps a week number to the days that must stay put (the session
+    just placed / the swapped one). Completed sessions and the goal race are
+    always locked too. Applies the swaps to the ORM and returns human notes.
+    """
+    from app.processing.plan_rebalance import rebalance_week
+
+    notes: list[str] = []
+    changed = False
+    for week_no, anchor_days in anchors.items():
+        wk = next((w for w in plan.weeks if w.week_number == week_no), None)
+        if wk is None:
+            continue
+        day_types = {s.day_of_week: s.session_type for s in wk.sessions}
+        locked = set(anchor_days) | {
+            s.day_of_week
+            for s in wk.sessions
+            if s.completed or (s.session_type or "").lower() in ("race", "gara")
+        }
+        swaps, wk_notes = rebalance_week(day_types, locked)
+        if not swaps:
+            continue
+        by_day = {s.day_of_week: s for s in wk.sessions}
+        for a, b in swaps:
+            by_day[a].day_of_week, by_day[b].day_of_week = b, a
+            by_day[a], by_day[b] = by_day[b], by_day[a]
+        notes.extend(wk_notes)
+        changed = True
+
+    if changed:
+        db.flush()
+        db.expire_all()
+    return notes
 
 
 def _move_warnings(
@@ -323,7 +371,7 @@ def _compute_plan_out(plan: TrainingPlan) -> TrainingPlanOut:
     current_week_number = max(1, min(plan.weeks_total, days_elapsed // 7 + 1))
     weeks_remaining = max(0, plan.weeks_total - current_week_number)
 
-    weeks_out = [_compute_week_out(w) for w in plan.weeks]
+    weeks_out = [_compute_week_out(w, plan.goal_type) for w in plan.weeks]
 
     current_week_out = next(
         (w for w in weeks_out if w.week_number == current_week_number), None
@@ -363,9 +411,23 @@ def _compute_plan_out(plan: TrainingPlan) -> TrainingPlanOut:
     )
 
 
-def _compute_week_out(week: TrainingPlanWeek) -> PlanWeekOut:
-    """Compute completion_pct for a week and build the output schema."""
-    sessions_out = [PlanSessionOut.model_validate(s) for s in week.sessions]
+def _compute_week_out(
+    week: TrainingPlanWeek, goal_type: str | None = None
+) -> PlanWeekOut:
+    """Compute completion_pct for a week and build the output schema.
+
+    Each session is enriched with its structured workout segments (Fase E),
+    derived deterministically from the prescription.
+    """
+    from app.processing.workout_segments import build_session_segments
+
+    sessions_out = []
+    for s in week.sessions:
+        so = PlanSessionOut.model_validate(s)
+        so.segments = build_session_segments(
+            so.session_type, so.target_distance_km, so.target_pace, goal_type
+        )
+        sessions_out.append(so)
 
     non_rest = [s for s in sessions_out if s.session_type != "rest"]
     completed_count = sum(1 for s in non_rest if s.completed)

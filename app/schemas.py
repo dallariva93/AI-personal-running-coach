@@ -873,6 +873,9 @@ class PlanSessionOut(BaseModel):
     execution_score: float | None = None
     execution_status: str | None = None
     execution_note: str | None = None
+    # Structured workout view (Fase E): warm-up / work / recovery / cool-down
+    # segments derived from the prescription. Empty for rest/race/cross.
+    segments: list[WorkoutSegmentIn] = Field(default_factory=list)
 
 
 class PlanWeekOut(BaseModel):
@@ -916,10 +919,13 @@ class PlanSessionMoveRequest(BaseModel):
 
 
 class PlanMoveResult(BaseModel):
-    """Outcome of a session move: the recalculated plan plus safety warnings."""
+    """Outcome of a session move: the recalculated plan, reshapes and warnings."""
 
     plan: TrainingPlanOut
     warnings: list[str] = Field(default_factory=list)
+    # Fase E: deterministic reshapes the coach applied to keep the week sound
+    # (e.g. re-spacing quality days) — distinct from unresolved ``warnings``.
+    rebalanced: list[str] = Field(default_factory=list)
 
 
 class PlanChatMessage(BaseModel):
@@ -1032,6 +1038,11 @@ class WorkoutSegmentOut(WorkoutSegmentIn):
 
     id: int
     model_config = ConfigDict(from_attributes=True)
+
+
+# ``PlanSessionOut.segments`` forward-references ``WorkoutSegmentIn`` (defined
+# above): resolve the reference now that the target type exists.
+PlanSessionOut.model_rebuild()
 
 
 class WorkoutTemplateIn(BaseModel):
