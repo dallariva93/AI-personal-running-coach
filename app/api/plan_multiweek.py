@@ -15,6 +15,8 @@ from app.schemas import (
     PlanMoveResult,
     PlanSessionMoveRequest,
     PlanSessionOut,
+    PlanWhatIfOut,
+    PlanWhatIfRequest,
     TrainingPlanOut,
 )
 from app.services.checkin import hrv_history, latest_checkin
@@ -71,6 +73,31 @@ def post_generate_plan(
     # Re-fetch to ensure IDs are fresh
     refreshed = get_current_plan(session)
     return refreshed or plan
+
+
+@router.post("/plan/simulate", response_model=PlanWhatIfOut)
+def post_plan_simulate(
+    payload: PlanWhatIfRequest,
+    session: Session = Depends(get_session),
+) -> PlanWhatIfOut:
+    """Compare the plan against a scenario (different goal/days/time) — instant.
+
+    Deterministic and read-only: builds two Plan Specs with the pure engine and
+    diffs their volumes. Nothing is persisted. (Distinct from ``/plan/whatif``,
+    which runs the session-level training scenarios.)
+    """
+    from app.processing.plan_whatif import plan_whatif
+
+    profile = get_profile(session)
+    summaries = _all_summaries(session)
+    metrics = compute_metrics(
+        summaries, profile=profile, checkin=latest_checkin(session),
+        hrv_history=hrv_history(session),
+    ) if summaries else None
+    try:
+        return plan_whatif(payload, profile=profile, metrics=metrics)
+    except Exception as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
 
 
 @router.get("/plan/current", response_model=TrainingPlanOut)

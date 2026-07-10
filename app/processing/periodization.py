@@ -294,6 +294,10 @@ def build_plan_spec(
             }
         )
 
+    # Tune-up / B-races (Fase F): drop the athlete's B/C races into the block on
+    # their dates, with a mini-taper around them.
+    _spec_apply_tuneup_races(weeks_out, profile, start_date)
+
     # Goal-realism gate: flag an aggressive goal and surface it on week 1.
     realism = _spec_goal_realism(request, metrics)
     if realism and realism["verdict"] == "ambizioso" and weeks_out:
@@ -307,6 +311,102 @@ def build_plan_spec(
         "weeks": weeks_out,
         "goal_realism": realism,
     }
+
+
+def _spec_apply_tuneup_races(
+    weeks_out: list[dict], profile: AthleteProfile | None, start_date: date
+) -> None:
+    """Place B/C tune-up races on their dates with a light taper around them.
+
+    The day before becomes easy (or stays rest), the day after becomes an easy
+    recovery, and the race day itself is a race session. The goal-race week is
+    never touched. Mutates ``weeks_out`` in place and recomputes weekly volume.
+    """
+    races = list(getattr(profile, "races", None) or [])
+    for race in races:
+        if (getattr(race, "priority", "A") or "A").upper() == "A":
+            continue
+        race_date = _spec_parse_date(getattr(race, "date", None))
+        if race_date is None:
+            continue
+        offset = (race_date - start_date).days
+        if offset < 0:
+            continue
+        wi, dow = divmod(offset, 7)
+        if wi >= len(weeks_out):
+            continue
+        week = weeks_out[wi]
+        # The goal-race week has its own structure — leave it alone.
+        if any(s["session_type"] == "race" for s in week["sessions"]):
+            continue
+        _spec_place_tuneup(week, dow, race)
+        week["target_km"] = round(
+            sum(s["target_distance_km"] or 0.0 for s in week["sessions"]), 1
+        )
+
+
+def _spec_place_tuneup(week: dict, dow: int, race) -> None:
+    by_day = {s["day_of_week"]: s for s in week["sessions"]}
+    easy_pace = next(
+        (s["target_pace"] for s in week["sessions"] if s["session_type"] == "easy"),
+        None,
+    )
+    name = getattr(race, "name", None) or "Gara di preparazione"
+    dist = _SPEC_GOAL_DIST.get((getattr(race, "race_type", "") or "").lower())
+
+    race_sess = by_day.get(dow)
+    if race_sess is not None:
+        race_sess.update(
+            {
+                "session_type": "race",
+                "title": name,
+                "description": (
+                    f"{name}: gara di preparazione (tune-up). Usala come test di "
+                    "ritmo e mentale, non è l'obiettivo — nessun taper completo."
+                ),
+                "target_distance_km": dist,
+                "target_pace": None,
+                "target_duration_min": None,
+            }
+        )
+    # Mini-taper: soften the day before and the recovery day after.
+    if dow - 1 in by_day:
+        _spec_soften_to_easy(by_day[dow - 1], easy_pace)
+    if dow + 1 in by_day:
+        _spec_soften_to_easy(by_day[dow + 1], easy_pace, recovery=True)
+
+
+def _spec_soften_to_easy(session: dict, easy_pace: str | None, recovery: bool = False) -> None:
+    """Downgrade a hard/long session to an easy one (for a mini-taper)."""
+    if session["session_type"] in ("rest", "race"):
+        return
+    dist = session.get("target_distance_km") or 6.0
+    dist = round(min(dist, 6.0), 1)
+    pace = easy_pace or session.get("target_pace")
+    session.update(
+        {
+            "session_type": "easy",
+            "title": "Corsa facile" if not recovery else "Recupero",
+            "description": (
+                "Corsa facile di rifinitura pre-gara." if not recovery
+                else "Recupero facile dopo la gara."
+            ),
+            "target_distance_km": dist,
+            "target_pace": pace,
+            "target_duration_min": (
+                round(dist * _spec_pace_min(pace)) if pace else None
+            ),
+        }
+    )
+
+
+def _spec_parse_date(value) -> date | None:
+    if not isinstance(value, str):
+        return None
+    try:
+        return datetime.strptime(value[:10], "%Y-%m-%d").date()
+    except (ValueError, TypeError):
+        return None
 
 
 # ── Timeline & phases ────────────────────────────────────────────────────────

@@ -16,6 +16,7 @@ from app.schemas import (
     AthletePhysiology,
     AthleteProfile,
     PlanGenerateRequest,
+    Race,
     TrainingMetrics,
 )
 
@@ -285,3 +286,70 @@ def test_goal_realism_absent_without_prediction():
     spec = build_plan_spec(_req(goal_time="3:20:00"), ref=REF)  # no metrics
     assert spec["goal_realism"] is None
     assert "ambizioso" not in spec["weeks"][0]["description"].lower()
+
+
+# ── Fase F: tune-up / B-races ────────────────────────────────────────────────
+
+def _race_day(spec: dict) -> tuple[int, dict] | None:
+    for wi, w in enumerate(spec["weeks"][:-1]):  # exclude the goal-race week
+        for s in w["sessions"]:
+            if s["session_type"] == "race":
+                return wi, s
+    return None
+
+
+def test_bce_race_placed_on_its_date():
+    prof = AthleteProfile(
+        level="intermediate",
+        races=[Race(name="Mezza di Roma", race_type="half", date="2026-09-13", priority="B")],
+    )
+    # 2026-06-22 is REF (Monday); 2026-09-13 is a Sunday inside the block.
+    spec = build_plan_spec(_req(goal_date="2026-11-08"), profile=prof, ref=REF)
+    found = _race_day(spec)
+    assert found is not None
+    _, race = found
+    assert race["title"] == "Mezza di Roma"
+    assert race["target_distance_km"] == 21.0975
+
+
+def test_bce_race_has_mini_taper_the_day_before():
+    prof = AthleteProfile(
+        level="intermediate",
+        races=[Race(name="Tune-up", race_type="half", date="2026-09-13", priority="B")],
+    )
+    spec = build_plan_spec(_req(goal_date="2026-11-08"), profile=prof, ref=REF)
+    wi, race = _race_day(spec)
+    by_day = {s["day_of_week"]: s for s in spec["weeks"][wi]["sessions"]}
+    dow = race["day_of_week"]
+    if dow - 1 in by_day:
+        assert by_day[dow - 1]["session_type"] not in ("tempo", "intervals")
+
+
+def test_priority_a_race_in_list_is_not_placed():
+    prof = AthleteProfile(
+        level="intermediate",
+        races=[Race(name="Main", race_type="marathon", date="2026-09-13", priority="A")],
+    )
+    spec = build_plan_spec(_req(goal_date="2026-11-08"), profile=prof, ref=REF)
+    assert _race_day(spec) is None  # A is the goal, handled by the block itself
+
+
+def test_race_outside_the_block_is_ignored():
+    prof = AthleteProfile(
+        level="intermediate",
+        races=[Race(name="Past", race_type="10k", date="2026-01-01", priority="B")],
+    )
+    spec = build_plan_spec(_req(goal_date="2026-11-08"), profile=prof, ref=REF)
+    assert _race_day(spec) is None
+
+
+def test_bce_race_week_volume_recomputed():
+    prof = AthleteProfile(
+        level="intermediate",
+        races=[Race(name="HM", race_type="half", date="2026-09-13", priority="B")],
+    )
+    spec = build_plan_spec(_req(goal_date="2026-11-08"), profile=prof, ref=REF)
+    wi, _ = _race_day(spec)
+    w = spec["weeks"][wi]
+    total = round(sum(s["target_distance_km"] or 0.0 for s in w["sessions"]), 1)
+    assert total == w["target_km"]  # header still matches the sessions

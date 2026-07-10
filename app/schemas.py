@@ -965,6 +965,41 @@ class PlanGenerateRequest(BaseModel):
     runner_context: str | None = None  # JSON summary from pre-plan chat
 
 
+class PlanWhatIfRequest(BaseModel):
+    """What-if on the whole plan (Fase F): a base request plus the fields to change.
+
+    Any override left ``None`` keeps the base value. Because the periodization
+    engine is pure and instant, the comparison is computed without persisting
+    anything.
+    """
+
+    base: PlanGenerateRequest
+    goal_type: str | None = None
+    goal_date: str | None = None
+    goal_time: str | None = None
+    level: str | None = None
+    days_per_week: int | None = None
+    long_run_day: int | None = None
+
+
+class PlanWhatIfSummary(BaseModel):
+    """Headline numbers for one plan variant."""
+
+    weeks_total: int
+    total_km: float
+    peak_week_km: float
+    avg_weekly_km: float
+
+
+class PlanWhatIfOut(BaseModel):
+    """Baseline vs scenario comparison for a whole-plan what-if."""
+
+    baseline: PlanWhatIfSummary
+    scenario: PlanWhatIfSummary
+    deltas: dict[str, float]
+    notes: list[str] = Field(default_factory=list)
+
+
 # ── Coach chat schemas ───────────────────────────────────────────────────────
 
 class ChatMessageOut(BaseModel):

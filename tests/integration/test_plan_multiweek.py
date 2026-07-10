@@ -260,6 +260,22 @@ def test_plan_weeks_have_rationale_and_long_runs_have_fueling(client):
     assert fuelled > 0, "long runs in a marathon block should carry fueling"
 
 
+def test_plan_whatif_endpoint_compares_scenarios(client):
+    """Fase F: POST /plan/whatif returns an instant, read-only comparison."""
+    payload = {"base": _GENERATE_PAYLOAD, "days_per_week": 6}
+    resp = client.post("/api/plan/simulate", json=payload)
+    assert resp.status_code == 200, resp.text
+    body = resp.json()
+    assert {"baseline", "scenario", "deltas", "notes"} <= set(body)
+    assert set(body["deltas"]) == {
+        "weeks_total", "total_km", "peak_week_km", "avg_weekly_km"
+    }
+    # More training days → higher weekly average than the 4-day base.
+    assert body["scenario"]["avg_weekly_km"] > body["baseline"]["avg_weekly_km"]
+    # Read-only: no plan was created.
+    assert client.get("/api/plan/current").status_code == 404
+
+
 def test_generate_plan_honors_chat_agreed_week_structure(client):
     """The app plan must match the week agreed in the pre-plan chat.
 
