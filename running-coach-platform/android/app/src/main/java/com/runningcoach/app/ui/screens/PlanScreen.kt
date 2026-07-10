@@ -138,7 +138,12 @@ private fun sessionIcon(type: String): ImageVector = when (type.lowercase()) {
     else -> Icons.Filled.NightsStay
 }
 
-private val ITA_DAYS = listOf("Dom", "Lun", "Mar", "Mer", "Gio", "Ven", "Sab")
+// Backend convention: day_of_week 0 = Monday … 6 = Sunday (see coach.py
+// "indices into 0=Mon..6=Sun"). The list must therefore be Monday-first;
+// it was Sunday-first, which shifted every session label back by one day
+// (e.g. the fixed Tuesday run-club session showed under "Lun") and made the
+// week list appear to start on Sunday, out of sync with the calendar.
+private val ITA_DAYS = listOf("Lun", "Mar", "Mer", "Gio", "Ven", "Sab", "Dom")
 
 private fun dayLabel(dayOfWeek: Int): String = ITA_DAYS.getOrElse(dayOfWeek) { "?" }
 
