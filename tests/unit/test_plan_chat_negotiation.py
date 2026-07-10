@@ -100,7 +100,7 @@ def test_chat_for_plan_parses_richer_context(monkeypatch):
         "§CTX§\n" + json.dumps(ctx_obj) + "\n§/CTX§\n§READY§"
     )
     coach = AICoach()
-    monkeypatch.setattr(coach, "_call_chat", lambda system, messages: raw)
+    monkeypatch.setattr(coach, "_call_chat", lambda system, messages, **kwargs: raw)
 
     message, is_complete, runner_context = coach.chat_for_plan(
         [{"role": "user", "content": "faccio ripetute il martedì col gruppo"}]
@@ -119,7 +119,7 @@ def test_chat_for_plan_intermediate_turn_not_complete(monkeypatch):
     """A normal negotiation turn (no §READY§) does not unlock generation."""
     raw = "Ho un dubbio: 3 giorni di ripetute sono troppi. Ne terrei 2, va bene?"
     coach = AICoach()
-    monkeypatch.setattr(coach, "_call_chat", lambda system, messages: raw)
+    monkeypatch.setattr(coach, "_call_chat", lambda system, messages, **kwargs: raw)
 
     message, is_complete, runner_context = coach.chat_for_plan(
         [{"role": "user", "content": "voglio ripetute lun mar mer"}]
@@ -137,7 +137,7 @@ def test_chat_for_plan_context_in_code_fence_still_parses(monkeypatch):
         "§CTX§\n```json\n" + json.dumps(ctx_obj) + "\n```\n§/CTX§\n§READY§"
     )
     coach = AICoach()
-    monkeypatch.setattr(coach, "_call_chat", lambda system, messages: raw)
+    monkeypatch.setattr(coach, "_call_chat", lambda system, messages, **kwargs: raw)
 
     message, is_complete, runner_context = coach.chat_for_plan(
         [{"role": "user", "content": "40 km a settimana"}]
@@ -155,7 +155,7 @@ def test_chat_for_plan_context_without_ready_marker_still_completes(monkeypatch)
         "§CTX§\n" + json.dumps(ctx_obj) + "\n§/CTX§"
     )
     coach = AICoach()
-    monkeypatch.setattr(coach, "_call_chat", lambda system, messages: raw)
+    monkeypatch.setattr(coach, "_call_chat", lambda system, messages, **kwargs: raw)
 
     _message, is_complete, runner_context = coach.chat_for_plan(
         [{"role": "user", "content": "35 km"}]
@@ -194,7 +194,7 @@ def test_chat_for_plan_no_closing_tag_still_completes(monkeypatch):
         "§CTX§\n" + json.dumps(ctx_obj)
     )
     coach = AICoach()
-    monkeypatch.setattr(coach, "_call_chat", lambda system, messages: raw)
+    monkeypatch.setattr(coach, "_call_chat", lambda system, messages, **kwargs: raw)
 
     message, is_complete, runner_context = coach.chat_for_plan(
         [{"role": "user", "content": "confermo"}]
@@ -221,7 +221,7 @@ def test_chat_for_plan_ready_with_broken_context_still_completes(monkeypatch):
         "§CTX§\n{weekly_km: 45, oops not valid json,}\n§/CTX§\n§READY§"
     )
     coach = AICoach()
-    monkeypatch.setattr(coach, "_call_chat", lambda system, messages: raw)
+    monkeypatch.setattr(coach, "_call_chat", lambda system, messages, **kwargs: raw)
 
     message, is_complete, runner_context = coach.chat_for_plan(
         [{"role": "user", "content": "45 km"}]
@@ -231,3 +231,34 @@ def test_chat_for_plan_ready_with_broken_context_still_completes(monkeypatch):
     # The visible summary survives, sentinels stripped.
     assert "settimana tipo" in message
     assert "§CTX§" not in message and "§READY§" not in message
+
+
+def test_chat_for_plan_uses_plan_model_and_large_token_budget(monkeypatch):
+    """Guard the truncation bug: the closing §CTX§ JSON must have room to fit.
+
+    The original bug was ``chat_for_plan`` using the generic 600-token default,
+    which truncated the day-by-day summary + §CTX§ block so the sentinels never
+    arrived and no plan was ever generated. This asserts the call uses the
+    configured plan model and a budget far above the old 600.
+    """
+    from app.config import Settings
+
+    settings = Settings(plan_chat_model="claude-sonnet-4-6", plan_chat_max_tokens=2500)
+    coach = AICoach(settings=settings)
+
+    captured: dict = {}
+
+    def _fake_call(system, messages, max_tokens=600, model=None):
+        captured["max_tokens"] = max_tokens
+        captured["model"] = model
+        return "§CTX§\n" + json.dumps({"weekly_km": 40}) + "\n§/CTX§\n§READY§"
+
+    monkeypatch.setattr(coach, "_call_chat", _fake_call)
+
+    _msg, is_complete, _ctx = coach.chat_for_plan(
+        [{"role": "user", "content": "40 km"}]
+    )
+    assert is_complete is True
+    assert captured["model"] == "claude-sonnet-4-6"
+    # Must be well above the old 600 default that caused truncation.
+    assert captured["max_tokens"] >= 2000

@@ -53,6 +53,16 @@ class Settings(BaseSettings):
     chat_simple_model: str = "claude-haiku-4-5-20251001"
     chat_medium_model: str = "claude-haiku-4-5-20251001"   # prod: claude-sonnet-4-6
     chat_complex_model: str = "claude-haiku-4-5-20251001"  # prod: claude-opus-4-8
+    # Pre-plan negotiation chat (chat_for_plan). Its closing turn must emit a
+    # long, strict §CTX§ JSON block (7-day week_structure) + §READY§, which the
+    # weakest model gets wrong; set a stronger model in prod so plan generation
+    # actually fires. Default Haiku keeps dev/offline/tests cheap.
+    plan_chat_model: str = "claude-haiku-4-5-20251001"     # prod: claude-sonnet-4-6
+    # Token budget for the plan-chat closing turn. Must be large enough to hold
+    # the day-by-day summary AND the full §CTX§ JSON; 600 (the generic chat
+    # default) truncated it, dropping the §CTX§/§READY§ sentinels so no plan
+    # was ever generated.
+    plan_chat_max_tokens: int = 2500
     ai_max_retries: int = 2
     ai_timeout_seconds: int = 60
     # When the AI call fails, fall back to the offline rule-based coach.

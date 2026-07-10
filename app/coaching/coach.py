@@ -49,6 +49,10 @@ def _parse_plan_chat_reply(raw: str) -> tuple[str, bool, str | None]:
     runner_context: str | None = None
 
     ctx_start = raw.find("§CTX§")
+    logger.debug(
+        "Parse plan reply: §CTX§=%s §/CTX§=%s §READY§=%s",
+        ctx_start >= 0, "§/CTX§" in raw, "§READY§" in raw,
+    )
     if ctx_start >= 0:
         # Take everything after §CTX§; stop at §/CTX§ or §READY§ if present.
         payload = raw[ctx_start + len("§CTX§"):]
@@ -69,8 +73,19 @@ def _parse_plan_chat_reply(raw: str) -> tuple[str, bool, str | None]:
             try:
                 json.loads(candidate)
                 runner_context = candidate
-            except (ValueError, TypeError):
-                logger.warning("Plan chat §CTX§ block did not parse as JSON; ignoring")
+            except (ValueError, TypeError) as exc:
+                # Most common cause: the reply was truncated mid-JSON so the
+                # object never closes. Log the reason + a snippet to diagnose.
+                logger.warning(
+                    "Plan chat §CTX§ block did not parse as JSON (%s); ignoring. "
+                    "Candidate tail: %r", exc, candidate[-200:],
+                )
+        else:
+            logger.warning(
+                "Plan chat §CTX§ marker present but no {…} object found "
+                "(likely truncated before the JSON). Payload tail: %r",
+                payload[-200:],
+            )
 
     is_complete = ("§READY§" in raw) or runner_context is not None
 
@@ -192,9 +207,24 @@ class AICoach:
                 system=system,
                 messages=messages,
             )
-            return "".join(
+            text = "".join(
                 block.text for block in resp.content if getattr(block, "type", "") == "text"
             )
+            # Truncation is silent otherwise: the reply just stops mid-sentence,
+            # which for structured outputs (e.g. the plan-chat §CTX§ block) means
+            # the sentinels never arrive. Surface it loudly.
+            stop_reason = getattr(resp, "stop_reason", None)
+            if stop_reason == "max_tokens":
+                logger.warning(
+                    "chat.%s hit max_tokens=%d — reply TRUNCATED (%d chars). "
+                    "Structured output may be incomplete.",
+                    _model, max_tokens, len(text),
+                )
+            else:
+                logger.debug(
+                    "chat.%s stop_reason=%s chars=%d", _model, stop_reason, len(text),
+                )
+            return text
 
         return retry_call(_do, retries=2, base_delay=1.0, description=f"chat.{_model}")
 
@@ -318,19 +348,50 @@ class AICoach:
         self,
         messages: list[dict],
     ) -> tuple[str, bool, str | None]:
-        """Multi-turn Haiku chat to collect runner profile before plan generation.
+        """Multi-turn chat to collect the runner profile before plan generation.
 
         Returns (visible_message, is_complete, runner_context_json).
         When is_complete=True, runner_context_json contains the extracted runner
         profile as a JSON string ready to pass to plan generation.
+
+        Uses ``plan_chat_model`` and a large ``plan_chat_max_tokens`` budget: the
+        closing turn must fit both the day-by-day summary and the full §CTX§ JSON
+        block, and the generic 600-token chat default truncated it (dropping the
+        §CTX§/§READY§ sentinels, so no plan was ever generated).
         """
+        model = self.settings.plan_chat_model
+        max_tokens = self.settings.plan_chat_max_tokens
+        logger.info(
+            "Plan chat: model=%s max_tokens=%d turns=%d", model, max_tokens, len(messages),
+        )
         try:
-            raw = self._call_chat(prompts.PLAN_CHAT_SYSTEM_PROMPT, messages)
+            raw = self._call_chat(
+                prompts.PLAN_CHAT_SYSTEM_PROMPT, messages,
+                max_tokens=max_tokens, model=model,
+            )
         except Exception as exc:
             logger.error("Plan chat AI call failed, using offline: %s", exc)
             return self._fallback.chat_for_plan(messages)
 
-        return _parse_plan_chat_reply(raw)
+        message, is_complete, runner_context = _parse_plan_chat_reply(raw)
+        # Debug trail so a failed generation is diagnosable end-to-end.
+        logger.debug("Plan chat raw reply (%d chars): %s", len(raw), raw)
+        logger.info(
+            "Plan chat parsed: complete=%s has_context=%s (raw=%d chars, msg=%d chars)",
+            is_complete, runner_context is not None, len(raw), len(message),
+        )
+        if is_complete and runner_context is None:
+            logger.warning(
+                "Plan chat signalled completion but produced NO usable §CTX§ JSON — "
+                "the app will fall back to the plain generate dialog. Raw tail: %r",
+                raw[-300:],
+            )
+        elif not is_complete and ("§CTX§" in raw or "§READY§" in raw):
+            logger.warning(
+                "Plan chat has partial sentinels but did not complete (likely "
+                "truncated or malformed). Raw tail: %r", raw[-300:],
+            )
+        return message, is_complete, runner_context
 
     def chat_message(
         self,
