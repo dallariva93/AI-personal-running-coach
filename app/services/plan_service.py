@@ -49,22 +49,10 @@ def generate_plan(
 
     ramp_factor = personal_ramp_factor(db)
     ramp_pct = round((ramp_factor - 1) * 100, 1) if ramp_factor is not None else None
+    # Both coach paths build the plan through the deterministic periodization
+    # engine, which already honours the chat-agreed week skeleton (§CTX§) verbatim
+    # (Fase B): the old bolt-on ``enforce_week_structure`` pass is now redundant.
     plan_data = coach.plan_multiweek(request, profile, metrics, ramp_pct=ramp_pct)
-
-    # Guarantee the plan matches what was agreed in the pre-plan chat: the
-    # generator is a separate model call (with an offline fallback) and can
-    # drift from the agreed week. This deterministic pass reshapes every week
-    # to the agreed day → session-type skeleton from the runner context.
-    from app.processing import enforce_week_structure
-
-    plan_data, enforcement_notes = enforce_week_structure(
-        plan_data, request.runner_context
-    )
-    if enforcement_notes:
-        logger.info(
-            "Plan reshaped to honor the chat agreement: %s",
-            "; ".join(enforcement_notes),
-        )
 
     weeks_list = plan_data.get("weeks", [])
     weeks_total = len(weeks_list)

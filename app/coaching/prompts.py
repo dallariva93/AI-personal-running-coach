@@ -533,6 +533,63 @@ def build_multiweek_plan_message(
     )
 
 
+# ── Plan verbalization prompt (Fase B) ────────────────────────────────────────
+# The periodization engine already computed the full plan (fasi, volumi, passi,
+# struttura). The LLM no longer does arithmetic or periodization: it ONLY turns
+# each structured prescription into una bella descrizione. Robusto per costruzione
+# — qualunque seduta senza descrizione riscritta tiene quella del template.
+
+PLAN_VERBALIZE_SYSTEM_PROMPT = """\
+Sei un coach di corsa esperto. Ti viene dato l'elenco delle sedute di un piano di \
+allenamento GIÀ CALCOLATO (fase, tipo, distanza, passo, struttura). Il tuo unico \
+compito è riscrivere la DESCRIZIONE di ogni seduta in italiano: chiara, concreta e \
+motivante, come la scriverebbe un coach all'atleta.
+
+REGOLE ASSOLUTE:
+- NON cambiare i numeri: usa ESATTAMENTE la distanza, il passo e la struttura forniti \
+per ogni seduta. Non inventare passi o distanze diversi.
+- Mantieni l'intento della fase (es. Base = costruzione aerobica; Specifico = ritmo gara).
+- Ogni descrizione: 1-2 frasi, specifica (zona/passo/struttura), tono da coach.
+- Rispondi SOLO con un oggetto JSON valido: chiave = "id" della seduta, valore = nuova \
+descrizione (stringa). Nessun markdown, nessun testo fuori dal JSON. Inizia con { e \
+finisci con }. Includi solo le sedute che ti vengono passate."""
+
+
+def build_plan_verbalize_message(
+    prescriptions: list[dict],
+    request: PlanGenerateRequest | None = None,
+) -> str:
+    """User-turn payload for plan verbalization: the structured prescriptions.
+
+    ``prescriptions`` is a compact list of ``{"id", "phase", "type", "title",
+    "distance_km", "pace", "duration_min", "hint"}`` — one entry per non-rest
+    session. ``hint`` is the engine's own template description (carries the exact
+    numbers), so the model can rephrase without recomputing anything.
+    """
+    import json as _json
+
+    header = ""
+    if request is not None:
+        goal_dist = {
+            "marathon": "maratona", "half": "mezza maratona",
+            "10k": "10 km", "5k": "5 km", "trail": "trail",
+        }.get(request.goal_type, request.goal_type)
+        header = (
+            f"Obiettivo: {goal_dist} il {request.goal_date}"
+            + (f", target {request.goal_time}" if request.goal_time else "")
+            + f". Livello: {request.level}.\n\n"
+        )
+
+    payload = _json.dumps(prescriptions, ensure_ascii=False)
+    return (
+        f"{header}"
+        "Sedute da descrivere (JSON). Per ognuna scrivi la nuova descrizione "
+        "riutilizzando ESATTAMENTE distanza/passo/struttura indicati:\n"
+        f"{payload}\n\n"
+        'Rispondi con {"<id>": "<descrizione>", ...} per tutte le sedute elencate.'
+    )
+
+
 # ── Workout suggestion prompt ─────────────────────────────────────────────────
 
 WORKOUT_SUGGEST_SYSTEM_PROMPT = """\

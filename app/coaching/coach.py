@@ -300,24 +300,27 @@ class AICoach:
         metrics: TrainingMetrics | None,
         ramp_pct: float | None = None,
     ) -> dict:
-        """Generate a full multi-week training plan via Claude, fall back to offline."""
+        """Build the plan deterministically, then let the LLM verbalize it (Fase B).
+
+        The periodization engine computes the whole plan (phases, volumes, paces,
+        session structure) honouring §CTX§ — so the LLM never does arithmetic or
+        periodization again (no monolithic JSON, no truncation, no hallucinated
+        volumes). The model only rewrites the per-session descriptions, and if
+        that call fails the engine's own template descriptions remain.
+        """
+        from app.coaching.plan_verbalize import verbalize_plan_spec
+        from app.processing.periodization import build_plan_spec
+
+        spec = build_plan_spec(
+            request, profile=profile, metrics=metrics, ramp_pct=ramp_pct
+        )
         model = self.settings.planner_model or self.settings.coach_model
-        user = prompts.build_multiweek_plan_message(request, profile, metrics, ramp_pct)
-        try:
-            raw = self._call(
-                prompts.MULTIWEEK_PLAN_SYSTEM_PROMPT,
-                user,
-                model,
-                max_tokens=8000,
-            )
-            plan_data = _parse_json_response(raw)
-            _validate_plan_structure(plan_data)
-            return plan_data
-        except Exception as exc:
-            logger.error(
-                "Multiweek plan AI call failed, falling back to offline: %s", exc
-            )
-            return self._fallback.plan_multiweek(request, profile, metrics, ramp_pct)
+        call_fn = lambda s, u: self._call(  # noqa: E731 - tiny adapter
+            s, u, model, max_tokens=self.settings.plan_verbalize_max_tokens
+        )
+        return verbalize_plan_spec(
+            spec, request=request, settings=self.settings, call_fn=call_fn
+        )
 
     def suggest_workout(
         self,

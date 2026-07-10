@@ -63,6 +63,11 @@ class Settings(BaseSettings):
     # default) truncated it, dropping the §CTX§/§READY§ sentinels so no plan
     # was ever generated.
     plan_chat_max_tokens: int = 2500
+    # Fase B: the planner no longer generates the plan JSON — the deterministic
+    # engine does. The LLM only re-verbalizes the per-session descriptions, so a
+    # generous budget covers a full block of prose (and truncation just keeps the
+    # template descriptions for the sessions it didn't reach). Haiku is fine here.
+    plan_verbalize_max_tokens: int = 4000
     ai_max_retries: int = 2
     ai_timeout_seconds: int = 60
     # When the AI call fails, fall back to the offline rule-based coach.
