@@ -15,6 +15,7 @@ from __future__ import annotations
 import math
 from datetime import date, datetime, timedelta
 
+from app.processing.performance import time_to_seconds
 from app.processing.plan_enforcement import parse_week_structure
 from app.schemas import (
     AthleteProfile,
@@ -255,21 +256,30 @@ def build_plan_spec(
         request, weeks_total, metrics, ramp_pct
     )
     ctx = _spec_parse_ctx(request.runner_context)
-    paces = _spec_paces(request, ctx)
+    pace_plan = _spec_pace_plan(request, profile, metrics, ctx)
     baseline = _spec_baseline(request, metrics, profile, ctx)
     volumes = _spec_volumes(
         phase_by_week, deload_by_week, baseline, request.goal_type, ramp_pct
     )
     agreed = {e["dow"]: e for e in parse_week_structure(request.runner_context)}
 
+    # Paces progress from current fitness (week 0) to the goal by the last
+    # preparation week; the taper/race weeks sharpen at the goal paces.
+    last_prep = max(
+        (i for i, p in enumerate(phase_by_week) if p in _SPEC_PREP_PHASES),
+        default=0,
+    )
+
     weeks_out: list[dict] = []
     for i in range(weeks_total):
         phase = phase_by_week[i]
         is_deload = deload_by_week[i]
+        progress = 1.0 if i >= last_prep else (i / last_prep if last_prep else 1.0)
+        week_paces = _spec_week_paces(pace_plan, progress)
         assignments = _spec_assignments(phase, request, agreed, is_deload)
         long_frac = _spec_long_fraction(phase, i, weeks_total)
         sessions = _spec_sessions(
-            assignments, volumes[i], long_frac, request.goal_type, paces, agreed
+            assignments, volumes[i], long_frac, request.goal_type, week_paces, agreed
         )
         actual_km = round(
             sum(s["target_distance_km"] or 0.0 for s in sessions), 1
@@ -284,10 +294,18 @@ def build_plan_spec(
             }
         )
 
+    # Goal-realism gate: flag an aggressive goal and surface it on week 1.
+    realism = _spec_goal_realism(request, metrics)
+    if realism and realism["verdict"] == "ambizioso" and weeks_out:
+        weeks_out[0]["description"] = (
+            _spec_realism_note(realism) + " " + weeks_out[0]["description"]
+        )
+
     return {
         "weeks_total": len(weeks_out),
         "start_date": start_date.isoformat(),
         "weeks": weeks_out,
+        "goal_realism": realism,
     }
 
 
@@ -679,20 +697,142 @@ def _spec_parse_ctx(runner_context: str | None) -> dict:
     return ctx if isinstance(ctx, dict) else {}
 
 
-def _spec_paces(request: PlanGenerateRequest, ctx: dict) -> dict[str, str]:
-    """Resolve pace targets, preferring the values agreed in chat."""
-    paces = dict(
-        _SPEC_PACE_DEFAULTS.get(request.level, _SPEC_PACE_DEFAULTS["intermediate"])
+# Session paces as multiples of the lactate-threshold (LT2) pace. Threshold is
+# the anchor: everything else keys off it (easy ~22 % slower, reps ~7 % faster).
+_SPEC_PACE_RATIO = {"easy": 1.22, "long": 1.17, "tempo": 1.00, "intervals": 0.93}
+
+# LT2 pace implied by a goal race pace, per distance. A 5 k pace is faster than
+# threshold (→ threshold slower, ×1.06); a marathon pace is slower (→ threshold
+# faster, ×0.93). Lets us turn goal_time into an aspirational threshold.
+_SPEC_LT2_FROM_RACE = {
+    "5k": 1.06, "10k": 1.02, "half": 0.98, "marathon": 0.93, "trail": 0.95,
+}
+_SPEC_GOAL_DIST = {"5k": 5.0, "10k": 10.0, "half": 21.0975, "marathon": 42.195}
+
+
+def _spec_pace_plan(
+    request: PlanGenerateRequest,
+    profile: AthleteProfile | None,
+    metrics: TrainingMetrics | None,
+    ctx: dict,
+) -> dict:
+    """Build the per-block pace model (Fase C): current-fitness anchor + goal.
+
+    Paces are derived from the athlete's **current** lactate threshold (LT2 pace
+    from chat, physiology or metrics), not from the aspirational goal time. The
+    goal time only sets the *end-of-block* target, so early weeks prescribe what
+    the athlete can hold today and the paces **progress** toward the goal. Paces
+    the athlete explicitly pinned in chat stay fixed — they're a contract.
+    """
+    default_lt2 = _spec_pace_min(
+        _SPEC_PACE_DEFAULTS.get(request.level, _SPEC_PACE_DEFAULTS["intermediate"])[
+            "tempo"
+        ]
+    ) * 60.0
+
+    # Current threshold (sec/km): chat > physiology > metrics-derived > default.
+    anchor = (
+        _spec_pace_to_sec(ctx.get("threshold_pace"))
+        or _spec_pace_to_sec(getattr(getattr(profile, "physiology", None), "lt2_pace", None))
+        or default_lt2
     )
-    easy = _spec_norm_pace(ctx.get("easy_pace"))
-    if easy:
-        paces["easy"] = easy
-        paces["long"] = _spec_shift(easy, 15)  # long ~15 s/km slower than easy
-    threshold = _spec_norm_pace(ctx.get("threshold_pace"))
-    if threshold:
-        paces["tempo"] = threshold
-        paces["intervals"] = _spec_shift(threshold, -25)  # reps faster than LT
-    return paces
+
+    base = {t: anchor * r for t, r in _SPEC_PACE_RATIO.items()}
+    pinned: set[str] = set()
+    if ctx.get("threshold_pace"):
+        pinned.add("tempo")
+    easy_pinned = _spec_pace_to_sec(ctx.get("easy_pace"))
+    if easy_pinned:
+        base["easy"] = easy_pinned
+        pinned.add("easy")
+
+    # Aspirational threshold from the goal time; falls back to the anchor.
+    goal_lt2 = _spec_goal_lt2(request) or anchor
+    goal = {t: goal_lt2 * r for t, r in _SPEC_PACE_RATIO.items()}
+    # A pinned pace never drifts; and never prescribe *slower* than today.
+    for t in _SPEC_PACE_RATIO:
+        if t in pinned or goal[t] > base[t]:
+            goal[t] = base[t]
+
+    return {"base": base, "goal": goal}
+
+
+def _spec_goal_lt2(request: PlanGenerateRequest) -> float | None:
+    secs = time_to_seconds(request.goal_time)
+    dist = _SPEC_GOAL_DIST.get(request.goal_type)
+    if not secs or not dist:
+        return None
+    race_pace = secs / dist
+    return race_pace * _SPEC_LT2_FROM_RACE.get(request.goal_type, 0.97)
+
+
+def _spec_week_paces(pace_plan: dict, progress: float) -> dict[str, str]:
+    """Paces for one week: interpolate current→goal by ``progress`` (0..1)."""
+    base, goal = pace_plan["base"], pace_plan["goal"]
+    out: dict[str, str] = {}
+    for t in _SPEC_PACE_RATIO:
+        sec = base[t] + (goal[t] - base[t]) * progress
+        out[t] = _spec_fmt_pace(sec)
+    return out
+
+
+def _spec_goal_realism(
+    request: PlanGenerateRequest, metrics: TrainingMetrics | None
+) -> dict | None:
+    """Compare the goal time with the race predictor's forecast (Fase C gate).
+
+    Reuses the prediction the metrics layer already computed from current
+    fitness. Flags an aggressive goal and quantifies the improvement it needs, so
+    the plan (and the chat) can surface it before the athlete commits.
+    """
+    if metrics is None:
+        return None
+    predicted = time_to_seconds(metrics.predicted_race_time)
+    target = time_to_seconds(request.goal_time)
+    if not predicted or not target:
+        return None
+
+    gap = predicted - target  # >0 → goal faster than predicted → ambitious
+    required_pct = round(max(0.0, gap) / predicted * 100, 1)
+    if target >= predicted * 1.02:
+        verdict = "conservativo"
+    elif target >= predicted * 0.985:
+        verdict = "realistico"
+    else:
+        verdict = "ambizioso"
+    return {
+        "predicted_time": metrics.predicted_race_time,
+        "target_time": request.goal_time,
+        "probability": metrics.race_probability,
+        "confidence": metrics.race_confidence,
+        "required_improvement_pct": required_pct,
+        "verdict": verdict,
+    }
+
+
+def _spec_realism_note(realism: dict) -> str:
+    prob = realism.get("probability")
+    prob_txt = f" (~{round(prob * 100)}% di probabilità)" if prob is not None else ""
+    return (
+        f"⚠️ Obiettivo {realism['target_time']} ambizioso: la forma attuale "
+        f"predice ~{realism['predicted_time']}{prob_txt}. Servono circa "
+        f"{realism['required_improvement_pct']}% di miglioramento nel blocco. "
+        "I ritmi partono dalla forma di oggi e progrediscono verso l'obiettivo."
+    )
+
+
+def _spec_pace_to_sec(value) -> float | None:
+    """Parse a 'M:SS/km' (or 'M:SS') pace into seconds per km."""
+    norm = _spec_norm_pace(value)
+    if norm is None:
+        return None
+    secs = time_to_seconds(norm.replace("/km", ""))
+    return secs if secs and secs > 0 else None
+
+
+def _spec_fmt_pace(sec: float) -> str:
+    total = max(int(round(sec)), 150)  # sanity floor 2:30/km
+    return f"{total // 60}:{total % 60:02d}/km"
 
 
 def _spec_norm_pace(value) -> str | None:
@@ -711,12 +851,6 @@ def _spec_pace_min(pace: str) -> float:
         return int(m) + int(s) / 60.0
     except (ValueError, AttributeError):
         return 5.5
-
-
-def _spec_shift(pace: str, seconds: int) -> str:
-    total = int(round(_spec_pace_min(pace) * 60)) + seconds
-    total = max(total, 150)  # never faster than 2:30/km (sanity floor)
-    return f"{total // 60}:{total % 60:02d}/km"
 
 
 def _spec_clamp(value: float, low: float, high: float) -> float:

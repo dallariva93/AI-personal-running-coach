@@ -54,6 +54,19 @@ def generate_plan(
     # (Fase B): the old bolt-on ``enforce_week_structure`` pass is now redundant.
     plan_data = coach.plan_multiweek(request, profile, metrics, ramp_pct=ramp_pct)
 
+    # Goal-realism gate (Fase C): the engine compares the target with the race
+    # predictor's forecast from current fitness. Surface it for the audit trail;
+    # the athlete-facing warning is already woven into week 1.
+    realism = plan_data.get("goal_realism")
+    if realism and realism.get("verdict") == "ambizioso":
+        logger.info(
+            "Goal realism: target %s vs predicted %s → %s (+%.1f%% needed)",
+            realism.get("target_time"),
+            realism.get("predicted_time"),
+            realism["verdict"],
+            realism.get("required_improvement_pct", 0.0),
+        )
+
     weeks_list = plan_data.get("weeks", [])
     weeks_total = len(weeks_list)
     start_date = plan_data.get("start_date", date.today().isoformat())

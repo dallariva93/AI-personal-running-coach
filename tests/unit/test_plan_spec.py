@@ -12,9 +12,29 @@ import json
 from datetime import date
 
 from app.processing.periodization import build_plan_spec
-from app.schemas import PlanGenerateRequest, TrainingMetrics
+from app.schemas import (
+    AthletePhysiology,
+    AthleteProfile,
+    PlanGenerateRequest,
+    TrainingMetrics,
+)
 
 REF = date(2026, 6, 22)  # a Monday
+
+
+def _pace_sec(pace: str) -> int:
+    m, s = pace.replace("/km", "").split(":")
+    return int(m) * 60 + int(s)
+
+
+def _pace_series(spec: dict, stype: str) -> list[int]:
+    """Ordered per-week pace (sec/km) for every week that has ``stype``."""
+    out = []
+    for w in spec["weeks"]:
+        s = next((x for x in w["sessions"] if x["session_type"] == stype), None)
+        if s and s["target_pace"]:
+            out.append(_pace_sec(s["target_pace"]))
+    return out
 
 
 def _req(**kw) -> PlanGenerateRequest:
@@ -185,3 +205,83 @@ def test_days_per_week_controls_training_days():
         )
 
     assert run_days(three) < run_days(six)
+
+
+# ── Fase C: fitness-derived, progressing paces ───────────────────────────────
+
+def _profile(lt2: str) -> AthleteProfile:
+    return AthleteProfile(level="intermediate", physiology=AthletePhysiology(lt2_pace=lt2))
+
+
+def test_paces_anchor_on_current_threshold():
+    """Week-1 paces derive from current LT2 (progress 0), not the goal pace.
+
+    Easy ≈ LT2 × 1.22 at week 1; the goal (3:20) would imply a much faster easy,
+    so anchoring on current form is what keeps early weeks runnable.
+    """
+    spec = build_plan_spec(
+        _req(goal_time="3:20:00"), profile=_profile("5:10/km"), ref=REF
+    )
+    easy_wk1 = _pace_series(spec, "easy")[0]
+    expected = round(_pace_sec("5:10/km") * 1.22)  # current LT2 → easy
+    assert abs(easy_wk1 - expected) <= 3
+
+
+def test_paces_progress_toward_goal():
+    """When the goal is faster than current form, paces get faster across the block."""
+    spec = build_plan_spec(
+        _req(goal_time="3:20:00"), profile=_profile("5:10/km"), ref=REF
+    )
+    tempo = _pace_series(spec, "tempo")
+    easy = _pace_series(spec, "easy")
+    assert tempo[0] > tempo[-1]  # tempo gets faster (fewer sec/km)
+    assert easy[0] > easy[-1]
+
+
+def test_chat_pinned_threshold_pace_stays_flat():
+    """A pace the athlete pinned in chat is a contract — it must not drift."""
+    ctx = json.dumps({"threshold_pace": "4:30/km"})
+    spec = build_plan_spec(
+        _req(goal_time="3:00:00", runner_context=ctx), profile=_profile("5:10/km"), ref=REF
+    )
+    tempo = set(_pace_series(spec, "tempo"))
+    assert tempo == {_pace_sec("4:30/km")}  # identical every week
+
+
+def test_paces_never_prescribed_slower_than_current_form():
+    """A soft goal must not make the plan prescribe *slower* than today's fitness."""
+    spec = build_plan_spec(
+        _req(goal_time="4:45:00"), profile=_profile("4:20/km"), ref=REF
+    )
+    tempo = _pace_series(spec, "tempo")
+    assert max(tempo) <= _pace_sec("4:20/km") + 2  # never slower than current LT2
+
+
+# ── Fase C: goal-realism gate ────────────────────────────────────────────────
+
+def test_goal_realism_flags_ambitious_goal():
+    metrics = TrainingMetrics(
+        chronic_load_km=45, predicted_race_time="3:38:00",
+        race_probability=0.35, race_confidence="medium",
+    )
+    spec = build_plan_spec(_req(goal_time="3:20:00"), metrics=metrics, ref=REF)
+    realism = spec["goal_realism"]
+    assert realism["verdict"] == "ambizioso"
+    assert realism["required_improvement_pct"] > 0
+    # The warning is surfaced on week 1.
+    assert "ambizioso" in spec["weeks"][0]["description"].lower()
+
+
+def test_goal_realism_realistic_goal_has_no_warning():
+    metrics = TrainingMetrics(
+        chronic_load_km=45, predicted_race_time="3:19:00", race_probability=0.55,
+    )
+    spec = build_plan_spec(_req(goal_time="3:20:00"), metrics=metrics, ref=REF)
+    assert spec["goal_realism"]["verdict"] in {"realistico", "conservativo"}
+    assert "ambizioso" not in spec["weeks"][0]["description"].lower()
+
+
+def test_goal_realism_absent_without_prediction():
+    spec = build_plan_spec(_req(goal_time="3:20:00"), ref=REF)  # no metrics
+    assert spec["goal_realism"] is None
+    assert "ambizioso" not in spec["weeks"][0]["description"].lower()
