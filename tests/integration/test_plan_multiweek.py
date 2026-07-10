@@ -241,6 +241,25 @@ def test_plan_sessions_expose_structured_segments(client):
     assert structured > 0, "a marathon block must contain quality sessions"
 
 
+def test_plan_weeks_have_rationale_and_long_runs_have_fueling(client):
+    """Fase F: every week explains itself; long runs/races carry fueling."""
+    resp = client.post("/api/plan/generate", json=_GENERATE_PAYLOAD)
+    assert resp.status_code == 201, resp.text
+    body = resp.json()
+
+    assert all(w["rationale"] for w in body["weeks"])  # explainability everywhere
+
+    fuelled = 0
+    for week in body["weeks"]:
+        for s in week["sessions"]:
+            if s["session_type"] == "easy":
+                assert s["fueling"] is None
+            if s["fueling"]:
+                assert "carboidrati" in s["fueling"]
+                fuelled += 1
+    assert fuelled > 0, "long runs in a marathon block should carry fueling"
+
+
 def test_generate_plan_honors_chat_agreed_week_structure(client):
     """The app plan must match the week agreed in the pre-plan chat.
 

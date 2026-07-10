@@ -876,6 +876,8 @@ class PlanSessionOut(BaseModel):
     # Structured workout view (Fase E): warm-up / work / recovery / cool-down
     # segments derived from the prescription. Empty for rest/race/cross.
     segments: list[WorkoutSegmentIn] = Field(default_factory=list)
+    # Fueling & hydration guidance for long runs / races (Fase F), else None.
+    fueling: str | None = None
 
 
 class PlanWeekOut(BaseModel):
@@ -888,6 +890,8 @@ class PlanWeekOut(BaseModel):
     phase: str
     target_km: float
     description: str | None = None
+    # Coach-grade explainability (Fase F): why this week looks the way it does.
+    rationale: str | None = None
     sessions: list[PlanSessionOut]
     completion_pct: float = 0.0  # computed: completed non-rest / total non-rest
 

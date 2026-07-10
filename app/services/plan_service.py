@@ -371,7 +371,9 @@ def _compute_plan_out(plan: TrainingPlan) -> TrainingPlanOut:
     current_week_number = max(1, min(plan.weeks_total, days_elapsed // 7 + 1))
     weeks_remaining = max(0, plan.weeks_total - current_week_number)
 
-    weeks_out = [_compute_week_out(w, plan.goal_type) for w in plan.weeks]
+    weeks_out = [
+        _compute_week_out(w, plan.goal_type, plan.weeks_total) for w in plan.weeks
+    ]
 
     current_week_out = next(
         (w for w in weeks_out if w.week_number == current_week_number), None
@@ -412,20 +414,31 @@ def _compute_plan_out(plan: TrainingPlan) -> TrainingPlanOut:
 
 
 def _compute_week_out(
-    week: TrainingPlanWeek, goal_type: str | None = None
+    week: TrainingPlanWeek, goal_type: str | None = None, weeks_total: int = 0
 ) -> PlanWeekOut:
     """Compute completion_pct for a week and build the output schema.
 
-    Each session is enriched with its structured workout segments (Fase E),
-    derived deterministically from the prescription.
+    Each session is enriched with its structured workout segments and fueling
+    guidance (Fase E/F); the week carries a coach rationale (Fase F). All derived
+    deterministically from the persisted prescription — no extra state stored.
     """
+    from app.processing.fueling import fueling_guidance
+    from app.processing.plan_explain import week_rationale
     from app.processing.workout_segments import build_session_segments
+
+    is_race_week = any(
+        (s.session_type or "").lower() in ("race", "gara") for s in week.sessions
+    )
+    is_deload = "scarico" in (week.description or "").lower()
 
     sessions_out = []
     for s in week.sessions:
         so = PlanSessionOut.model_validate(s)
         so.segments = build_session_segments(
             so.session_type, so.target_distance_km, so.target_pace, goal_type
+        )
+        so.fueling = fueling_guidance(
+            so.session_type, so.target_distance_km, so.target_duration_min
         )
         sessions_out.append(so)
 
@@ -441,6 +454,13 @@ def _compute_week_out(
         phase=week.phase,
         target_km=week.target_km,
         description=week.description,
+        rationale=week_rationale(
+            week.phase,
+            week.week_number,
+            weeks_total,
+            is_deload=is_deload,
+            is_race_week=is_race_week,
+        ),
         sessions=sessions_out,
         completion_pct=round(completion_pct, 1),
     )
