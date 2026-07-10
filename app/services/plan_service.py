@@ -71,7 +71,8 @@ def generate_plan(
     weeks_total = len(weeks_list)
     start_date = plan_data.get("start_date", date.today().isoformat())
 
-    # Persist the plan
+    # Persist the plan, including the generation inputs the rolling re-plan
+    # (Fase D) needs to re-derive future weeks faithfully.
     plan = TrainingPlan(
         goal_type=request.goal_type,
         goal_date=request.goal_date,
@@ -81,6 +82,10 @@ def generate_plan(
         start_date=start_date,
         status="active",
         created_at=datetime.now(UTC),
+        days_per_week=request.days_per_week,
+        long_run_day=request.long_run_day,
+        runner_context=request.runner_context,
+        baseline_km=plan_data.get("baseline_km"),
     )
     db.add(plan)
     db.flush()
@@ -97,36 +102,40 @@ def generate_plan(
         db.flush()
 
         for sess_data in week_data.get("sessions", []):
-            target_dist = (
-                float(sess_data["target_distance_km"])
-                if sess_data.get("target_distance_km") is not None
-                else None
-            )
-            sess_type = sess_data.get("session_type", "easy")
-            sess = TrainingPlanSession(
-                week_id=week.id,
-                day_of_week=int(sess_data["day_of_week"]),
-                session_type=sess_type,
-                title=sess_data.get("title", ""),
-                description=sess_data.get("description"),
-                target_distance_km=target_dist,
-                target_pace=sess_data.get("target_pace"),
-                target_duration_min=(
-                    float(sess_data["target_duration_min"])
-                    if sess_data.get("target_duration_min") is not None
-                    else None
-                ),
-                completed=bool(sess_data.get("completed", False)),
-                # P0-10: capture base prescription at creation time.
-                base_target_distance_km=target_dist,
-                base_session_type=sess_type,
-            )
-            db.add(sess)
+            db.add(_session_from_spec(week.id, sess_data))
 
     db.flush()
     # Reload with relationships
     db.refresh(plan)
     return _compute_plan_out(plan)
+
+
+def _session_from_spec(week_id: int, sess_data: dict) -> TrainingPlanSession:
+    """Build a plan session ORM row from an engine session dict."""
+    target_dist = (
+        float(sess_data["target_distance_km"])
+        if sess_data.get("target_distance_km") is not None
+        else None
+    )
+    sess_type = sess_data.get("session_type", "easy")
+    return TrainingPlanSession(
+        week_id=week_id,
+        day_of_week=int(sess_data["day_of_week"]),
+        session_type=sess_type,
+        title=sess_data.get("title", ""),
+        description=sess_data.get("description"),
+        target_distance_km=target_dist,
+        target_pace=sess_data.get("target_pace"),
+        target_duration_min=(
+            float(sess_data["target_duration_min"])
+            if sess_data.get("target_duration_min") is not None
+            else None
+        ),
+        completed=bool(sess_data.get("completed", False)),
+        # P0-10: capture base prescription at creation time.
+        base_target_distance_km=target_dist,
+        base_session_type=sess_type,
+    )
 
 
 def get_current_plan(db: Session) -> TrainingPlanOut | None:

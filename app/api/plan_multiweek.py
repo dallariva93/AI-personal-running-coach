@@ -109,6 +109,23 @@ def get_current(session: Session = Depends(get_session)) -> TrainingPlanOut:
     return plan
 
 
+@router.post("/plan/replan", response_model=TrainingPlanOut)
+def post_plan_replan(session: Session = Depends(get_session)) -> TrainingPlanOut:
+    """Re-derive the active plan's future weeks from current form (Fase D).
+
+    Past and current week stay immutable; completed and race weeks are never
+    touched. Returns the refreshed plan.
+    """
+    from app.services.replan_service import replan_future_weeks
+
+    plan = get_current_plan(session)
+    if plan is None:
+        raise HTTPException(status_code=404, detail="Nessun piano attivo.")
+    replan_future_weeks(session)
+    _commit(session)
+    return get_current_plan(session) or plan
+
+
 @router.get("/plan/{plan_id}", response_model=TrainingPlanOut)
 def get_plan_by_id(
     plan_id: int, session: Session = Depends(get_session)

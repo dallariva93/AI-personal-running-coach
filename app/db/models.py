@@ -401,6 +401,13 @@ class TrainingPlan(Base):
     start_date: Mapped[str] = mapped_column(String(10))
     status: Mapped[str] = mapped_column(String(16), default="active")
     created_at: Mapped[datetime] = mapped_column(DateTime, default=_utcnow)
+    # Generation inputs, captured so the rolling re-plan (Fase D) can re-derive
+    # the future weeks faithfully (same skeleton, refreshed form). Nullable for
+    # plans created before this was persisted.
+    days_per_week: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    long_run_day: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    runner_context: Mapped[str | None] = mapped_column(Text, nullable=True)
+    baseline_km: Mapped[float | None] = mapped_column(Float, nullable=True)
 
     weeks: Mapped[list[TrainingPlanWeek]] = relationship(
         back_populates="plan",

@@ -238,15 +238,19 @@ def build_plan_spec(
     metrics: TrainingMetrics | None = None,
     ramp_pct: float | None = None,
     ref: date | None = None,
+    baseline_km: float | None = None,
 ) -> dict:
     """Produce a complete multi-week Plan Spec from context + metrics + goal.
 
-    Returns the same dict shape the offline templates used to (so the plan
-    service and the enforcement pass are unchanged): ``{"weeks_total", "start_date",
+    Returns ``{"weeks_total", "start_date", "baseline_km", "goal_realism",
     "weeks": [{"week_number", "phase", "target_km", "description", "sessions"}]}``.
     Each week always carries exactly 7 sessions (rest days included) with days
     0..6, and ``target_km`` equals the sum of the week's session distances — the
     header can never disagree with the sessions again.
+
+    ``baseline_km`` pins the starting weekly volume (Fase D rolling re-plan passes
+    the plan's original baseline so re-derivation keeps volume continuity instead
+    of re-ramping from the athlete's now-higher chronic load).
     """
     today = ref or date.today()
     start_date = today - timedelta(days=today.weekday())  # Monday of current week
@@ -257,7 +261,10 @@ def build_plan_spec(
     )
     ctx = _spec_parse_ctx(request.runner_context)
     pace_plan = _spec_pace_plan(request, profile, metrics, ctx)
-    baseline = _spec_baseline(request, metrics, profile, ctx)
+    baseline = (
+        baseline_km if baseline_km and baseline_km > 0
+        else _spec_baseline(request, metrics, profile, ctx)
+    )
     volumes = _spec_volumes(
         phase_by_week, deload_by_week, baseline, request.goal_type, ramp_pct
     )
@@ -308,6 +315,7 @@ def build_plan_spec(
     return {
         "weeks_total": len(weeks_out),
         "start_date": start_date.isoformat(),
+        "baseline_km": round(baseline, 1),
         "weeks": weeks_out,
         "goal_realism": realism,
     }
