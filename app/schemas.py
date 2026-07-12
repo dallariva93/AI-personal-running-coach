@@ -183,6 +183,8 @@ class AthleteModel(BaseModel):
     ramp_tolerance_pct: AthleteModelEstimate
     recovery_halflife_days: AthleteModelEstimate
     heat_sensitivity_s_per_c: AthleteModelEstimate
+    # A5 extension (section 2.3): fade-resistance in long runs, 0-100.
+    durability: AthleteModelEstimate | None = None
     computed_at: str | None = None
 
 
@@ -484,6 +486,9 @@ class TrainingMetrics(BaseModel):
     # Latest Garmin VO2max and adaptive-plan adjustments (Fase 4).
     vo2max: float | None = None
     adaptive_notes: list[str] = Field(default_factory=list)
+    # Digital Twin durability (0-100), injected by the plan service so the
+    # engine can size the long run to the athlete's fade-resistance (section 2.3).
+    durability: float | None = None
 
 
 class CoachDecision(BaseModel):

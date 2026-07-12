@@ -45,10 +45,16 @@ def generate_plan(
 
     # Generate plan data from coach. The Digital Twin (A5) injects the athlete's
     # personal weekly ramp cap into the prompt when it has been learned.
-    from app.services.athlete_model_service import personal_ramp_factor
+    from app.services.athlete_model_service import (
+        personal_durability,
+        personal_ramp_factor,
+    )
 
     ramp_factor = personal_ramp_factor(db)
     ramp_pct = round((ramp_factor - 1) * 100, 1) if ramp_factor is not None else None
+    # Digital Twin durability (section 2.3): size the long run to fade-resistance.
+    if metrics is not None:
+        metrics.durability = personal_durability(db)
     # Both coach paths build the plan through the deterministic periodization
     # engine, which already honours the chat-agreed week skeleton (§CTX§) verbatim
     # (Fase B): the old bolt-on ``enforce_week_structure`` pass is now redundant.

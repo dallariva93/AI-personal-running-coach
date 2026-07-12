@@ -114,10 +114,15 @@ def replan_future_weeks(db: Session, ref: date | None = None) -> dict:
         hrv_history=hrv_history(db, ref=ref),
     ) if summaries else None
 
-    from app.services.athlete_model_service import personal_ramp_factor
+    from app.services.athlete_model_service import (
+        personal_durability,
+        personal_ramp_factor,
+    )
 
     ramp_factor = personal_ramp_factor(db)
     ramp_pct = round((ramp_factor - 1) * 100, 1) if ramp_factor is not None else None
+    if metrics is not None:
+        metrics.durability = personal_durability(db)
 
     request = _reconstruct_request(plan)
     # Anchor to the ORIGINAL start date so the timeline (week count, phases) is

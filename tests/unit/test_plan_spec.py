@@ -343,6 +343,26 @@ def test_race_outside_the_block_is_ignored():
     assert _race_day(spec) is None
 
 
+def test_durability_scales_the_long_run():
+    """A durable athlete gets a bigger long run than a fragile one (section 2.3)."""
+    fragile = build_plan_spec(
+        _req(), metrics=TrainingMetrics(chronic_load_km=45, durability=30), ref=REF
+    )
+    durable = build_plan_spec(
+        _req(), metrics=TrainingMetrics(chronic_load_km=45, durability=95), ref=REF
+    )
+
+    def peak_long(spec):
+        return max(
+            s["target_distance_km"] or 0.0
+            for w in spec["weeks"]
+            for s in w["sessions"]
+            if s["session_type"] == "long"
+        )
+
+    assert peak_long(durable) > peak_long(fragile)
+
+
 def test_bce_race_week_volume_recomputed():
     prof = AthleteProfile(
         level="intermediate",

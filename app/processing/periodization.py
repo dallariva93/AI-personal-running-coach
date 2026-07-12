@@ -276,6 +276,7 @@ def build_plan_spec(
         (i for i, p in enumerate(phase_by_week) if p in _SPEC_PREP_PHASES),
         default=0,
     )
+    durability = metrics.durability if metrics is not None else None
 
     weeks_out: list[dict] = []
     for i in range(weeks_total):
@@ -284,7 +285,7 @@ def build_plan_spec(
         progress = 1.0 if i >= last_prep else (i / last_prep if last_prep else 1.0)
         week_paces = _spec_week_paces(pace_plan, progress)
         assignments = _spec_assignments(phase, request, agreed, is_deload)
-        long_frac = _spec_long_fraction(phase, i, weeks_total)
+        long_frac = _spec_long_fraction(phase, i, weeks_total, durability)
         sessions = _spec_sessions(
             assignments, volumes[i], long_frac, request.goal_type, week_paces, agreed
         )
@@ -563,14 +564,24 @@ def _spec_taper_mult(index: int, total: int) -> float:
     return max(0.45, 0.70 - 0.10 * (index - 1))
 
 
-def _spec_long_fraction(phase: str, week_idx: int, weeks_total: int) -> float:
-    """Share of weekly volume in the long run — grows through the build."""
+def _spec_long_fraction(
+    phase: str, week_idx: int, weeks_total: int, durability: float | None = None
+) -> float:
+    """Share of weekly volume in the long run — grows through the build.
+
+    Scaled by the athlete's learned durability (section 2.3): a fade-resistant
+    runner absorbs a bigger long run, a fragile one gets it trimmed. Neutral
+    (65) leaves it unchanged; the adjustment is capped at ±0.02.
+    """
     if phase == "Gara":
         return 0.0
     if phase == "Taper":
         return 0.30
     span = max(1, weeks_total - 1)
-    return min(0.36, 0.28 + 0.08 * (week_idx / span))
+    frac = min(0.36, 0.28 + 0.08 * (week_idx / span))
+    if durability is not None:
+        frac += _spec_clamp((durability - 65.0) / 35.0, -1.0, 1.0) * 0.02
+    return frac
 
 
 # ── Weekly structure & sessions ──────────────────────────────────────────────
