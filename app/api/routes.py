@@ -222,6 +222,14 @@ def _adapt_after_change(session: Session, run_analysis: bool = False) -> None:
 
         evaluate_plan_executions(session)
         adapt_plan_after_sync(session)
+        # Rolling horizon (Fase D): re-derive the future weeks from fresh form,
+        # at most once a week. Best-effort — a failure must not break the sync.
+        try:
+            from app.services.replan_service import maybe_replan_weekly
+
+            maybe_replan_weekly(session)
+        except Exception as exc:  # noqa: BLE001
+            logger.warning("Weekly re-plan skipped: %s", exc)
         if run_analysis:
             try:
                 run_single_analysis(session, presync=False)

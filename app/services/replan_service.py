@@ -12,12 +12,12 @@ with no completed session, are ever replaced. Completed history is never touched
 
 from __future__ import annotations
 
-from datetime import date
+from datetime import date, datetime, timedelta
 
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from app.db.models import TrainingPlan
+from app.db.models import CoachEvent, TrainingPlan
 from app.logging_config import get_logger
 from app.processing import compute_metrics
 from app.processing.periodization import build_plan_spec
@@ -29,6 +29,29 @@ from app.services.plan_service import _session_from_spec
 from app.services.profile import get_profile
 
 logger = get_logger("app.services.replan")
+
+
+def maybe_replan_weekly(
+    db: Session, ref: date | None = None, min_days: int = 7
+) -> dict:
+    """Weekly-guarded auto re-plan for the sync pipeline (Fase D trigger).
+
+    Re-deriving the future on every sync would be noisy and wasteful; a rolling
+    horizon only needs refreshing about once a week (or when form shifts enough
+    to matter, which accumulates over days). This runs :func:`replan_future_weeks`
+    at most once per ``min_days`` window, keyed off the last ``plan_replanned``
+    event. Cheap no-op when a recent re-plan exists.
+    """
+    cutoff = datetime.now() - timedelta(days=min_days)
+    recent = db.scalar(
+        select(CoachEvent)
+        .where(CoachEvent.event_type == "plan_replanned")
+        .where(CoachEvent.created_at >= cutoff)
+        .limit(1)
+    )
+    if recent is not None:
+        return {"replanned": 0, "skipped": "recent"}
+    return replan_future_weeks(db, ref=ref)
 
 
 def _current_week_number(start: date, ref: date, weeks_total: int) -> int:

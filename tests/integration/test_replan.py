@@ -114,6 +114,24 @@ def test_reconstruct_request_infers_from_sessions_for_legacy_plans(session):
     assert req.goal_type == "10k"
 
 
+def test_maybe_replan_weekly_guards_against_repeats(client, session):
+    """The auto-trigger re-plans at most once per weekly window."""
+    from app.services.replan_service import maybe_replan_weekly
+
+    client.post("/api/plan/generate", json=_PAYLOAD)
+    plan = _active(session)
+    start = date.fromisoformat(plan.start_date)
+    ref = start + timedelta(weeks=3)
+
+    first = maybe_replan_weekly(session, ref=ref)
+    session.commit()
+    assert first["replanned"] > 0  # first pass re-plans and logs the event
+
+    second = maybe_replan_weekly(session, ref=ref + timedelta(days=2))
+    assert second["replanned"] == 0  # within the window → skipped
+    assert second.get("skipped") == "recent"
+
+
 def test_replan_endpoint_refreshes_and_404_without_plan(client):
     # No plan yet.
     assert client.post("/api/plan/replan").status_code == 404
