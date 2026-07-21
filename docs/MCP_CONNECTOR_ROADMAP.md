@@ -28,11 +28,12 @@ sul server.
 │  claude.ai   │ ───────────────────────────────▶ │  FastAPI esistente          │
 │  (connector) │      tools + prompts             │   └─ mount /mcp (SDK mcp)   │
 └──────────────┘                                  │  services / processing      │
-                                                  │  SQLAlchemy ──▶ DB (Neon)   │
-      ┌──────────────────┐  cron notturno         │  GarminRawFetcher ─▶ Tigris │
-      │ GitHub Actions   │ ──── POST /sync ──────▶│  garminconnect (non uff.)   │
-      └──────────────────┘  + ping keep-alive     └─────────────────────────────┘
-                                                        Hosting: Render free
+                                                  │  SQLAlchemy ──▶ SQLite       │
+      ┌──────────────────┐   cron notturno        │    (volume Fly persistente) │
+      │ GitHub Actions   │ ──── POST /sync ──────▶│  GarminRawFetcher ─▶ Tigris │
+      └──────────────────┘                        │  garminconnect (non uff.)   │
+                                                  └─────────────────────────────┘
+                                                    Hosting: Fly.io (GIÀ attivo)
 ```
 
 Decisioni architetturali:
@@ -47,53 +48,55 @@ Decisioni architetturali:
    (`app/storage/object_store.py` + `GarminRawFetcher` esistono già). Perdere il
    DB non è un disastro: si ri-esegue il backfill.
 
-### Stack a costo zero (scelta primaria)
+### Stack a costo zero — **si riusa quello che c'è già**
 
-| Componente | Servizio | Free tier | Perché |
+> ⚠️ **Correzione rispetto alla prima stesura.** L'app è **già deployata su
+> Fly.io** (`fly.toml` + `.github/workflows/deploy-fly.yml`) con un **volume
+> persistente** e una **macchina always-on**. Non serve migrare a Render/Neon:
+> quei servizi risolverebbero problemi (disco effimero, cold start) che questo
+> setup **non ha**. Si aggiunge il server MCP alla stessa app; nient'altro si
+> sposta.
+
+| Componente | Servizio | Stato | Perché va bene così |
 |---|---|---|---|
-| Hosting | **Render** (free web service) | 750 h/mese (> un mese intero), HTTPS automatico, deploy da GitHub | Il minor attrito operativo. Spin-down dopo 15′ di inattività → mitigato dal ping (sotto). |
-| Database | **Neon** (Postgres serverless) | 0.5 GB | Il disco di Render free è **effimero**: SQLite sparirebbe a ogni deploy/restart. SQLAlchemy è già in uso → cambio di `DATABASE_URL`. |
-| Storage raw | **Tigris** | 5 GB | Già scelto in `docs/GARMIN_DATA_PLAN.md`; `ObjectStore` già implementato. ~1 anno di raw JSON+FIT ≈ 100–200 MB. |
-| Cron + keep-alive | **GitHub Actions** (scheduled workflow) | Gratis (un curl dura secondi) | Sync notturno via `POST /sync` protetto + ping ogni 10′ nelle ore di veglia per evitare lo spin-down. |
-| TLS/dominio | Incluso in Render (`*.onrender.com`) | Gratis | I connector richiedono HTTPS su 443. |
-| LLM | Nessuno lato server | — | Claude è il client. `AI_ENABLED=false`. |
+| Hosting | **Fly.io** (`app = "ai-running-coach"`, region cdg) | ✅ già attivo | HTTPS forzato su 443 (`force_https`), deploy via `deploy-fly.yml` da GitHub. Il mobile app lo usa già. |
+| Database | **SQLite su volume Fly** (`coach_data` → `/app/data`) | ✅ già persistente | Il volume sopravvive a restart/redeploy; le migrazioni Alembic girano già lì. **Nessun Postgres, nessuna migrazione dati.** |
+| Sempre caldo | `min_machines_running = 1`, `auto_stop_machines = "off"` | ✅ già configurato | Niente cold start a metà conversazione (già risolto per il 503 del mobile). **Keep-alive workflow non necessario.** |
+| Storage raw | **Tigris** | da configurare | Già scelto in `docs/GARMIN_DATA_PLAN.md`; `ObjectStore` implementato. Tiene i raw fuori dal volume da 1 GB. *Alternativa*: raw direttamente sul volume Fly (~100–200 MB/anno) e alzare il volume a 3 GB (free), se si vuole zero dipendenze esterne. |
+| Cron sync | **GitHub Actions** (scheduled) | da aggiungere | `POST /api/ingest` notturno protetto da `API_TOKEN`. Nessun ping keep-alive (la macchina è già always-on). |
+| LLM | Nessuno lato server | ✅ | Claude è il client. `AI_ENABLED=false` in produzione. |
 
-**Alternativa (più robusta, più setup): Oracle Cloud Always Free** — VM ARM
-persistente, SQLite invariato, zero cold start; ma richiede gestire VM,
-systemd, Caddy/TLS e un DNS gratuito (DuckDNS). Da considerare solo se i cold
-start di Render (~1′ a freddo) risultassero fastidiosi nella pratica.
+Il volume Fly da 1 GB basta ampiamente per il DB (decine di MB anche con un anno
+di storico). Se un giorno servisse più capacità di calcolo, la memoria è già a
+512 MB (vedi commento in `fly.toml`); resta sotto il free usage buffer.
 
-**Nota Postgres**: le migrazioni Alembic sono nate su SQLite; qualcuna potrebbe
-non applicarsi pulita su Postgres. Essendo il DB ricostruibile, il fallback
-pragmatico è `Base.metadata.create_all()` + `alembic stamp head` sul primo
-avvio Postgres, poi backfill. (SQLite resta il DB di sviluppo/test.)
-
-### Prerequisiti account (tutti gratuiti tranne il primo)
+### Prerequisiti account
 
 - [ ] Piano claude.ai **Pro o Max** (i custom connector richiedono un piano a pagamento — già disponibile)
-- [ ] Account Render collegato a GitHub
-- [ ] Account Neon (DB `running_coach`)
-- [ ] Bucket Tigris + credenziali S3 (già previsto dal GARMIN_DATA_PLAN)
-- [ ] Secrets: `GARMIN_EMAIL/PASSWORD`, `DATABASE_URL`, credenziali Tigris, `API_TOKEN` — **solo** negli env di Render/GitHub, mai nel repo
+- [ ] Fly.io + `FLY_API_TOKEN` in GitHub secrets — **già configurati** (il deploy gira)
+- [ ] Bucket Tigris + credenziali S3 (solo se si sceglie Tigris per i raw; altrimenti si usa il volume)
+- [ ] Secrets su Fly (`fly secrets set …`): `GARMIN_EMAIL/PASSWORD`, `API_TOKEN`, credenziali Tigris — **solo** negli env di Fly/GitHub, mai nel repo
 
 ---
 
-## Fase 0 — Fondamenta deploy (DB remoto + app su Render)
+## Fase 0 — Verifica del deploy esistente (quasi nulla da fare)
 
-*Obiettivo: l'app esistente gira su Internet, senza ancora MCP.*
+*Obiettivo: confermare che l'app su Fly.io è pronta a ospitare anche l'MCP.*
 
-1. Astrarre le due assunzioni SQLite rimaste (se presenti) dietro
-   `DATABASE_URL`; smoke test locale con un Postgres (docker o Neon dev branch):
-   `create_all` + avvio + `/api/health`.
-2. `render.yaml` (o setup da dashboard): build `pip install -r requirements.txt`,
-   start `uvicorn app.main:app --host 0.0.0.0 --port $PORT`; env vars da secrets.
-3. Deploy con `AI_ENABLED=false`, modalità demo spenta, `API_TOKEN` attivo
-   (l'auth middleware e la rotazione token esistono già in `auth_service`).
-4. Workflow GitHub Actions `keepalive.yml`: ping `GET /api/health` ogni 10′
-   dalle 6 alle 24 (di notte può dormire: il cron di sync lo sveglia).
+L'app è **già** su Internet con HTTPS, volume persistente e macchina always-on.
+Qui non si costruisce infrastruttura, si verifica soltanto:
 
-**Effort**: S. **Verifica**: l'app risponde su `https://<nome>.onrender.com`
-con token; un restart non perde il DB (Neon).
+1. Confermare che il deploy Fly è vivo: `https://ai-running-coach.fly.dev/api/health`
+   risponde; un `fly deploy` non perde il DB (volume `coach_data`).
+2. Assicurarsi che i secrets di produzione siano impostati su Fly
+   (`fly secrets list`): `GARMIN_EMAIL/PASSWORD`, `API_TOKEN`, e — se si userà
+   Tigris — le credenziali S3. In produzione `AI_ENABLED=false` (Claude è il
+   client) e modalità demo spenta.
+3. Nessun `render.yaml`, nessun Neon, nessun workflow keep-alive: già coperti da
+   `fly.toml` (`min_machines_running=1`) e da `deploy-fly.yml`.
+
+**Effort**: XS (verifica/config, non sviluppo). **Verifica**: `/api/health` in
+HTTPS con token; `fly secrets list` completo.
 
 ## Fase 1 — Backfill storico (≥ 1 anno) ✅ requisito esplicito
 
@@ -117,9 +120,11 @@ nella libreria, manca solo il loop.
      veloce mette in DB almeno le sintesi.
 2. Comando CLI `python -m app.cli backfill --months 12` (il parser argparse in
    `app/cli.py` è pronto per un nuovo sottocomando).
-3. Esecuzione: dal PC locale puntando al DB Neon (consigliato: niente timeout
-   di piattaforma), in 2–3 sessioni serali se serve. ~300 corse/anno × 3–4
-   chiamate = ~20–40 minuti a regime di throttle per la passata completa.
+3. Esecuzione: **dentro la macchina Fly**, che scrive direttamente sul volume:
+   `fly ssh console -C "python -m app.cli backfill --months 12"` (riprendibile
+   grazie al checkpoint, quindi eventuali disconnessioni ssh non sono un
+   problema). ~300 corse/anno × 3–4 chiamate = ~20–40 minuti a regime di throttle.
+   In alternativa in locale su una copia del DB e poi upload del file sul volume.
 
 **Effort**: M. **Verifica**: `SELECT count(*)` per mese copre 12 mesi;
 `compute_metrics` su `ref` di 6 mesi fa produce CTL/ATL sensati; i raw esistono
@@ -160,7 +165,7 @@ preparazione?" produce risposte coerenti con la dashboard.
 
 *Obiettivo: il server MCP raggiungibile da claude.ai in sicurezza.*
 
-1. Deploy della Fase 2 su Render (stesso servizio della Fase 0).
+1. Deploy della Fase 2 su Fly (`fly deploy`, stesso servizio già esistente).
 2. **Auth MVP (subito)**: i custom connector supportano anche server senza
    OAuth → proteggere `/mcp` con difesa a strati:
    - path non indovinabile (`/mcp-<token lungo random>`);
@@ -180,7 +185,7 @@ al handshake MCP; un path sbagliato dà 404; scanner comuni non trovano nulla.
 *Obiettivo: il connettore vive nelle chat e i dati restano freschi.*
 
 1. claude.ai → Settings → Connectors → **Add custom connector** → URL
-   `https://<nome>.onrender.com/mcp-<token>`. Abilitarlo nelle chat.
+   `https://ai-running-coach.fly.dev/mcp-<token>`. Abilitarlo nelle chat.
 2. Workflow GitHub Actions `sync.yml` (cron notturno): warm-up ping, poi
    `POST /api/ingest` con `API_TOKEN` → la pipeline esistente fa il resto
    (ingest → metriche → execution scoring → adaptive → re-plan settimanale
@@ -213,19 +218,19 @@ del giorno prima ci sono senza intervento manuale.
 |---|---|---|
 | Ban/blocco account Garmin (libreria non ufficiale) | Media | Throttle 1 req/s, backfill in sessioni brevi, sync 1×/giorno, backoff aggressivo. I raw su Tigris rendono il danno non catastrofico. Exit path: Strava/FIT import (vedi `INTEGRATION_STRATEGY.md`). |
 | Breaking change della libreria `garminconnect` | Media | `synthesize.py` è già tollerante agli schemi; pin di versione + test di collaudo dopo ogni upgrade. |
-| Cold start Render a metà conversazione | Media | Keep-alive diurno; al primo tool-call fallito Claude ritenta. Se insopportabile → migrazione a Oracle VM (Fase 0 rifatta, resto invariato). |
-| Free tier che cambia condizioni | Bassa | Tutto è portabile: FastAPI+Postgres+S3 girano ovunque; nessun lock-in. |
+| Cold start a metà conversazione | Bassa | Già mitigato: `min_machines_running=1` tiene la macchina calda (fatto per il 503 del mobile). |
+| Volume Fly da 1 GB insufficiente | Bassa | Il DB è decine di MB; i raw vanno su Tigris (o si alza il volume a 3 GB, free). |
+| Free tier / usage buffer che cambia | Bassa | Tutto portabile (FastAPI+SQLite+S3 girano ovunque); il costo Fly attuale è ~$3/mese, sotto il buffer. |
 | Esposizione dati sanitari su Internet | — | Path segreto + token, tool read-only, niente credenziali Garmin leggibili via MCP, `erasure.py` già disponibile; OAuth in hardening. |
-| Migrazioni SQLite→Postgres sporche | Media | Fallback `create_all` + `stamp head` (DB ricostruibile by design). |
 
 ## Ordine, effort complessivo e prompt di avvio
 
 | Fase | Dipende da | Effort | Prompt per avviare la sessione di sviluppo |
 |---|---|---|---|
-| 0 — Deploy fondamenta | — | S | "Esegui la Fase 0 di docs/MCP_CONNECTOR_ROADMAP.md: porta l'app su Render free con DB Neon, AI_ENABLED=false e keep-alive GitHub Actions." |
+| 0 — Verifica deploy | — | XS | "Esegui la Fase 0 di docs/MCP_CONNECTOR_ROADMAP.md: verifica il deploy Fly esistente (health, volume persistente, secrets, AI_ENABLED=false)." |
 | 1 — Backfill storico | 0 (solo per il DB target) | M | "Esegui la Fase 1 di docs/MCP_CONNECTOR_ROADMAP.md: comando backfill paginato, idempotente e riprendibile, con throttling e archivio raw su Tigris." |
 | 2 — Server MCP locale | — (parallelo a 0/1) | M | "Esegui la Fase 2 di docs/MCP_CONNECTOR_ROADMAP.md: monta FastMCP su /mcp con i tool v1 e il prompt running_coach, testabile da Claude Code in locale." |
-| 3 — Remoto + auth | 0+2 | S (+M OAuth) | "Esegui la Fase 3 di docs/MCP_CONNECTOR_ROADMAP.md: esponi /mcp su Render con path segreto, rate limit e tool read-only." |
+| 3 — Remoto + auth | 0+2 | S (+M OAuth) | "Esegui la Fase 3 di docs/MCP_CONNECTOR_ROADMAP.md: esponi /mcp su Fly con path segreto, rate limit e tool read-only." |
 | 4 — Connettore + cron | 1+3 | S | "Esegui la Fase 4 di docs/MCP_CONNECTOR_ROADMAP.md: workflow di sync notturno e collaudo del custom connector su claude.ai." |
 | 5 — Rifiniture coach | 4 | S/M ciascuna | "Dalla Fase 5 di docs/MCP_CONNECTOR_ROADMAP.md implementa <item>." |
 
@@ -245,4 +250,5 @@ complessiva fino alla Fase 4: **3–5 sessioni di sviluppo**.
 | `prompts.semantic_summary` | Cuore di `get_athlete_overview` |
 | `auth_service` (API_TOKEN + rotazione), rate limiting, `erasure.py` | Sicurezza del deploy |
 | `sync_state` | Pattern per il checkpoint del backfill |
-| **Nuovo da scrivere** | `backfill.py`, `mcp_server.py` (tool + prompt), `render.yaml`, 2 workflow GitHub Actions, config Postgres |
+| `fly.toml` + `deploy-fly.yml` (hosting, volume, always-on, CI deploy) | Il deploy esistente — riusato, nessuna modifica strutturale |
+| **Nuovo da scrivere** | `backfill.py`, `mcp_server.py` (tool + prompt), 1 workflow GitHub Actions di sync notturno |
