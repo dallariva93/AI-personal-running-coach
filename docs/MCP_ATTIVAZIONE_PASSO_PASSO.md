@@ -214,10 +214,16 @@ Se invece vedi un errore, salta alla tabella *"Se qualcosa non va"* in fondo.
 5. Dai un nome riconoscibile, per esempio `Running Coach`.
 6. Salva.
 
-Claude si collega e mostra gli strumenti disponibili. **Devi vederne 8**:
-`get_athlete_overview`, `get_training_metrics`, `list_activities`,
-`get_activity_detail`, `get_current_training_plan`, `get_plan_week`,
-`get_race_prediction`, `compare_periods`.
+Claude si collega e mostra gli strumenti disponibili. **Devi vederne 14**:
+
+*Leggere lo stato dell'atleta:* `get_athlete_overview`,
+`get_training_metrics`, `list_activities`, `get_activity_detail`,
+`get_current_training_plan`, `get_plan_week`, `get_race_prediction`,
+`compare_periods`.
+
+*Costruire un piano su misura:* `get_athlete_physiology`,
+`generate_plan_draft`, `get_training_history_summary`,
+`get_personal_records`, `get_cross_training`, `get_readiness_history`.
 
 ### Passo 2.5 — Attivalo in chat
 
@@ -244,6 +250,13 @@ Altre domande per provare bene:
 - *"Confronta questo mese con il mese scorso"*
 - *"Cosa ho in programma questa settimana?"*
 - *"Il mio obiettivo di gara è realistico?"*
+- *"Preparami un piano fino alla gara"* → Claude usa `generate_plan_draft`,
+  cioè il motore di periodizzazione del progetto, e poi te lo commenta. **È
+  una bozza**: non diventa il piano attivo dell'app, quello si genera dalla
+  dashboard.
+- *"A che ritmo devo fare il medio?"* → prima consulta `get_athlete_physiology`
+  e ancora i passi alla tua soglia reale. Se non ha abbastanza sforzi intensi
+  recenti per stimarla, te lo dice invece di inventare un numero.
 
 ### Consiglio: crea un Progetto dedicato
 
@@ -301,8 +314,36 @@ l'indirizzo. Le modifiche restano sull'API protetta da `API_TOKEN`.
 (`ai_enabled: false`); il ragionamento avviene nella chat, dentro il tuo
 abbonamento claude.ai. Fly resta sul piano che usi già.
 
-**Manca ancora una cosa:** al primo collegamento Claude vede solo le corse già
-presenti nel database. Per avere **tutto lo storico (almeno un anno)** serve la
-**Fase 1 — backfill** della roadmap (`docs/MCP_CONNECTOR_ROADMAP.md`), che non
-è ancora stata implementata. Il connettore funziona lo stesso da subito, ma
-sui confronti con l'anno scorso risponderà che non ha abbastanza dati.
+---
+
+## Passo finale (consigliato): importa tutto lo storico
+
+Al primo collegamento Claude vede solo le corse già nel database. Per dargli un
+anno di contesto — indispensabile per i confronti fra stagioni e per un piano
+trimestrale sensato — lancia il backfill **dentro la macchina Fly**, che scrive
+direttamente sul disco persistente:
+
+```sh
+fly ssh console --app ai-running-coach \
+  -C "python -m app.cli backfill --months 12"
+```
+
+Cosa aspettarsi: stampa una riga per pagina mentre scende indietro nel tempo.
+Con ~300 corse all'anno servono circa 20–40 minuti, perché fa una pausa di un
+secondo fra le chiamate — la libreria Garmin non è ufficiale, e martellarla è
+il modo migliore per farsi bloccare l'account.
+
+**Se si interrompe** (connessione persa, ssh chiuso, errore di rete): non hai
+perso niente. Rilancia lo stesso identico comando e riprende dal punto in cui
+era arrivato. Rilanciarlo a importazione finita non crea duplicati.
+
+Poi, quando hai tempo, scarica anche split e zone HR delle corse (è molto più
+lento, va a lotti e si può ripetere):
+
+```sh
+fly ssh console --app ai-running-coach \
+  -C "python -m app.cli backfill --enrich-only --enrich-limit 200"
+```
+
+Opzioni utili: `--months 24` per due anni, `--restart` per ricominciare da
+capo ignorando il checkpoint.

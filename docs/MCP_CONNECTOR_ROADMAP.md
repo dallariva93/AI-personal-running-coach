@@ -98,7 +98,7 @@ Qui non si costruisce infrastruttura, si verifica soltanto:
 **Effort**: XS (verifica/config, non sviluppo). **Verifica**: `/api/health` in
 HTTPS con token; `fly secrets list` completo.
 
-## Fase 1 — Backfill storico (≥ 1 anno) ✅ requisito esplicito
+## Fase 1 — Backfill storico (≥ 1 anno) ✅ FATTA
 
 *Obiettivo: tutta la cronologia in DB + raw archiviati su Tigris.*
 
@@ -126,7 +126,13 @@ nella libreria, manca solo il loop.
    problema). ~300 corse/anno × 3–4 chiamate = ~20–40 minuti a regime di throttle.
    In alternativa in locale su una copia del DB e poi upload del file sul volume.
 
-**Effort**: M. **Verifica**: `SELECT count(*)` per mese copre 12 mesi;
+Implementato in `app/services/backfill.py` + CLI `backfill`, 17 test.
+Due passate separate perché il costo differisce di ~100x (le sintesi prendono
+~100 attività per chiamata, l'arricchimento ne costa diverse *per attività*).
+Un cutoff diverso fa ripartire da capo invece di riprendere: riprendere in una
+finestra che il run precedente non stava percorrendo salterebbe dati.
+
+**Verifica**: `SELECT count(*)` per mese copre 12 mesi;
 `compute_metrics` su `ref` di 6 mesi fa produce CTL/ATL sensati; i raw esistono
 su Tigris.
 
@@ -271,6 +277,26 @@ immediatamente di esistere (poi aggiorna il connettore su claude.ai).
 **Effort**: S. **Verifica**: in una chat claude.ai, Claude chiama i tool
 (visibili nella UI) e risponde da coach con i numeri veri; la mattina i dati
 del giorno prima ci sono senza intervento manuale.
+
+## Fase 2.5 — Fisiologia e piano deterministico ✅ FATTA
+
+*Obiettivo: chiudere il divario fra "buon piano generico" e "piano di questo
+atleta". I dati e il motore c'erano già: mancava il passaggio attraverso i tool.*
+
+| Tool | Perché serve |
+|---|---|
+| `generate_plan_draft` | Chiama `build_plan_spec` invece di far scrivere il piano a mano libera. È la scelta architetturale delle Fasi A–F (il motore fa i conti, l'LLM verbalizza) portata dentro la chat. Marcato come bozza non salvata. |
+| `get_athlete_physiology` | LT1/LT2, zone HR, giorni disponibili, gare B/C e Digital Twin con confidenze. Senza soglia lo dichiara invece di restituire un null plausibile. |
+| `get_training_history_summary` | Aggregati mensili: una stagione in contesto senza scaricare centinaia di attività. |
+| `get_personal_records`, `get_cross_training`, `get_readiness_history` | PR, carico non-corsa, andamento del recupero. |
+
+**Verifica**: 18 test, fra cui che i volumi settimanali tornino, che la
+progressione abbia scarichi prima del picco e taper verso la gara, e che la
+bozza non tocchi il piano attivo.
+
+**Resta fuori** (limiti veri, non di esposizione): storia infortuni, stress di
+vita e lavoro, percorsi e altimetria disponibili, palestra e biomeccanica,
+alimentazione. E il fatto che un allenatore vero ti guarda correre.
 
 ## Fase 5 — Rifiniture da coach (opzionale, incrementale)
 
