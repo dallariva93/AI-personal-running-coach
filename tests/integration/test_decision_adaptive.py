@@ -18,6 +18,13 @@ from app.services.decision_service import (
     recent_decisions,
     session_on_date,
 )
+
+
+def _this_monday(today: date | None = None) -> date:
+    """Monday of the current week — a stable weekday anchor inside any
+    lookback window, so tests don't expire as the calendar moves on."""
+    today = today or date.today()
+    return today - timedelta(days=today.weekday())
 from app.services.ingest import ingest_runs
 
 FIXTURES = Path(__file__).parent.parent / "fixtures"
@@ -59,11 +66,15 @@ def _make_plan(session, start: date) -> TrainingPlan:
 
 
 def test_build_today_decision_persists(session):
-    d = build_today_decision(session, ref=date(2026, 6, 22))
+    # Anchor to the current week's Monday: `recent_decisions` only looks back
+    # 30 days, so a hardcoded date silently stops being covered by the window
+    # once enough time has passed.
+    ref = _this_monday()
+    d = build_today_decision(session, ref=ref)
     assert d.decision
     # Persisted and retrievable.
     hist = recent_decisions(session, days=30)
-    assert any(x.date == "2026-06-22" for x in hist)
+    assert any(x.date == ref.isoformat() for x in hist)
 
 
 def test_session_on_date_maps_weekday(session):
