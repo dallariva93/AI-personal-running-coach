@@ -3,6 +3,7 @@
 Examples::
 
     python -m app.cli ingest            # pull + store recent runs
+    python -m app.cli backfill --months 12   # import the whole history
     python -m app.cli analyze           # analyse the latest run
     python -m app.cli weekly            # weekly analysis + plan
     python -m app.cli metrics           # print current form metrics
@@ -81,6 +82,64 @@ def cmd_metrics(_: argparse.Namespace) -> int:
     return 0
 
 
+def cmd_backfill(args: argparse.Namespace) -> int:
+    """Walk the whole Garmin history (see app/services/backfill.py)."""
+    from app.collection import get_source
+    from app.collection.sources import GarminSource
+    from app.services.backfill import (
+        backfill_activities,
+        enrich_missing,
+        reset_checkpoint,
+    )
+
+    source = get_source()
+    if not isinstance(source, GarminSource):
+        print(
+            "Backfill non disponibile in modalità demo: servono GARMIN_EMAIL e "
+            "GARMIN_PASSWORD."
+        )
+        return 1
+
+    with session_scope() as session:
+        if args.restart:
+            reset_checkpoint(session)
+            print("Checkpoint azzerato: riparto dall'attività più recente.")
+
+        if not args.enrich_only:
+            result = backfill_activities(
+                session,
+                source,
+                months=args.months,
+                throttle_s=args.throttle,
+                resume=not args.restart,
+                progress=print,
+            )
+            print(
+                f"\nSintesi: {result.runs_imported} corse e "
+                f"{result.cross_training_imported} sedute cross importate "
+                f"({result.skipped_existing} già presenti), "
+                f"fino al {result.oldest_date or 'n/d'}."
+            )
+            if not result.completed:
+                print(
+                    "Backfill INTERROTTO prima del limite: rilancia lo stesso "
+                    "comando per riprendere dal checkpoint."
+                )
+            for err in result.errors[:5]:
+                print(f"  ! {err}")
+
+        if args.enrich or args.enrich_only:
+            enriched = enrich_missing(
+                session,
+                source,
+                limit=args.enrich_limit,
+                throttle_s=args.throttle,
+                progress=print,
+            )
+            print(f"\nArricchite {enriched.enriched} corse con split e zone HR.")
+    return 0
+
+
 def cmd_migrate(_: argparse.Namespace) -> int:
     from app.db.database import run_migrations
 
@@ -115,6 +174,35 @@ def build_parser() -> argparse.ArgumentParser:
 
     p_metrics = sub.add_parser("metrics", help="Stampa le metriche di carico/forma")
     p_metrics.set_defaults(func=cmd_metrics)
+
+    p_backfill = sub.add_parser(
+        "backfill",
+        help="Importa tutto lo storico Garmin (riprendibile, idempotente)",
+    )
+    p_backfill.add_argument(
+        "--months", type=int, default=12, help="Quanti mesi indietro (default: 12)"
+    )
+    p_backfill.add_argument(
+        "--throttle", type=float, default=1.0,
+        help="Pausa in secondi fra le chiamate a Garmin (default: 1.0)",
+    )
+    p_backfill.add_argument(
+        "--restart", action="store_true",
+        help="Ignora il checkpoint e riparti dall'attività più recente",
+    )
+    p_backfill.add_argument(
+        "--enrich", action="store_true",
+        help="Dopo le sintesi, scarica anche split e zone HR (lento)",
+    )
+    p_backfill.add_argument(
+        "--enrich-only", action="store_true",
+        help="Salta le sintesi ed esegui solo l'arricchimento",
+    )
+    p_backfill.add_argument(
+        "--enrich-limit", type=int, default=200,
+        help="Quante corse arricchire in questa esecuzione (default: 200)",
+    )
+    p_backfill.set_defaults(func=cmd_backfill)
 
     p_migrate = sub.add_parser("migrate", help="Applica le migrazioni del database (Alembic)")
     p_migrate.set_defaults(func=cmd_migrate)
