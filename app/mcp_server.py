@@ -661,6 +661,10 @@ def build_mcp_server():  # noqa: ANN201 - FastMCP, imported lazily
         conversazione e segnalare cosa non torna. Puoi rigenerarla con
         parametri diversi quante volte serve.
 
+        Il piano è completo, dalla settimana 1 alla gara. Ogni settimana ha
+        `sessions` (le sedute di allenamento) e `rest_days` (i giorni di
+        riposo, come elenco di nomi): insieme coprono tutti e sette i giorni.
+
         Parametri omessi → presi dall'obiettivo salvato nel profilo.
         `long_run_day`: 0=lunedì … 6=domenica.
 
@@ -708,6 +712,17 @@ def build_mcp_server():  # noqa: ANN201 - FastMCP, imported lazily
                     "description": w["description"],
                 }
                 if include_sessions:
+                    # Rest days collapse to a list of day names. The engine
+                    # always emits 7 sessions per week, so ~3 of them were
+                    # identical "Riposo / recupero completo" objects — 35% of
+                    # this payload saying nothing. Training sessions + rest
+                    # days still reconstruct the full week.
+                    training = [s for s in w["sessions"] if s["session_type"] != "rest"]
+                    out["rest_days"] = [
+                        days[s["day_of_week"]]
+                        for s in w["sessions"]
+                        if s["session_type"] == "rest" and 0 <= s["day_of_week"] < 7
+                    ]
                     out["sessions"] = [
                         {
                             "day": days[s["day_of_week"]] if 0 <= s["day_of_week"] < 7 else None,
@@ -718,7 +733,7 @@ def build_mcp_server():  # noqa: ANN201 - FastMCP, imported lazily
                             "pace": s.get("target_pace"),
                             "duration_min": _r(s.get("target_duration_min"), 0),
                         }
-                        for s in w["sessions"]
+                        for s in training
                     ]
                 weeks.append(out)
             return {

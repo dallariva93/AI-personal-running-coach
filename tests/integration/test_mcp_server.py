@@ -548,9 +548,45 @@ def test_generatePlanDraft_usesTheEngine_volumesAddUp(mcp, session):
     assert out["weeks_total"] > 10
     assert out["baseline_km"] > 0
     for week in out["weeks"]:
-        assert len(week["sessions"]) == 7  # rest days included
+        # Rest days are collapsed into their own list, but the week must still
+        # account for all seven days — that invariant is the engine's contract.
+        assert len(week["sessions"]) + len(week["rest_days"]) == 7
+        assert all(s["type"] != "rest" for s in week["sessions"])
         total = sum(s["km"] or 0 for s in week["sessions"])
         assert total == pytest.approx(week["target_km"], abs=0.15)
+
+
+def test_generatePlanDraft_restDaysCollapsed_withoutLosingInformation(mcp, session):
+    """Rest days were 35% of this payload while carrying no information.
+
+    Collapsing them must stay lossless: every day of every week is still
+    accounted for, and every rest day is named.
+    """
+    _profile_with_goal(session, days_to_race=120)
+    _seed_runs(session, days_back=list(range(1, 40, 2)), km=12.0)
+    session.commit()
+    valid_days = {"lunedì", "martedì", "mercoledì", "giovedì", "venerdì", "sabato", "domenica"}
+
+    weeks = _call(mcp, "generate_plan_draft")["weeks"]
+
+    assert weeks, "il piano deve essere completo, non troncato"
+    for week in weeks:
+        named = [s["day"] for s in week["sessions"]] + week["rest_days"]
+        assert set(named) <= valid_days
+        assert len(set(named)) == 7, f"settimana {week['week_number']}: giorni mancanti o doppi"
+        assert week["rest_days"], "una settimana senza riposi è sospetta"
+
+
+def test_generatePlanDraft_returnsTheWholeBlockNotAWindow(mcp, session):
+    """The full plan is the deliverable: weeks must run start to race."""
+    _profile_with_goal(session, days_to_race=120)
+    session.commit()
+
+    out = _call(mcp, "generate_plan_draft")
+
+    numbers = [w["week_number"] for w in out["weeks"]]
+    assert numbers == list(range(1, out["weeks_total"] + 1))
+    assert all("sessions" in w for w in out["weeks"])
 
 
 def test_generatePlanDraft_isMarkedAsDraftAndNotPersisted(mcp, session):
