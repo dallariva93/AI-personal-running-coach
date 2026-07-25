@@ -130,9 +130,12 @@ nella libreria, manca solo il loop.
 `compute_metrics` su `ref` di 6 mesi fa produce CTL/ATL sensati; i raw esistono
 su Tigris.
 
-## Fase 2 — Server MCP montato nell'app (test locale)
+## Fase 2 — Server MCP montato nell'app (test locale) ✅ FATTA
 
 *Obiettivo: tool MCP funzionanti, provati da Claude Code prima del deploy.*
+
+Implementata in `app/mcp_server.py` (+ mount in `app/main.py`), 23 test in
+`tests/integration/test_mcp_server.py`.
 
 1. Dipendenza `mcp` (SDK Python ufficiale). Nuovo `app/mcp_server.py`:
    `FastMCP("running-coach")`, montato in `app/main.py` su `/mcp`
@@ -153,39 +156,108 @@ su Tigris.
 3. **Prompt MCP** `running_coach`: istruzioni di persona ("Sei il mio running
    coach: parti sempre da `get_athlete_overview`, cita i numeri, ragiona da
    allenatore élite…") esposte come prompt del server, riusabili in ogni chat.
-4. Test: MCP Inspector in locale, poi `claude mcp add` da Claude Code contro
-   `http://localhost:8000/mcp` e una conversazione di coaching reale come
-   collaudo.
+4. Test locale: `MCP_DEV_UNPROTECTED=true` serve `/mcp` senza segreto su
+   localhost, per MCP Inspector e `claude mcp add`.
 
-**Effort**: M (i tool sono ~15 righe l'uno: il lavoro vero è la selezione e le
-description). **Verifica**: da Claude Code, "come sta andando la mia
-preparazione?" produce risposte coerenti con la dashboard.
+**Verifica**: 23 test coprono handshake, superficie dei tool e payload
+(overview, metriche con `ref_date` storica, filtri per data, dettaglio corsa,
+confronto periodi, piano) più i casi degeneri — DB vuoto, id inesistente, data
+malformata, finestra senza corse (niente divisione per zero).
 
-## Fase 3 — Esposizione remota + auth
+**Scelte di implementazione non ovvie:**
+
+- **`stateless_http=True`** — ogni chiamata è autosufficiente. Con le sessioni
+  MCP un redeploy invaliderebbe l'`Mcp-Session-Id` del connettore, che
+  resterebbe appeso a una sessione morta.
+- **`streamable_http_path="/"`** — così l'URL montato è esattamente il path
+  segreto, senza suffisso `/mcp` in coda.
+- **Il session manager gira nel lifespan di FastAPI** — le sub-app montate non
+  ricevono il proprio lifespan, e senza questo ogni tool fallisce con
+  *"task group is not initialized"*.
+- **Import di `mcp` dentro la funzione** — se la dipendenza manca o il build
+  fallisce, il connettore si disattiva e la dashboard resta in piedi.
+
+## Fase 3 — Esposizione remota + auth ✅ FATTA (MVP; OAuth resta hardening)
 
 *Obiettivo: il server MCP raggiungibile da claude.ai in sicurezza.*
 
 1. Deploy della Fase 2 su Fly (`fly deploy`, stesso servizio già esistente).
-2. **Auth MVP (subito)**: i custom connector supportano anche server senza
-   OAuth → proteggere `/mcp` con difesa a strati:
-   - path non indovinabile (`/mcp-<token lungo random>`);
-   - rate limiting (il middleware esiste già) + logging accessi;
-   - tool **sola lettura** (nessun tool di scrittura/cancellazione esposto);
-     l'endpoint `/sync` resta fuori da MCP, protetto da `API_TOKEN`.
+2. **Auth MVP (fatta)**: difesa a strati attorno al path segreto —
+   - `MCP_PATH_TOKEN` → il server monta su `/mcp-<token>`; **senza token non
+     esiste alcun endpoint** (fail closed, verificato da test);
+   - il path segreto **è** la credenziale: l'auth middleware lo lascia passare
+     perché un custom connector non-OAuth non può inviare header
+     `Authorization`. Un test verifica che questo **non** apra l'API REST, che
+     continua a rispondere 401 senza token;
+   - rate limiting con bucket dedicato (`RATE_LIMIT_MCP_PER_MINUTE`, default
+     240/min): è l'unica barriera davanti al layer dei tool, dato che l'auth è
+     bypassata;
+   - tool **sola lettura**: un test asserisce che nessun tool esposto crei,
+     modifichi o cancelli. Ingest e scritture restano sull'API con `API_TOKEN`;
+   - `MCP_DEV_UNPROTECTED` è ignorato quando `APP_ENV=production`, così non può
+     mai diventare un buco non autenticato.
 3. **Auth definitiva (hardening, può slittare)**: OAuth 2.1 del protocollo MCP
    con l'auth provider integrato nell'SDK `mcp` (issuer self-hosted nella
    stessa app; un solo utente = un solo client registrato). Da fare quando
    l'MVP è stabile — a costo zero resta self-hosted.
 
-**Effort**: S (MVP) + M (OAuth). **Verifica**: `curl` sul path segreto risponde
-al handshake MCP; un path sbagliato dà 404; scanner comuni non trovano nulla.
+> ⚠️ **Trappola trovata in fase di sviluppo.** L'SDK MCP applica una
+> protezione anti-DNS-rebinding che di default **accetta solo `localhost`**:
+> deployato su Fly, ogni richiesta del connettore riceverebbe `421 Misdirected
+> Request` senza spiegazioni. Per questo esiste `MCP_ALLOWED_HOSTS`: valorizzato
+> con l'hostname pubblico la protezione è attiva (verificato: un `Host` diverso
+> → 421); lasciato vuoto il controllo viene disattivato e l'avvio logga un
+> warning, perché un connettore che non parte è un guasto peggiore del rischio
+> evitato (l'endpoint è dietro un path segreto e non usa credenziali ambientali
+> tipo cookie).
+
+**Verifica** (simulazione con la configurazione di produzione esatta —
+`APP_ENV=production`, path segreto, `MCP_ALLOWED_HOSTS`, `API_TOKEN`):
+handshake 200, tool call 200 con dati reali, path sbagliato respinto,
+`/api/metrics` senza token 401, `Host` non consentito 421.
 
 ## Fase 4 — Collegamento a claude.ai + cron di sync
 
 *Obiettivo: il connettore vive nelle chat e i dati restano freschi.*
 
-1. claude.ai → Settings → Connectors → **Add custom connector** → URL
-   `https://ai-running-coach.fly.dev/mcp-<token>`. Abilitarlo nelle chat.
+### Runbook: attivare il connettore (da fare al PC)
+
+```sh
+# 1. Genera il token del path — è una password, trattalo come tale.
+python -c "import secrets; print(secrets.token_urlsafe(32))"
+
+# 2. Configura i secret su Fly (l'app si riavvia da sola).
+fly secrets set MCP_PATH_TOKEN="<token del passo 1>" \
+                MCP_ALLOWED_HOSTS="ai-running-coach.fly.dev"
+
+# 3. Deploy del codice che monta l'MCP.
+fly deploy
+
+# 4. Verifica: deve rispondere 200 con un frame JSON-RPC.
+curl -sS -X POST "https://ai-running-coach.fly.dev/mcp-<token>/" \
+  -H 'Content-Type: application/json' \
+  -H 'Accept: application/json, text/event-stream' \
+  -d '{"jsonrpc":"2.0","id":1,"method":"initialize","params":{
+       "protocolVersion":"2025-06-18","capabilities":{},
+       "clientInfo":{"name":"curl","version":"1"}}}'
+```
+
+Poi: claude.ai → Settings → Connectors → **Add custom connector** → URL
+`https://ai-running-coach.fly.dev/mcp-<token>/` (con lo slash finale).
+Abilitalo nelle chat.
+
+**Diagnosi rapida se qualcosa non va:**
+
+| Sintomo | Causa | Rimedio |
+|---|---|---|
+| `404` | `MCP_PATH_TOKEN` non impostato, oppure URL/token diverso | `fly secrets list`, ricontrolla il path |
+| `421 Misdirected Request` | `MCP_ALLOWED_HOSTS` non contiene l'hostname usato | correggilo, o lascialo vuoto per disattivare il controllo |
+| `401` | stai colpendo un path che non è quello dell'MCP | l'URL deve iniziare esattamente con `/mcp-<token>` |
+| `429` | rate limit del bucket MCP | alza `RATE_LIMIT_MCP_PER_MINUTE` |
+| tool assenti nella UI | connettore non abilitato in quella chat | attivalo dal selettore dei connettori |
+
+Per **ruotare** il token basta impostarne uno nuovo: il vecchio URL smette
+immediatamente di esistere (poi aggiorna il connettore su claude.ai).
 2. Workflow GitHub Actions `sync.yml` (cron notturno): warm-up ping, poi
    `POST /api/ingest` con `API_TOKEN` → la pipeline esistente fa il resto
    (ingest → metriche → execution scoring → adaptive → re-plan settimanale

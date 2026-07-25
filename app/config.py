@@ -120,6 +120,31 @@ class Settings(BaseSettings):
     rate_limit_per_minute: int = 120
     rate_limit_strava_per_minute: int = 30
 
+    # -- MCP server (Claude custom connector) --------------------------------
+    # The MCP server is mounted ONLY when one of the two settings below opts in
+    # — never by default, because the mount is reachable without the bearer
+    # token (claude.ai cannot attach custom headers to a non-OAuth connector).
+    #
+    # In production the unguessable path IS the credential: the server mounts
+    # at /mcp-<token> and every other path 404s. Generate a fresh token with
+    #   python -c "import secrets; print(secrets.token_urlsafe(32))"
+    # and set it with `fly secrets set MCP_PATH_TOKEN=...`. Rotating it is just
+    # setting a new value (the old URL dies immediately).
+    mcp_path_token: str = ""
+    # Local development only: serve the plain /mcp with no secret, so the MCP
+    # Inspector and Claude Code can connect to localhost. Refused in production
+    # (see `mcp_mount_path`) so it cannot become an unauthenticated hole.
+    mcp_dev_unprotected: bool = False
+    # Requests/min per client IP against the MCP mount. A connector makes
+    # several tool calls per answer, so this sits above the /api default.
+    rate_limit_mcp_per_minute: int = 240
+    # Hostnames the MCP endpoint may be reached through, comma-separated
+    # (e.g. "ai-running-coach.fly.dev"). The SDK ships DNS-rebinding
+    # protection that only allows localhost by default, so a deploy that does
+    # not set this would reject every connector request with 421. Left empty
+    # that protection is turned off — see `mcp_transport_hosts`.
+    mcp_allowed_hosts: str = ""
+
     # -- Raw activity object storage (Tigris / S3-compatible) ---------------
     # Used to archive every raw Garmin payload (summary JSON, details streams,
     # splits, weather, gear and the original FIT) for every activity, not
@@ -211,6 +236,37 @@ class Settings(BaseSettings):
     @property
     def auth_enabled(self) -> bool:
         return bool(self.api_token)
+
+    @property
+    def mcp_mount_path(self) -> str | None:
+        """Where to mount the MCP server, or None to not expose it at all.
+
+        Fails closed: with no token and no explicit dev opt-in nothing is
+        mounted, and `mcp_dev_unprotected` is ignored in production so a stray
+        env var can never publish an unauthenticated endpoint.
+        """
+        if self.mcp_path_token:
+            return f"/mcp-{self.mcp_path_token}"
+        if self.mcp_dev_unprotected and not self.is_production:
+            return "/mcp"
+        return None
+
+    @property
+    def mcp_enabled(self) -> bool:
+        return self.mcp_mount_path is not None
+
+    @property
+    def mcp_transport_hosts(self) -> list[str]:
+        """Hostnames allowed to reach the MCP endpoint (empty = no host check).
+
+        DNS-rebinding protection exists to stop a malicious web page from
+        driving a *localhost* MCP server through the victim's browser. It is
+        far less load-bearing here — the endpoint lives behind a secret path
+        and carries no cookie/ambient credential — so an unset value trades it
+        for a connector that actually works, rather than 421-ing every request
+        against a hostname we cannot guess at build time.
+        """
+        return [h.strip() for h in self.mcp_allowed_hosts.split(",") if h.strip()]
 
     @property
     def fcm_enabled(self) -> bool:

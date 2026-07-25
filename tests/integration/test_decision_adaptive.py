@@ -18,6 +18,9 @@ from app.services.decision_service import (
     recent_decisions,
     session_on_date,
 )
+from app.services.ingest import ingest_runs
+
+FIXTURES = Path(__file__).parent.parent / "fixtures"
 
 
 def _this_monday(today: date | None = None) -> date:
@@ -25,9 +28,6 @@ def _this_monday(today: date | None = None) -> date:
     lookback window, so tests don't expire as the calendar moves on."""
     today = today or date.today()
     return today - timedelta(days=today.weekday())
-from app.services.ingest import ingest_runs
-
-FIXTURES = Path(__file__).parent.parent / "fixtures"
 
 
 def _seed_runs(session) -> None:
