@@ -223,6 +223,7 @@ def test_mcp_exposesReadOnlyToolsAndCoachPrompt(mcp):
     names = {t.name for t in asyncio.run(mcp.list_tools())}
 
     assert names == {
+        # Fase 2 — reading the athlete's state
         "get_athlete_overview",
         "get_training_metrics",
         "list_activities",
@@ -231,11 +232,21 @@ def test_mcp_exposesReadOnlyToolsAndCoachPrompt(mcp):
         "get_plan_week",
         "get_race_prediction",
         "compare_periods",
+        # Fase 2.5 — what a plan actually needs to be individual
+        "get_athlete_physiology",
+        "generate_plan_draft",
+        "get_training_history_summary",
+        "get_personal_records",
+        "get_cross_training",
+        "get_readiness_history",
     }
     # Nothing that writes: a leaked URL must not be able to change state.
-    assert not any(
-        verb in n for n in names for verb in ("create", "update", "delete", "save", "log")
-    )
+    # `generate_plan_draft` computes in memory and persists nothing — asserted
+    # by test_generatePlanDraft_isMarkedAsDraftAndNotPersisted.
+    # Whole words only: "physiology" contains "log" but writes nothing.
+    write_verbs = {"create", "update", "delete", "save", "log", "set", "add", "remove"}
+    for name in names:
+        assert not (set(name.split("_")) & write_verbs), f"tool sospetto: {name}"
     assert [p.name for p in asyncio.run(mcp.list_prompts())] == ["running_coach"]
 
 
@@ -438,3 +449,268 @@ def test_getRacePrediction_withoutGoal_explainsWhy(mcp):
 
     assert out["prediction"] is None
     assert "hint" in out
+
+
+# --------------------------------------------------------------------------
+# Fase 2.5 — i tool che ancorano il coaching alla fisiologia e al motore
+# --------------------------------------------------------------------------
+def _profile_with_goal(session, days_to_race: int = 120, **kwargs) -> None:
+    save_profile(
+        session,
+        AthleteProfile(
+            age=32,
+            level="intermediate",
+            goal=Goal(
+                goal_type="marathon",
+                target_date=(date.today() + timedelta(days=days_to_race)).isoformat(),
+                target_time="03:30:00",
+            ),
+            **kwargs,
+        ),
+    )
+
+
+def test_getAthletePhysiology_noData_saysSoInsteadOfGuessing(mcp):
+    """Without an anchor the coach must be told, not handed a plausible null."""
+    out = _call(mcp, "get_athlete_physiology")
+
+    assert out["thresholds"]["lt2_pace"] is None
+    assert out["thresholds"]["source"] == "non disponibile"
+    assert "non prescrivere ritmi precisi" in out["thresholds"]["hint"]
+
+
+def test_getAthletePhysiology_profileThreshold_winsOverEstimate(mcp, session):
+    from app.schemas import AthletePhysiology
+
+    save_profile(
+        session,
+        AthleteProfile(physiology=AthletePhysiology(lt2_pace="4:15", lactate_threshold_hr=172)),
+    )
+    session.commit()
+
+    out = _call(mcp, "get_athlete_physiology")
+
+    assert out["thresholds"]["lt2_pace"] == "4:15"
+    assert out["thresholds"]["source"] == "profilo"
+    assert out["thresholds"]["lactate_threshold_hr"] == 172
+    assert out["thresholds"]["hint"] is None
+
+
+def test_getAthletePhysiology_exposesCalendarConstraintsAndRaces(mcp, session):
+    from app.schemas import Race
+
+    save_profile(
+        session,
+        AthleteProfile(
+            weekly_runs=5,
+            risk_tolerance="conservative",
+            available_days=["mon", "wed", "fri", "sun"],
+            races=[
+                Race(name="Mezza di prova", race_type="half",
+                     date=(date.today() + timedelta(days=45)).isoformat(), priority="B"),
+            ],
+        ),
+    )
+    session.commit()
+
+    out = _call(mcp, "get_athlete_physiology")
+
+    assert out["availability"]["available_days"] == ["mon", "wed", "fri", "sun"]
+    assert out["availability"]["weekly_runs"] == 5
+    assert out["availability"]["risk_tolerance"] == "conservative"
+    assert len(out["races"]) == 1
+    assert out["races"][0]["priority"] == "B"
+
+
+def test_getAthletePhysiology_digitalTwin_carriesConfidenceAndLearningFlag(mcp, session):
+    _seed_runs(session, days_back=list(range(1, 40, 2)), km=12.0)
+    session.commit()
+
+    twin = _call(mcp, "get_athlete_physiology")["digital_twin"]
+
+    for key in ("ramp_tolerance_pct", "recovery_halflife_days", "heat_sensitivity_s_per_c"):
+        assert twin[key] is not None
+        assert "value" in twin[key]
+        # Confidence and the learning flag are what stop the coach from
+        # treating a provisional estimate as established fact.
+        assert "confidence" in twin[key]
+        assert "learning" in twin[key]
+
+
+def test_generatePlanDraft_usesTheEngine_volumesAddUp(mcp, session):
+    """The property freehand plan-writing gets wrong: the arithmetic."""
+    _profile_with_goal(session, days_to_race=120)
+    _seed_runs(session, days_back=list(range(1, 40, 2)), km=12.0)
+    session.commit()
+
+    out = _call(mcp, "generate_plan_draft")
+
+    assert out["weeks_total"] > 10
+    assert out["baseline_km"] > 0
+    for week in out["weeks"]:
+        assert len(week["sessions"]) == 7  # rest days included
+        total = sum(s["km"] or 0 for s in week["sessions"])
+        assert total == pytest.approx(week["target_km"], abs=0.15)
+
+
+def test_generatePlanDraft_isMarkedAsDraftAndNotPersisted(mcp, session):
+    _profile_with_goal(session)
+    session.commit()
+
+    out = _call(mcp, "generate_plan_draft")
+
+    assert out["is_draft"] is True
+    assert out["saved"] is False
+    assert "non è il piano" in out["note"].lower()
+    # And it really did not touch the app's plan.
+    assert _call(mcp, "get_current_training_plan")["active_plan"] is None
+
+
+def test_generatePlanDraft_progressionRampsThenTapers(mcp, session):
+    _profile_with_goal(session, days_to_race=120)
+    _seed_runs(session, days_back=list(range(1, 40, 2)), km=12.0)
+    session.commit()
+
+    weeks = _call(mcp, "generate_plan_draft")["weeks"]
+    volumes = [w["target_km"] for w in weeks]
+    peak = max(volumes)
+    peak_index = volumes.index(peak)
+
+    assert peak > volumes[0]                       # it builds to a peak
+    assert volumes[-1] < peak * 0.6                # and tapers hard into the race
+    assert weeks[-1]["phase"].lower() in ("taper", "race", "gara")
+    # Deload weeks: the build is a sawtooth, not a ramp. A plan that only ever
+    # goes up is the classic freehand mistake this engine exists to prevent.
+    assert any(
+        volumes[i] < volumes[i - 1] for i in range(1, peak_index)
+    ), f"nessuna settimana di scarico prima del picco: {volumes}"
+
+
+def test_generatePlanDraft_fallsBackToStoredGoal(mcp, session):
+    _profile_with_goal(session, days_to_race=90)
+    session.commit()
+
+    out = _call(mcp, "generate_plan_draft")
+
+    assert out["goal"]["type"] == "marathon"
+    assert out["goal"]["target_time"] == "03:30:00"
+
+
+def test_generatePlanDraft_noGoalAnywhere_explainsWhatIsMissing(mcp):
+    with pytest.raises(Exception, match="goal_type"):
+        _call(mcp, "generate_plan_draft")
+
+
+def test_generatePlanDraft_rejectsImpossibleSchedule(mcp, session):
+    _profile_with_goal(session)
+    session.commit()
+
+    with pytest.raises(Exception, match="days_per_week"):
+        _call(mcp, "generate_plan_draft", days_per_week=9)
+    with pytest.raises(Exception, match="long_run_day"):
+        _call(mcp, "generate_plan_draft", long_run_day=7)
+
+
+def test_generatePlanDraft_withoutSessions_returnsSkeletonOnly(mcp, session):
+    _profile_with_goal(session)
+    session.commit()
+
+    out = _call(mcp, "generate_plan_draft", include_sessions=False)
+
+    assert out["weeks"]
+    assert "sessions" not in out["weeks"][0]
+
+
+def test_getTrainingHistorySummary_bucketsByMonth(mcp, session):
+    today = date.today()
+    _seed_runs(session, days_back=[1, 3, 5], km=10.0)
+    _seed_runs(session, days_back=[40, 42], km=10.0)
+    session.commit()
+
+    out = _call(mcp, "get_training_history_summary", months=6)
+
+    assert out["months_returned"] >= 2
+    months = {m["month"]: m for m in out["months"]}
+    assert f"{today.year:04d}-{today.month:02d}" in months
+    current = months[f"{today.year:04d}-{today.month:02d}"]
+    assert current["runs"] >= 1
+    assert current["total_km"] > 0
+    assert "hard_sessions" in current and "long_runs_18k_plus" in current
+
+
+def test_getTrainingHistorySummary_emptyHistory_returnsHint(mcp):
+    out = _call(mcp, "get_training_history_summary")
+
+    assert out["months_returned"] == 0
+    assert out["hint"]
+
+
+def test_getPersonalRecords_emptyHistory_returnsHint(mcp):
+    out = _call(mcp, "get_personal_records")
+
+    assert out["records"] == []
+    assert out["hint"]
+
+
+def test_getCrossTraining_separatesSportsFromRunning(mcp, session):
+    _seed_runs(session, days_back=[1, 2], km=10.0)
+    upsert_activity(
+        session,
+        RunSummary(
+            date=date.today().isoformat(), sport="bike",
+            activity_type="easy", distance_km=40.0, duration_min=80.0,
+        ),
+    )
+    session.commit()
+
+    out = _call(mcp, "get_cross_training")
+
+    assert out["returned"] == 1  # the two runs are not here
+    assert out["by_sport"] == {"bike": 1}
+    assert out["sessions"][0]["sport"] == "bike"
+
+
+def test_getReadinessHistory_returnsEntriesAndAverages(mcp, session):
+    from app.schemas import DailyCheckin
+    from app.services import save_checkin
+
+    for offset, fatigue in [(1, 7), (2, 6), (3, 8)]:
+        save_checkin(
+            session,
+            DailyCheckin(
+                date=(date.today() - timedelta(days=offset)).isoformat(),
+                sleep_h=6.5, fatigue=fatigue, soreness=4, motivation=6,
+            ),
+        )
+    session.commit()
+
+    out = _call(mcp, "get_readiness_history", days=30)
+
+    assert out["entries_found"] == 3
+    assert out["averages"]["fatigue_1_10"] == pytest.approx(7.0)
+    assert out["averages"]["sleep_h"] == pytest.approx(6.5)
+    dates = [e["date"] for e in out["entries"]]
+    assert dates == sorted(dates, reverse=True)
+
+
+def test_getReadinessHistory_windowExcludesOlderEntries(mcp, session):
+    from app.schemas import DailyCheckin
+    from app.services import save_checkin
+
+    recent = (date.today() - timedelta(days=2)).isoformat()
+    old = (date.today() - timedelta(days=90)).isoformat()
+    save_checkin(session, DailyCheckin(date=recent, fatigue=5))
+    save_checkin(session, DailyCheckin(date=old, fatigue=9))
+    session.commit()
+
+    out = _call(mcp, "get_readiness_history", days=7)
+
+    assert out["entries_found"] == 1
+    assert out["averages"]["fatigue_1_10"] == pytest.approx(5.0)
+
+
+def test_getReadinessHistory_noCheckins_returnsHint(mcp):
+    out = _call(mcp, "get_readiness_history")
+
+    assert out["entries_found"] == 0
+    assert out["hint"]

@@ -20,20 +20,25 @@ from __future__ import annotations
 
 from collections.abc import Iterator
 from contextlib import contextmanager
-from datetime import date
+from datetime import date, timedelta
 from typing import Any
 
+from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from app.coaching.prompts import semantic_summary
 from app.config import get_settings
 from app.db.database import get_session_factory
-from app.db.models import Activity
+from app.db.models import Activity, DailyCheckinRow
 from app.logging_config import get_logger
 from app.processing import compute_metrics
-from app.schemas import RunSummary, TrainingMetrics
+from app.processing.performance import estimate_thresholds
+from app.processing.periodization import build_plan_spec
+from app.processing.records import compute_personal_records
+from app.schemas import PlanGenerateRequest, RunSummary, TrainingMetrics
 from app.services import get_profile, hrv_history, latest_checkin
-from app.services.ingest import _activity_to_summary, _all_summaries
+from app.services.athlete_model_service import estimate_athlete_model
+from app.services.ingest import _activity_to_summary, _all_summaries, list_cross_training
 from app.services.plan_service import get_current_plan
 
 logger = get_logger("app.mcp")
@@ -52,6 +57,17 @@ specifici.
 Le metriche sono già calcolate: CTL/ATL/TSB, ACWR, distribuzione delle \
 intensità, readiness. Non ricalcolarle a mano dai dati grezzi — usa i valori \
 restituiti e interpretali.
+
+Due regole che valgono sempre:
+
+* **I ritmi si ancorano alla soglia misurata**, non al tempo obiettivo. \
+Chiama `get_athlete_physiology` prima di prescrivere passi: contiene LT1/LT2, \
+zone HR e il Digital Twin (tolleranza alla rampa, recupero, sensibilità al \
+caldo, durabilità) appreso dallo storico di questo atleta.
+* **I piani si generano con `generate_plan_draft`**, non a mano. Il motore \
+deterministico garantisce volumi coerenti, rampe limitate, scarichi e taper \
+al punto giusto. Tu interpreti e adatti il risultato; scrivere un piano \
+freehand reintroduce esattamente gli errori che il motore evita.
 """
 
 
@@ -530,6 +546,334 @@ def build_mcp_server():  # noqa: ANN201 - FastMCP, imported lazily
                 },
             }
 
+    @mcp.tool()
+    def get_athlete_physiology() -> dict[str, Any]:
+        """Soglie, zone HR, vincoli di calendario, gare secondarie e Digital Twin.
+
+        Chiamalo PRIMA di prescrivere ritmi o di costruire un piano: contiene
+        ciò che rende i passi *tuoi* invece che generici. In particolare
+        `thresholds.lt2_pace` è l'ancora corretta per i ritmi — non derivarli
+        mai dal tempo obiettivo, che è un'aspirazione, non una misura.
+
+        `digital_twin` è appreso dallo storico: tolleranza alla rampa, tempo di
+        recupero, sensibilità al caldo e durabilità, ognuno con la sua
+        confidenza (0-100). Se `learning` è true il dato è ancora provvisorio:
+        usalo con prudenza e dillo.
+        """
+        with _db() as session:
+            profile = get_profile(session)
+            physiology = profile.physiology if profile else None
+            # Stored thresholds are the athlete's own; the estimate is the
+            # fallback so the coach is never left without a pace anchor.
+            estimated = estimate_thresholds(_all_summaries(session))
+            twin = estimate_athlete_model(session)
+            zones = profile.zones if profile and profile.zones else None
+
+            def _estimate(entry) -> dict[str, Any] | None:
+                if entry is None:
+                    return None
+                return {
+                    "value": _r(entry.value, 2),
+                    "confidence": entry.confidence,
+                    "learning": entry.learning,
+                }
+
+            lt2 = (physiology.lt2_pace if physiology else None) or (
+                estimated.lt2_pace if estimated else None
+            )
+            if physiology and physiology.lt2_pace:
+                source = "profilo"
+            elif estimated and estimated.lt2_pace:
+                source = "stimato dalle corse recenti"
+            else:
+                # Being explicit beats a plausible-looking null: without an
+                # anchor the coach must say so, not quietly invent paces.
+                source = "non disponibile"
+
+            return {
+                "thresholds": {
+                    "lt1_pace": (physiology.lt1_pace if physiology else None)
+                    or (estimated.lt1_pace if estimated else None),
+                    "lt2_pace": lt2,
+                    "critical_speed": (physiology.critical_speed if physiology else None)
+                    or (estimated.critical_speed if estimated else None),
+                    "lactate_threshold_hr": physiology.lactate_threshold_hr
+                    if physiology
+                    else None,
+                    "source": source,
+                    "hint": None if lt2 else (
+                        "Nessuna soglia disponibile: servono sforzi intensi recenti "
+                        "(tempo/ripetute/gara) o una soglia inserita nel profilo. "
+                        "Senza, non prescrivere ritmi precisi — dillo all'atleta."
+                    ),
+                },
+                "hr_zones": {
+                    "z1": zones.z1_hr, "z2": zones.z2_hr, "z3": zones.z3_hr,
+                    "z4": zones.z4_hr, "z5": zones.z5_hr,
+                } if zones else None,
+                "max_hr": profile.max_hr if profile else None,
+                "resting_hr": profile.resting_hr if profile else None,
+                "availability": {
+                    # A plan is a negotiation with a calendar: without these the
+                    # coach must ask rather than assume.
+                    "available_days": profile.available_days if profile else [],
+                    "weekly_runs": profile.weekly_runs if profile else None,
+                    "risk_tolerance": profile.risk_tolerance if profile else None,
+                },
+                "races": [
+                    {
+                        "name": r.name,
+                        "type": r.race_type,
+                        "date": r.date,
+                        "target_time": r.target_time,
+                        "priority": r.priority,
+                    }
+                    for r in (profile.races if profile else [])
+                ],
+                "digital_twin": {
+                    "ramp_tolerance_pct": _estimate(twin.ramp_tolerance_pct),
+                    "recovery_halflife_days": _estimate(twin.recovery_halflife_days),
+                    "heat_sensitivity_s_per_c": _estimate(twin.heat_sensitivity_s_per_c),
+                    "durability_0_100": _estimate(twin.durability),
+                    "computed_at": twin.computed_at,
+                },
+            }
+
+    @mcp.tool()
+    def generate_plan_draft(
+        goal_type: str | None = None,
+        goal_date: str | None = None,
+        goal_time: str | None = None,
+        days_per_week: int = 4,
+        long_run_day: int = 6,
+        include_sessions: bool = True,
+    ) -> dict[str, Any]:
+        """Genera una BOZZA di piano col motore di periodizzazione deterministico.
+
+        **Usa questo tool invece di inventare un piano a mano.** Il motore
+        garantisce proprietà che la scrittura libera sbaglia: i volumi tornano
+        (il totale settimanale è la somma delle sedute), la progressione
+        rispetta un limite di rampa, gli scarichi cadono dove il carico lo
+        richiede, il taper è progressivo, le gare B/C finiscono sulle loro date
+        e l'obiettivo viene confrontato con la forma reale (`goal_realism`).
+
+        Il tuo lavoro è il resto: interpretarla, spiegarla, adattarla alla
+        conversazione e segnalare cosa non torna. Puoi rigenerarla con
+        parametri diversi quante volte serve.
+
+        Parametri omessi → presi dall'obiettivo salvato nel profilo.
+        `long_run_day`: 0=lunedì … 6=domenica.
+
+        NON salva nulla: è una bozza da leggere, il piano attivo dell'app non
+        viene toccato. Dillo esplicitamente quando la presenti.
+        """
+        with _db() as session:
+            profile = get_profile(session)
+            stored_goal = profile.goal if profile else None
+            goal_type = goal_type or (stored_goal.goal_type if stored_goal else None)
+            goal_date = goal_date or (stored_goal.target_date if stored_goal else None)
+            goal_time = goal_time or (stored_goal.target_time if stored_goal else None)
+            if not goal_type or not goal_date:
+                raise ValueError(
+                    "Servono goal_type e goal_date (nessun obiettivo salvato nel "
+                    "profilo): passali esplicitamente, es. goal_type='marathon', "
+                    "goal_date='2026-10-25'."
+                )
+            _parse_date(goal_date, "goal_date")
+            if not 1 <= days_per_week <= 7:
+                raise ValueError("days_per_week deve essere fra 1 e 7.")
+            if not 0 <= long_run_day <= 6:
+                raise ValueError("long_run_day deve essere fra 0 (lunedì) e 6 (domenica).")
+
+            metrics = _metrics_for(session)
+            spec = build_plan_spec(
+                PlanGenerateRequest(
+                    goal_type=goal_type,
+                    goal_date=goal_date,
+                    goal_time=goal_time,
+                    level=profile.level if profile else "intermediate",
+                    days_per_week=days_per_week,
+                    long_run_day=long_run_day,
+                ),
+                profile=profile,
+                metrics=metrics,
+            )
+            days = ["lunedì", "martedì", "mercoledì", "giovedì", "venerdì", "sabato", "domenica"]
+            weeks = []
+            for w in spec["weeks"]:
+                out: dict[str, Any] = {
+                    "week_number": w["week_number"],
+                    "phase": w["phase"],
+                    "target_km": _r(w["target_km"]),
+                    "description": w["description"],
+                }
+                if include_sessions:
+                    out["sessions"] = [
+                        {
+                            "day": days[s["day_of_week"]] if 0 <= s["day_of_week"] < 7 else None,
+                            "type": s["session_type"],
+                            "title": s["title"],
+                            "description": s["description"],
+                            "km": _r(s.get("target_distance_km")),
+                            "pace": s.get("target_pace"),
+                            "duration_min": _r(s.get("target_duration_min"), 0),
+                        }
+                        for s in w["sessions"]
+                    ]
+                weeks.append(out)
+            return {
+                "is_draft": True,
+                "saved": False,
+                "note": (
+                    "Bozza generata dal motore di periodizzazione. Non è il piano "
+                    "attivo: per renderlo tale va generato dall'app."
+                ),
+                "goal": {"type": goal_type, "date": goal_date, "target_time": goal_time},
+                "weeks_total": spec["weeks_total"],
+                "start_date": spec["start_date"],
+                "baseline_km": _r(spec["baseline_km"]),
+                "goal_realism": spec.get("goal_realism"),
+                "weeks": weeks,
+            }
+
+    @mcp.tool()
+    def get_training_history_summary(months: int = 6) -> dict[str, Any]:
+        """Aggregati mese per mese: volume, ritmo, intensità, sedute lunghe.
+
+        Il modo economico di avere in contesto una stagione intera senza
+        scaricare centinaia di attività. Usalo per giudicare la progressione a
+        lungo termine, la costanza e la struttura di un blocco passato — cioè
+        ogni volta che devi costruire o valutare un piano pluri-mensile.
+        """
+        months = max(1, min(months, 36))
+        with _db() as session:
+            runs = _all_summaries(session)
+        buckets: dict[str, list[RunSummary]] = {}
+        for r in runs:
+            try:
+                d = date.fromisoformat(r.date)
+            except ValueError:
+                continue
+            buckets.setdefault(f"{d.year:04d}-{d.month:02d}", []).append(r)
+
+        keys = sorted(buckets, reverse=True)[:months]
+        out = []
+        for key in keys:
+            group = buckets[key]
+            agg = _aggregate(group)
+            hard = [r for r in group if r.activity_type in ("tempo", "intervals", "race")]
+            long_runs = [r for r in group if r.distance_km >= 18]
+            agg.update({
+                "month": key,
+                "hard_sessions": len(hard),
+                "long_runs_18k_plus": len(long_runs),
+            })
+            out.append(agg)
+        return {
+            "months_returned": len(out),
+            "months": out,
+            "hint": (
+                "Nessuno storico in questo intervallo." if not out else None
+            ),
+        }
+
+    @mcp.tool()
+    def get_personal_records() -> dict[str, Any]:
+        """Record personali per distanza (1K, 5K, 10K, mezza, maratona).
+
+        Usalo per ancorare i ritmi a prestazioni reali e per valutare se un
+        obiettivo è coerente con quello che l'atleta ha già dimostrato.
+        """
+        with _db() as session:
+            activities = list(
+                session.scalars(
+                    select(Activity).where(Activity.sport == "run")
+                ).all()
+            )
+            records = compute_personal_records(activities)
+            return {
+                "records": records,
+                "hint": "Nessun record: storico insufficiente." if not records else None,
+            }
+
+    @mcp.tool()
+    def get_cross_training(limit: int = 30) -> dict[str, Any]:
+        """Bici, nuoto e palestra: il carico che non compare nelle metriche di corsa.
+
+        Le metriche di corsa escludono di proposito il cross-training, per non
+        inquinare CTL/ATL e la distribuzione delle intensità. Chiama questo
+        tool quando devi valutare il carico *complessivo* o pianificare una
+        settimana realistica per chi fa anche altro.
+        """
+        limit = max(1, min(limit, 100))
+        with _db() as session:
+            rows = list_cross_training(session, limit=limit)
+            by_sport: dict[str, int] = {}
+            for row in rows:
+                by_sport[row.sport] = by_sport.get(row.sport, 0) + 1
+            return {
+                "returned": len(rows),
+                "by_sport": by_sport,
+                "sessions": [
+                    {
+                        "date": r.date,
+                        "sport": r.sport,
+                        "duration_min": _r(r.duration_min),
+                        "distance_km": _r(r.distance_km),
+                        "avg_hr": r.avg_hr,
+                    }
+                    for r in rows
+                ],
+            }
+
+    @mcp.tool()
+    def get_readiness_history(days: int = 30) -> dict[str, Any]:
+        """Andamento di sonno, fatica, dolori, motivazione e HRV.
+
+        Usalo quando la domanda riguarda il recupero nel tempo ("sono stanco da
+        settimane?"), o prima di alzare il carico: un trend in peggioramento è
+        un veto che le medie di volume non mostrano.
+        """
+        days = max(1, min(days, 365))
+        cutoff = (date.today() - timedelta(days=days)).isoformat()
+        with _db() as session:
+            rows = list(
+                session.scalars(
+                    select(DailyCheckinRow)
+                    .where(DailyCheckinRow.date >= cutoff)
+                    .order_by(DailyCheckinRow.date.desc())
+                ).all()
+            )
+            entries = [
+                {
+                    "date": r.date,
+                    "sleep_h": _r(r.sleep_h),
+                    "fatigue_1_10": r.fatigue,
+                    "soreness_1_10": r.soreness,
+                    "motivation_1_10": r.motivation,
+                    "hrv_rmssd": _r(r.hrv_rmssd),
+                }
+                for r in rows
+            ]
+
+            def _avg(field: str) -> float | None:
+                values = [e[field] for e in entries if e[field] is not None]
+                return _r(sum(values) / len(values), 1) if values else None
+
+            return {
+                "days_requested": days,
+                "entries_found": len(entries),
+                "averages": {
+                    "sleep_h": _avg("sleep_h"),
+                    "fatigue_1_10": _avg("fatigue_1_10"),
+                    "soreness_1_10": _avg("soreness_1_10"),
+                    "motivation_1_10": _avg("motivation_1_10"),
+                    "hrv_rmssd": _avg("hrv_rmssd"),
+                },
+                "entries": entries,
+                "hint": "Nessun check-in registrato." if not entries else None,
+            }
+
     @mcp.prompt()
     def running_coach() -> str:
         """Istruzioni per far ragionare Claude da allenatore di corsa."""
@@ -548,6 +892,17 @@ def build_mcp_server():  # noqa: ANN201 - FastMCP, imported lazily
             "sono. Niente disclaimer generici.\n"
             "5. Se i dati non bastano per rispondere, dillo e indica cosa "
             "manca, invece di inventare.\n\n"
+            "Quando prescrivi ritmi: chiama prima `get_athlete_physiology` e "
+            "ancorali alla mia soglia reale (LT2), mai al tempo obiettivo. "
+            "Guarda anche il Digital Twin: se la mia tolleranza alla rampa è "
+            "bassa o il recupero è lento, tienine conto invece di applicare "
+            "regole generiche — e se un valore è ancora in apprendimento, "
+            "dimmelo.\n\n"
+            "Quando serve un piano: usa `generate_plan_draft`, non scriverlo a "
+            "mano. Poi commentalo — cosa ti convince, cosa cambieresti, cosa "
+            "dipende da vincoli miei che il motore non conosce (giorni "
+            "disponibili, viaggi, palestra). Ricordami che è una bozza e non "
+            "il piano attivo dell'app.\n\n"
             "Il carico e la forma sono già calcolati dal motore: interpretali, "
             "non ricalcolarli."
         )
