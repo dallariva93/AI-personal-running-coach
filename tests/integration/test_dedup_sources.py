@@ -228,3 +228,49 @@ def test_duplicatesInflateTrainingLoad_andMergingRestoresIt(session):
     assert inflated.total_distance_km == 20.0   # one 10 km run counted twice
     assert corrected.total_distance_km == 10.0
     assert corrected.runs_count == 1
+
+
+def test_tripleSource_collapsesToTheRichestRow(session):
+    """A run seen by Garmin, Strava AND Health Connect is still one run.
+
+    Observed in real data: three rows for the same activity, so the merge has
+    to fold two of them into the survivor rather than handling a single pair.
+    """
+    session.add(Activity(
+        garmin_activity_id="g-1", date=TODAY, sport="run", activity_type="easy",
+        distance_km=6.1, duration_min=36.0, rpe=3,
+    ))
+    session.add(Activity(
+        strava_activity_id="s-1", date=TODAY, sport="run", activity_type="easy",
+        distance_km=6.1, duration_min=36.0,
+    ))
+    session.add(Activity(
+        health_connect_id="hc-1", date=TODAY, sport="run", activity_type="easy",
+        distance_km=6.1, duration_min=36.2, avg_hr=141,
+    ))
+    session.flush()
+
+    report = merge_duplicates(session, dry_run=False)
+
+    assert len(report) == 2  # two rows folded into one survivor
+    row = session.query(Activity).one()
+    assert row.garmin_activity_id == "g-1"
+    assert row.strava_activity_id == "s-1"
+    assert row.health_connect_id == "hc-1"
+    assert row.rpe == 3          # richest source kept
+    assert row.avg_hr == 141     # gap filled from a dropped row
+
+
+def test_stravaDuplicate_isMergedIntoGarmin(session):
+    """Strava duplicates the same way Health Connect does, and ranks below Garmin."""
+    upsert_activity(session, _garmin())
+    upsert_activity(session, RunSummary(
+        strava_activity_id="s-1", date=TODAY, activity_type="easy",
+        distance_km=10.0, duration_min=55.0, avg_pace="5:30/km",
+    ))
+    session.flush()
+
+    row = session.query(Activity).one()
+    assert row.garmin_activity_id == "g-1"
+    assert row.strava_activity_id == "s-1"
+    assert row.rpe == 2  # Strava must not blank Garmin's RPE
