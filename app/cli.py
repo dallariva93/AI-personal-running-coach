@@ -140,6 +140,28 @@ def cmd_backfill(args: argparse.Namespace) -> int:
     return 0
 
 
+def cmd_dedup(args: argparse.Namespace) -> int:
+    """Find (and optionally merge) the same run stored twice from two sources."""
+    from app.services.ingest import merge_duplicates
+
+    with session_scope() as session:
+        report = merge_duplicates(session, dry_run=not args.apply)
+        if not report:
+            print("Nessun duplicato trovato.")
+            return 0
+        verb = "Uniti" if args.apply else "Da unire"
+        print(f"{verb} {len(report)} duplicati:\n")
+        for r in report:
+            print(
+                f"  {r['date']}  {r['distance_km']:5.1f} km   "
+                f"tengo #{r['kept']['id']} ({r['kept']['source']})   "
+                f"elimino #{r['dropped']['id']} ({r['dropped']['source']})"
+            )
+        if not args.apply:
+            print("\nAnteprima: nessuna modifica applicata. Rilancia con --apply.")
+    return 0
+
+
 def cmd_migrate(_: argparse.Namespace) -> int:
     from app.db.database import run_migrations
 
@@ -203,6 +225,16 @@ def build_parser() -> argparse.ArgumentParser:
         help="Quante corse arricchire in questa esecuzione (default: 200)",
     )
     p_backfill.set_defaults(func=cmd_backfill)
+
+    p_dedup = sub.add_parser(
+        "dedup",
+        help="Trova e unisce la stessa corsa salvata due volte (Garmin + Health Connect)",
+    )
+    p_dedup.add_argument(
+        "--apply", action="store_true",
+        help="Applica davvero l'unione (senza, mostra solo l'anteprima)",
+    )
+    p_dedup.set_defaults(func=cmd_dedup)
 
     p_migrate = sub.add_parser("migrate", help="Applica le migrazioni del database (Alembic)")
     p_migrate.set_defaults(func=cmd_migrate)
