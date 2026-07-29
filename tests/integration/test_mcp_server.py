@@ -750,3 +750,115 @@ def test_getReadinessHistory_noCheckins_returnsHint(mcp):
 
     assert out["entries_found"] == 0
     assert out["hint"]
+
+
+# --------------------------------------------------------------------------
+# Livelli 1-2: id delle attività, seduta pianificata, cross-training nel sync
+# --------------------------------------------------------------------------
+def _plan_with_executed_session(session, activity_id: int, session_type: str = "tempo"):
+    """A plan whose session was scored as executed by `activity_id`."""
+    from app.db.models import TrainingPlan, TrainingPlanSession, TrainingPlanWeek
+
+    plan = TrainingPlan(
+        goal_type="10k", goal_date=(date.today() + timedelta(days=60)).isoformat(),
+        level="intermediate", weeks_total=1,
+        start_date=(date.today() - timedelta(days=date.today().weekday())).isoformat(),
+        status="active",
+    )
+    session.add(plan)
+    session.flush()
+    week = TrainingPlanWeek(plan_id=plan.id, week_number=1, phase="Build", target_km=40.0)
+    session.add(week)
+    session.flush()
+    sess = TrainingPlanSession(
+        week_id=week.id, day_of_week=1, session_type=session_type,
+        title="Medio progressivo", target_distance_km=10.0, target_pace="4:40/km",
+        executed_activity_id=activity_id, execution_status="completed_well",
+        execution_score=92.0,
+    )
+    session.add(sess)
+    session.flush()
+    return sess
+
+
+def test_listActivities_exposesTheActivityId(mcp, session):
+    """Without ids, opening a detail is guesswork — and picks the wrong run."""
+    _seed_runs(session, days_back=[1, 3], km=10.0)
+    session.commit()
+
+    out = _call(mcp, "list_activities")
+
+    ids = [a["id"] for a in out["activities"]]
+    assert all(isinstance(i, int) for i in ids)
+    assert len(set(ids)) == len(ids)
+    # And the id actually opens that same activity.
+    detail = _call(mcp, "get_activity_detail", activity_id=ids[0])
+    assert detail["date"] == out["activities"][0]["date"]
+
+
+def test_listActivities_dateFilterStillWorksOnRows(mcp, session):
+    today = date.today()
+    _seed_runs(session, days_back=[1, 2, 30, 40], km=10.0)
+    session.commit()
+
+    out = _call(
+        mcp, "list_activities",
+        from_date=(today - timedelta(days=7)).isoformat(),
+        to_date=today.isoformat(),
+    )
+
+    assert out["returned"] == 2
+    assert out["totals"]["total_km"] == pytest.approx(20.0)
+
+
+def test_listActivities_excludesCrossTraining(mcp, session):
+    _seed_runs(session, days_back=[1], km=10.0)
+    upsert_activity(session, RunSummary(
+        date=date.today().isoformat(), sport="bike", activity_type="easy",
+        distance_km=40.0, duration_min=80.0,
+    ))
+    session.commit()
+
+    out = _call(mcp, "list_activities")
+
+    assert out["returned"] == 1
+    assert out["activities"][0]["distance_km"] == 10.0
+
+
+def test_listActivities_reportsThePlannedSession(mcp, session):
+    """A quality session mislabelled "easy" must not read as easy volume."""
+    _seed_runs(session, days_back=[1], km=10.0)
+    session.commit()
+    activity_id = _call(mcp, "list_activities")["activities"][0]["id"]
+    _plan_with_executed_session(session, activity_id, session_type="tempo")
+    session.commit()
+
+    out = _call(mcp, "list_activities")["activities"][0]
+
+    assert out["type"] == "easy"                    # what Garmin inferred
+    assert out["planned"]["session_type"] == "tempo"  # what was prescribed
+    assert out["planned"]["execution_status"] == "completed_well"
+    assert out["planned"]["execution_score"] == 92.0
+
+
+def test_getActivityDetail_reportsThePlannedSession(mcp, session):
+    _seed_runs(session, days_back=[1], km=10.0)
+    session.commit()
+    activity_id = _call(mcp, "list_activities")["activities"][0]["id"]
+    _plan_with_executed_session(session, activity_id)
+    session.commit()
+
+    detail = _call(mcp, "get_activity_detail", activity_id=activity_id)
+
+    assert detail["planned"]["title"] == "Medio progressivo"
+    assert detail["planned"]["target_pace"] == "4:40/km"
+
+
+def test_unplannedActivity_reportsPlannedAsNone(mcp, session):
+    """No plan link is a valid answer — it must not look like a missing field."""
+    _seed_runs(session, days_back=[1], km=10.0)
+    session.commit()
+
+    out = _call(mcp, "list_activities")["activities"][0]
+
+    assert out["planned"] is None

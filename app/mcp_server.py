@@ -29,7 +29,7 @@ from sqlalchemy.orm import Session
 from app.coaching.prompts import semantic_summary
 from app.config import get_settings
 from app.db.database import get_session_factory
-from app.db.models import Activity, DailyCheckinRow
+from app.db.models import Activity, DailyCheckinRow, TrainingPlanSession
 from app.logging_config import get_logger
 from app.processing import compute_metrics
 from app.processing.performance import estimate_thresholds
@@ -68,6 +68,16 @@ caldo, durabilità) appreso dallo storico di questo atleta.
 deterministico garantisce volumi coerenti, rampe limitate, scarichi e taper \
 al punto giusto. Tu interpreti e adatti il risultato; scrivere un piano \
 freehand reintroduce esattamente gli errori che il motore evita.
+
+Attenzione al tipo di seduta: il campo `type` di un'attività è **dedotto** dal \
+payload Garmin e sbaglia spesso (una seduta di qualità può risultare "easy"). \
+Quando l'attività porta `planned`, quello è ciò che il piano prescriveva ed è \
+il dato attendibile — basa su quello la distribuzione delle intensità e \
+l'aderenza, altrimenti l'80/20 ti sembrerà sano proprio quando non lo è.
+
+Il carico non è solo corsa: `get_cross_training` restituisce bici, nuoto e \
+palestra, che le metriche di corsa escludono di proposito. Consultalo prima di \
+prescrivere una settimana pesante.
 """
 
 
@@ -190,6 +200,39 @@ def _aggregate(runs: list[RunSummary]) -> dict[str, Any]:
         "avg_pace": f"{int(pace_sec // 60)}:{int(pace_sec % 60):02d}/km" if pace_sec else None,
         "avg_hr": round(sum(hr_values) / len(hr_values)) if hr_values else None,
         "total_elevation_m": _r(sum(r.elevation_gain_m or 0 for r in runs), 0),
+    }
+
+
+def _planned_sessions_for(
+    session: Session, activity_ids: list[int]
+) -> dict[int, dict[str, Any]]:
+    """What each activity was *supposed* to be, from the plan it executed.
+
+    `activity_type` is inferred from the Garmin payload, so a quality session
+    can land labelled "easy" — which quietly makes the 80/20 split look healthy
+    while it isn't. The plan knows what was prescribed; the execution scorer
+    already links the two. Surfacing that link turns adherence from a guess
+    into a fact.
+    """
+    if not activity_ids:
+        return {}
+    rows = session.scalars(
+        select(TrainingPlanSession).where(
+            TrainingPlanSession.executed_activity_id.in_(activity_ids)
+        )
+    ).all()
+    return {
+        row.executed_activity_id: {
+            "session_type": row.session_type,
+            "title": row.title,
+            "target_distance_km": _r(row.target_distance_km),
+            "target_pace": row.target_pace,
+            "execution_status": row.execution_status,
+            "execution_score": _r(row.execution_score, 0),
+            "plan_session_id": row.id,
+        }
+        for row in rows
+        if row.executed_activity_id is not None
     }
 
 
@@ -331,23 +374,46 @@ def build_mcp_server():  # noqa: ANN201 - FastMCP, imported lazily
 
         Usalo per vedere cosa è stato fatto davvero (l'allenamento reale, non
         quello pianificato). Senza filtri restituisce le ultime `limit` corse.
-        Per i dettagli di una singola seduta usa poi get_activity_detail.
+
+        Ogni voce porta il suo `id`: passalo a get_activity_detail per il
+        dettaglio, senza tirare a indovinare.
+
+        Ogni voce porta anche `planned`, cioè la seduta del piano che quella
+        corsa ha eseguito, quando c'è. Il campo `type` è dedotto dal payload
+        Garmin e può sbagliare (una qualità etichettata "easy"): quando
+        `planned` è presente, è quello il dato attendibile — usalo per
+        giudicare la distribuzione delle intensità e l'aderenza.
         """
         start = _parse_date(from_date, "from_date")
         end = _parse_date(to_date, "to_date")
         limit = max(1, min(limit, 200))
         with _db() as session:
-            runs = _in_range(_all_summaries(session), start, end)
-            window = runs[:limit]
+            # Read rows, not summaries: the listing has to carry each activity's
+            # id or `get_activity_detail` becomes a guessing game.
+            query = select(Activity).where(Activity.sport == "run")
+            if start:
+                query = query.where(Activity.date >= start.isoformat())
+            if end:
+                query = query.where(Activity.date <= end.isoformat())
+            rows = list(session.scalars(query.order_by(Activity.date.desc())).all())
+            window = rows[:limit]
+            planned = _planned_sessions_for(session, [r.id for r in window])
             return {
                 "range": {
                     "from": start.isoformat() if start else None,
                     "to": end.isoformat() if end else None,
                 },
                 "returned": len(window),
-                "matching_total": len(runs),
-                "totals": _aggregate(window),
-                "activities": [_summary_payload(r) for r in window],
+                "matching_total": len(rows),
+                "totals": _aggregate([_activity_to_summary(r) for r in window]),
+                "activities": [
+                    {
+                        "id": row.id,
+                        **_summary_payload(_activity_to_summary(row)),
+                        "planned": planned.get(row.id),
+                    }
+                    for row in window
+                ],
             }
 
     @mcp.tool()
@@ -357,6 +423,10 @@ def build_mcp_server():  # noqa: ANN201 - FastMCP, imported lazily
         Chiamalo solo quando l'analisi richiede davvero il dentro-della-seduta
         (es. valutare la tenuta del ritmo o il drift cardiaco), non per
         scorrere lo storico: gli id vengono da list_activities.
+
+        Include `planned`: cosa prevedeva il piano per questa corsa, con il
+        punteggio di esecuzione. Se c'è, fidati di quello e non del campo
+        `type`, che è dedotto e può essere sbagliato.
         """
         with _db() as session:
             row = session.get(Activity, activity_id)
@@ -375,6 +445,10 @@ def build_mcp_server():  # noqa: ANN201 - FastMCP, imported lazily
                 "humidity_pct": _r(s.humidity_pct, 0),
                 "garmin_training_load": _r(s.garmin_training_load, 0),
                 "notes": s.notes,
+                # What the plan prescribed, when this activity executed one.
+                # `type` above is inferred from the Garmin payload and can be
+                # wrong; this is the ground truth.
+                "planned": _planned_sessions_for(session, [row.id]).get(row.id),
             })
             return payload
 

@@ -389,10 +389,28 @@ def ingest_runs(
     session.flush()
     _refresh_physiology(session)
 
+    # Cross-training is load too: a week with two hours on the bike and two gym
+    # sessions is not a light week, even though it adds no running kilometres.
+    # It used to arrive only via its own manual endpoint, so in practice it
+    # never arrived at all. Best-effort: it must not break the run sync.
+    _try_ingest_cross_training(session, source, limit)
+
     if settings.raw_archive_active and isinstance(source, GarminSource):
         _try_sync_raw_assets(session, source, limit)
 
     return saved
+
+
+def _try_ingest_cross_training(
+    session: Session, source: ActivitySource, limit: int
+) -> None:
+    """Pull bike/swim/strength alongside the runs, never raising into the run path."""
+    try:
+        saved = ingest_cross_training(session, limit=limit, source=source)
+        if saved:
+            logger.info("Cross-training sincronizzato: %d sedute", len(saved))
+    except Exception as exc:  # noqa: BLE001 - a secondary signal must not block ingest
+        logger.warning("Sync cross-training fallito: %s", exc)
 
 
 def sync_raw_assets(

@@ -274,3 +274,65 @@ def test_stravaDuplicate_isMergedIntoGarmin(session):
     assert row.garmin_activity_id == "g-1"
     assert row.strava_activity_id == "s-1"
     assert row.rpe == 2  # Strava must not blank Garmin's RPE
+
+
+# --------------------------------------------------------------------------
+# cross-training nel sync normale
+# --------------------------------------------------------------------------
+class _SourceWithCrossTraining:
+    """A source that returns both runs and cross-training, like Garmin does."""
+
+    def __init__(self, fail_cross: bool = False) -> None:
+        self.fail_cross = fail_cross
+        self.cross_calls = 0
+
+    def get_recent_runs(self, limit: int = 10, skip_gps_for=None) -> list[RunSummary]:
+        return [RunSummary(
+            garmin_activity_id="g-run", date=TODAY, activity_type="easy",
+            distance_km=10.0, duration_min=55.0,
+        )]
+
+    def get_recent_cross_training(self, limit: int = 20) -> list[RunSummary]:
+        self.cross_calls += 1
+        if self.fail_cross:
+            raise RuntimeError("endpoint cross-training non disponibile")
+        return [
+            RunSummary(garmin_activity_id="g-bike", date=TODAY, sport="bike",
+                       activity_type="easy", distance_km=40.0, duration_min=80.0),
+            RunSummary(garmin_activity_id="g-gym", date=TODAY, sport="strength",
+                       activity_type="easy", distance_km=0.0, duration_min=45.0),
+        ]
+
+
+def test_ingestRuns_alsoPullsCrossTraining(session):
+    """Bike and gym are load too — they used to need a separate manual call."""
+    from app.services.ingest import ingest_runs
+
+    ingest_runs(session, source=_SourceWithCrossTraining())
+    session.flush()
+
+    sports = {row.sport for row in session.query(Activity).all()}
+    assert sports == {"run", "bike", "strength"}
+
+
+def test_crossTrainingFailure_doesNotBreakTheRunSync(session):
+    """A secondary signal must never cost you the primary one."""
+    from app.services.ingest import ingest_runs
+
+    saved = ingest_runs(session, source=_SourceWithCrossTraining(fail_cross=True))
+    session.flush()
+
+    assert len(saved) == 1
+    assert session.query(Activity).filter_by(sport="run").count() == 1
+
+
+def test_crossTraining_staysOutOfRunningMetrics(session):
+    """The whole reason it is stored separately: it must not inflate CTL/ACWR."""
+    from app.services.ingest import ingest_runs
+
+    ingest_runs(session, source=_SourceWithCrossTraining())
+    session.flush()
+
+    metrics = compute_metrics(_all_summaries(session))
+    assert metrics.runs_count == 1
+    assert metrics.total_distance_km == 10.0  # the 40 km bike ride is excluded
