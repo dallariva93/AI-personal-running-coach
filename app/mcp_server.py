@@ -427,6 +427,13 @@ def build_mcp_server():  # noqa: ANN201 - FastMCP, imported lazily
         Include `planned`: cosa prevedeva il piano per questa corsa, con il
         punteggio di esecuzione. Se c'è, fidati di quello e non del campo
         `type`, che è dedotto e può essere sbagliato.
+
+        Include `laps`: i lap reali dell'orologio, uno per ogni ripetuta e per
+        ogni recupero, ciascuno con la sua distanza. È il campo da leggere per
+        una seduta a ripetute — `splits_km` media tutto su chilometri interi e
+        rende invisibile una serie da 500 m. Quando c'è `role` viene da Garmin
+        (allenamento strutturato); quando manca, deducilo tu dai numeri invece
+        di darlo per scontato.
         """
         with _db() as session:
             row = session.get(Activity, activity_id)
@@ -439,6 +446,11 @@ def build_mcp_server():  # noqa: ANN201 - FastMCP, imported lazily
                 "start_time": s.start_time,
                 "max_hr": s.max_hr,
                 "avg_cadence": s.avg_cadence,
+                # The real laps: one entry per repetition and per recovery,
+                # each with its own distance. `splits_km` below averages the
+                # same run into whole kilometres, which makes an interval
+                # session unreadable — prefer `laps` whenever it is present.
+                "laps": s.laps,
                 "splits_km": s.splits_km,
                 "hr_zones_min": s.hr_zones,
                 "temperature_c": _r(s.temperature_c),

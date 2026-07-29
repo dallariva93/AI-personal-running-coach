@@ -20,6 +20,7 @@ from app.collection.synthesize import (
     extract_details_enrichment,
     extract_gps_from_details,
     extract_hr_zones_from_timezones,
+    extract_laps,
     extract_splits,
     extract_weather,
     garmin_sport,
@@ -272,7 +273,7 @@ class GarminSource:
             if zones:
                 out["hr_zones"] = zones
 
-        if "splits_km" not in out or "altitude_profile" not in out:
+        if "splits_km" not in out or "altitude_profile" not in out or "laps" not in out:
             splits_payload = self._safe_call(
                 getattr(client, "get_activity_splits", None), activity_id, "splits"
             )
@@ -281,6 +282,17 @@ class GarminSource:
                     splits = extract_splits(splits_payload)
                     if splits:
                         out["splits_km"] = splits
+                # Same payload, kept whole: the per-km view above cannot show
+                # a 500 m repetition or the jog between two of them.
+                #
+                # An empty list is written deliberately when the payload came
+                # back without laps: it records "asked, there are none", which
+                # NULL cannot express. Without that, the enrichment pass would
+                # re-fetch every lapless activity forever, never converging.
+                # A *failed* payload fetch leaves the field unset, so it is
+                # retried later — which is what we want.
+                if "laps" not in out:
+                    out["laps"] = extract_laps(splits_payload) or []
                 if "altitude_profile" not in out:
                     alt_profile = extract_altitude_profile(splits_payload)
                     if alt_profile:

@@ -862,3 +862,37 @@ def test_unplannedActivity_reportsPlannedAsNone(mcp, session):
     out = _call(mcp, "list_activities")["activities"][0]
 
     assert out["planned"] is None
+
+
+def test_getActivityDetail_exposesRealLaps(mcp, session):
+    """An interval session must arrive readable: every rep and every recovery."""
+    laps = [
+        {"index": 1, "distance_m": 2000, "duration_sec": 660, "pace": "5:30/km", "role": "warmup"},
+        {"index": 2, "distance_m": 500, "duration_sec": 105, "pace": "3:30/km", "role": "work"},
+        {"index": 3, "distance_m": 200, "duration_sec": 90, "pace": "7:30/km", "role": "recovery"},
+        {"index": 4, "distance_m": 500, "duration_sec": 108, "pace": "3:36/km", "role": "work"},
+    ]
+    upsert_activity(session, RunSummary(
+        garmin_activity_id="g-intervals", date=date.today().isoformat(),
+        activity_type="intervals", distance_km=8.0, duration_min=45.0,
+        splits_km=["5:30", "4:10", "5:05"], laps=laps,
+    ))
+    session.commit()
+    activity_id = _call(mcp, "list_activities")["activities"][0]["id"]
+
+    detail = _call(mcp, "get_activity_detail", activity_id=activity_id)
+
+    assert detail["laps"] == laps
+    work = [x for x in detail["laps"] if x.get("role") == "work"]
+    assert [x["distance_m"] for x in work] == [500, 500]
+    # The fade across the series — the thing the per-km view cannot show.
+    assert work[0]["pace"] == "3:30/km"
+    assert work[1]["pace"] == "3:36/km"
+
+
+def test_getActivityDetail_withoutLaps_reportsNoneNotAnError(mcp, session):
+    _seed_runs(session, days_back=[1], km=10.0)
+    session.commit()
+    activity_id = _call(mcp, "list_activities")["activities"][0]["id"]
+
+    assert _call(mcp, "get_activity_detail", activity_id=activity_id)["laps"] is None

@@ -360,6 +360,67 @@ def extract_splits(payload: Any) -> list[str] | None:
     return out or None
 
 
+# Garmin's own lap intensity, when the activity ran a structured workout.
+# Anything else (or nothing) leaves the role unset rather than guessed.
+_LAP_ROLE_BY_INTENSITY = {
+    "ACTIVE": "work",
+    "INTERVAL": "work",
+    "REST": "recovery",
+    "RECOVERY": "recovery",
+    "WARMUP": "warmup",
+    "COOLDOWN": "cooldown",
+}
+
+
+def extract_laps(payload: Any) -> list[dict[str, Any]] | None:
+    """Parse ``get_activity_splits`` into the *real* laps, structured.
+
+    ``extract_splits`` flattens the same payload into per-kilometre pace
+    strings, which erases exactly what an interval session is made of: a 500 m
+    repetition and a 200 m jog both vanish into "the third kilometre". Here
+    every lap is kept with its own distance and duration, so the shape of a
+    session — and whether the athlete held the pace across the series — stays
+    readable.
+
+    ``role`` is filled only from Garmin's own ``intensityType``: on a free run
+    there is nothing to classify, and inventing "work"/"recovery" from pace
+    alone would be a guess presented as data.
+    """
+    laps = payload.get("lapDTOs") if isinstance(payload, dict) else None
+    if not isinstance(laps, list):
+        return None
+    out: list[dict[str, Any]] = []
+    for index, lap in enumerate(laps, start=1):
+        if not isinstance(lap, dict):
+            continue
+        distance = _num(lap.get("distance"))
+        duration = _num(lap.get("duration") or lap.get("movingDuration"))
+        if distance is None and duration is None:
+            continue
+        intensity = lap.get("intensityType")
+        entry: dict[str, Any] = {
+            "index": index,
+            "distance_m": round(distance) if distance is not None else None,
+            "duration_sec": round(duration) if duration is not None else None,
+        }
+        if distance and duration:
+            entry["pace"] = _format_pace(distance, duration)
+        role = _LAP_ROLE_BY_INTENSITY.get(str(intensity).upper()) if intensity else None
+        if role:
+            entry["role"] = role
+        avg_hr = _num(lap.get("averageHR"))
+        if avg_hr:
+            entry["avg_hr"] = round(avg_hr)
+        max_hr = _num(lap.get("maxHR"))
+        if max_hr:
+            entry["max_hr"] = round(max_hr)
+        gain = _num(lap.get("elevationGain"))
+        if gain:
+            entry["elevation_gain_m"] = round(gain)
+        out.append(entry)
+    return out or None
+
+
 def extract_altitude_profile(payload: Any) -> list[float] | None:
     """Extract average altitude per km from ``lapDTOs`` in the splits payload.
 

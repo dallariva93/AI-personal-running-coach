@@ -44,7 +44,10 @@ class FakeGarmin:
 
     def get_activity_enrichment(self, activity_id) -> dict:
         self.enrichment_calls.append(str(activity_id))
-        return {"splits_km": ["5:00", "4:58"], "hr_zones": {"z2": 30.0}}
+        # `laps` is always present once the splits payload was retrieved — an
+        # empty list means "asked, this run has none", which is what stops the
+        # enrichment pass from re-fetching it forever.
+        return {"splits_km": ["5:00", "4:58"], "hr_zones": {"z2": 30.0}, "laps": []}
 
 
 def _activity(days_ago: int, activity_id: int, running: bool = True) -> dict:
@@ -283,3 +286,41 @@ def test_backfill_monthsParameter_setsTheWindow(session, months, expected_years)
 
     oldest = min(date.fromisoformat(a.date) for a in session.query(Activity).all())
     assert oldest >= date.today() - timedelta(days=expected_years * 366)
+
+
+def test_enrichMissing_lapsShippedLater_revisitsAlreadyEnrichedRuns(session):
+    """`laps` arrived after `splits_km`, so old rows have one and not the other.
+
+    They must be picked up again, or a year of history would keep its per-km
+    view forever and every interval session would stay unreadable.
+    """
+    source = FakeGarmin(_history(count=3))
+    backfill_activities(session, source, months=12, page_size=10, throttle_s=0)
+    # Simulate rows enriched before laps existed: splits present, laps NULL.
+    for row in session.query(Activity).all():
+        row.splits_km = ["5:00", "4:58"]
+        row.laps = None
+    session.flush()
+
+    result = enrich_missing(session, source, throttle_s=0)
+
+    assert result.enriched == 3
+    assert all(a.laps is not None for a in session.query(Activity).all())
+
+
+def test_enrichMissing_runWithoutLaps_isNotRefetchedForever(session):
+    """An empty list records "asked, there are none" — NULL cannot say that.
+
+    Without it the pass would never converge: every lapless run would be
+    re-fetched on each execution, burning Garmin calls for nothing.
+    """
+    source = FakeGarmin(_history(count=2))
+    backfill_activities(session, source, months=12, page_size=10, throttle_s=0)
+    enrich_missing(session, source, throttle_s=0)
+    assert all(a.laps == [] for a in session.query(Activity).all())
+
+    source.enrichment_calls.clear()
+    again = enrich_missing(session, source, throttle_s=0)
+
+    assert again.enriched == 0
+    assert source.enrichment_calls == []

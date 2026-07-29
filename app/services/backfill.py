@@ -28,6 +28,7 @@ from collections.abc import Callable
 from dataclasses import dataclass, field
 from datetime import date, datetime
 
+from sqlalchemy import or_ as sa_or
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
@@ -293,7 +294,10 @@ def enrich_missing(
             .where(
                 Activity.sport == "run",
                 Activity.garmin_activity_id.is_not(None),
-                Activity.splits_km.is_(None),
+                # Missing either signal is worth a detail call: `laps` shipped
+                # after `splits_km`, so activities enriched earlier have splits
+                # but no laps and would otherwise never be revisited.
+                sa_or(Activity.splits_km.is_(None), Activity.laps.is_(None)),
             )
             .order_by(Activity.date.desc())
             .limit(limit)

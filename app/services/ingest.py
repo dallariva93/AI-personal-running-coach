@@ -55,6 +55,7 @@ def _activity_to_summary(a: Activity) -> RunSummary:
         notes=a.notes,
         hr_zones=a.hr_zones,
         splits_km=a.splits_km,
+        laps=a.laps,
         temperature_c=a.temperature_c,
         humidity_pct=a.humidity_pct,
         elevation_loss_m=a.elevation_loss_m,
@@ -191,7 +192,7 @@ def merge_duplicates(session: Session, dry_run: bool = True) -> list[dict]:
         # Fill only genuine gaps: the richer source stays authoritative.
         for field in (
             "start_time", "avg_hr", "max_hr", "elevation_gain_m", "avg_cadence",
-            "rpe", "notes", "hr_zones", "splits_km", "route_polyline",
+            "rpe", "notes", "hr_zones", "splits_km", "laps", "route_polyline",
         ):
             if getattr(keep, field, None) is None and getattr(drop, field, None) is not None:
                 setattr(keep, field, getattr(drop, field))
@@ -313,6 +314,8 @@ def upsert_activity(session: Session, run: RunSummary) -> Activity:
         existing.hr_zones = run.hr_zones
     if run.splits_km is not None:
         existing.splits_km = run.splits_km
+    if run.laps is not None:
+        existing.laps = run.laps
     if run.temperature_c is not None:
         existing.temperature_c = run.temperature_c
     if run.humidity_pct is not None:

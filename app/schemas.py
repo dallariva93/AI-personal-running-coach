@@ -49,6 +49,7 @@ class RunSummary(BaseModel):
     notes: str | None = None
     hr_zones: dict[str, float] | None = None
     splits_km: list[str] | None = None
+    laps: list[dict] | None = None
     # Environment (GAP 18) and trail (GAP 20) extras — all optional.
     temperature_c: float | None = None
     humidity_pct: float | None = None
@@ -665,6 +666,7 @@ class ActivityOut(BaseModel):
     # the native app render a full per-activity detail view.
     hr_zones: dict[str, float] | None = None
     splits_km: list[str] | None = None
+    laps: list[dict] | None = None
     temperature_c: float | None = None
     humidity_pct: float | None = None
     elevation_loss_m: float | None = None

@@ -71,6 +71,10 @@ class Activity(Base):
     # Semi-structured extras kept as JSON: hr zones, splits, etc.
     hr_zones: Mapped[dict | None] = mapped_column(JSON, nullable=True)
     splits_km: Mapped[list | None] = mapped_column(JSON, nullable=True)
+    # Real laps (distance/duration/pace per lap), not just per-km splits: an
+    # interval session is unreadable once its repetitions are averaged into
+    # kilometres. Populated from the same Garmin payload as splits_km.
+    laps: Mapped[list | None] = mapped_column(JSON, nullable=True)
     # Environment (GAP 18) and trail (GAP 20) extras.
     temperature_c: Mapped[float | None] = mapped_column(Float, nullable=True)
     humidity_pct: Mapped[float | None] = mapped_column(Float, nullable=True)
