@@ -398,6 +398,11 @@ def ingest_runs(
     # never arrived at all. Best-effort: it must not break the run sync.
     _try_ingest_cross_training(session, source, limit)
 
+    # Garmin rarely records temperature, and without it a coach reads August
+    # heat as a loss of form. Only the runs just synced are considered, so this
+    # is a couple of calls, not a sweep.
+    _try_fill_weather(session, len(saved))
+
     if settings.raw_archive_active and isinstance(source, GarminSource):
         _try_sync_raw_assets(session, source, limit)
 
@@ -414,6 +419,18 @@ def _try_ingest_cross_training(
             logger.info("Cross-training sincronizzato: %d sedute", len(saved))
     except Exception as exc:  # noqa: BLE001 - a secondary signal must not block ingest
         logger.warning("Sync cross-training fallito: %s", exc)
+
+
+def _try_fill_weather(session: Session, recent_count: int) -> None:
+    """Look up the weather for the runs just synced. Never raises."""
+    if recent_count <= 0:
+        return
+    try:
+        from app.services.weather_backfill import fill_missing_weather
+
+        fill_missing_weather(session, limit=recent_count, throttle_s=0.0)
+    except Exception as exc:  # noqa: BLE001 - weather is a nice-to-have
+        logger.warning("Recupero meteo fallito: %s", exc)
 
 
 def sync_raw_assets(

@@ -347,3 +347,15 @@ fly ssh console --app ai-running-coach \
 
 Opzioni utili: `--months 24` per due anni, `--restart` per ricominciare da
 capo ignorando il checkpoint.
+
+Infine il meteo delle corse passate (Garmin quasi mai lo registra), da
+Open-Meteo — nessuna chiave, nessun account:
+
+```sh
+fly ssh console --app ai-running-coach \
+  -C "python -m app.cli weather --limit 200"
+```
+
+Usa il punto di partenza GPS e l'ora di ogni corsa. Ripetibile a lotti: non
+riscrive mai una temperatura misurata davvero dall'orologio. Le corse nuove lo
+prendono già durante il sync.

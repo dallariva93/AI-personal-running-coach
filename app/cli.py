@@ -140,6 +140,25 @@ def cmd_backfill(args: argparse.Namespace) -> int:
     return 0
 
 
+def cmd_weather(args: argparse.Namespace) -> int:
+    """Fill in the weather Garmin never recorded (Open-Meteo, no API key)."""
+    from app.services.weather_backfill import fill_missing_weather
+
+    with session_scope() as session:
+        result = fill_missing_weather(
+            session, limit=args.limit, progress=print,
+            use_fallback_location=not args.gps_only,
+        )
+        print(
+            f"\nMeteo: {result.filled} attività completate su {result.considered} "
+            f"esaminate ({result.no_location} senza posizione, "
+            f"{result.no_data} senza dati meteo)."
+        )
+        if result.filled == args.limit:
+            print("Raggiunto il limite del lotto: rilancia per continuare.")
+    return 0
+
+
 def cmd_dedup(args: argparse.Namespace) -> int:
     """Find (and optionally merge) the same run stored twice from two sources."""
     from app.services.ingest import merge_duplicates
@@ -235,6 +254,20 @@ def build_parser() -> argparse.ArgumentParser:
         help="Applica davvero l'unione (senza, mostra solo l'anteprima)",
     )
     p_dedup.set_defaults(func=cmd_dedup)
+
+    p_weather = sub.add_parser(
+        "weather",
+        help="Recupera il meteo storico delle corse da Open-Meteo (senza API key)",
+    )
+    p_weather.add_argument(
+        "--limit", type=int, default=200,
+        help="Quante attività elaborare in questa esecuzione (default: 200)",
+    )
+    p_weather.add_argument(
+        "--gps-only", action="store_true",
+        help="Salta le corse senza GPS invece di usare la posizione di casa",
+    )
+    p_weather.set_defaults(func=cmd_weather)
 
     p_migrate = sub.add_parser("migrate", help="Applica le migrazioni del database (Alembic)")
     p_migrate.set_defaults(func=cmd_migrate)
