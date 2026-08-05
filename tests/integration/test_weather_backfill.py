@@ -297,3 +297,46 @@ def test_fillMissingWeather_samplesTheHourOfTheRun(session, start_time, expected
     fill_missing_weather(session, throttle_s=0, ref=TODAY, fetch=fetch)
 
     assert session.query(Activity).one().temperature_c == float(expected)
+
+
+# --------------------------------------------------------------------------
+# tapis roulant: nessun meteo inventato
+# --------------------------------------------------------------------------
+def test_fillMissingWeather_skipsIndoorRuns(session):
+    """A treadmill run has no GPS, so the fallback would attach the street's
+    temperature to a session done in an air-conditioned gym. A wrong-but-
+    plausible number is worse than a missing one."""
+    indoor = Activity(
+        garmin_activity_id="g-treadmill", date=(TODAY - timedelta(days=30)).isoformat(),
+        start_time="18:00", sport="run", activity_type="easy",
+        distance_km=8.0, duration_min=45.0, is_indoor=True, route_polyline=None,
+    )
+    session.add(indoor)
+    _run(session, 31)  # an outdoor run on another day, with GPS
+    session.flush()
+    day = (TODAY - timedelta(days=31)).isoformat()
+    fetch, calls = _recorder(_hourly_payload(day, {8: 24.0}))
+
+    result = fill_missing_weather(session, throttle_s=0, ref=TODAY, fetch=fetch)
+
+    assert result.filled == 1  # only the outdoor one
+    assert len(calls) == 1
+    refreshed = session.query(Activity).filter_by(garmin_activity_id="g-treadmill").one()
+    assert refreshed.temperature_c is None
+
+
+def test_fillMissingWeather_indoorRunIsNotEvenConsidered(session):
+    """It must not show up as "no location" either — it is simply not a case."""
+    session.add(Activity(
+        garmin_activity_id="g-treadmill", date=(TODAY - timedelta(days=30)).isoformat(),
+        sport="run", activity_type="easy", distance_km=8.0, duration_min=45.0,
+        is_indoor=True,
+    ))
+    session.flush()
+    fetch, calls = _recorder({})
+
+    result = fill_missing_weather(session, throttle_s=0, ref=TODAY, fetch=fetch)
+
+    assert result.considered == 0
+    assert result.no_location == 0
+    assert calls == []

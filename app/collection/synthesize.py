@@ -204,6 +204,32 @@ def _is_trail(activity: dict[str, Any]) -> bool:
     return elevation is not None and elevation >= _TRAIL_MIN_ELEVATION_M
 
 
+# Garmin marks indoor running in the activity type itself.
+_INDOOR_MARKERS = ("treadmill", "indoor", "virtual")
+
+
+def is_indoor_activity(activity: dict[str, Any]) -> bool:
+    """True for treadmill / indoor running.
+
+    Worth knowing because indoor runs break three assumptions the coaching
+    layer would otherwise make silently: there is no GPS (so weather looked up
+    from a fallback location would describe the street outside, not the gym),
+    the pace depends on the belt's calibration rather than on fitness, and the
+    zero elevation means "no data", not "flat course".
+    """
+    type_field = activity.get("activityType")
+    type_key = ""
+    if isinstance(type_field, dict):
+        type_key = str(type_field.get("typeKey", "")).lower()
+    elif type_field is not None:
+        type_key = str(type_field).lower()
+    if any(marker in type_key for marker in _INDOOR_MARKERS):
+        return True
+    # Strava flags a treadmill run with `trainer`, keeping sport_type "Run".
+    trainer = activity.get("trainer")
+    return trainer is True or trainer == 1
+
+
 def _infer_type(
     activity: dict[str, Any],
     hr_zones: dict[str, float] | None = None,  # kept for backward-compat
@@ -883,6 +909,7 @@ def synthesize(activity: dict[str, Any]) -> RunSummary:
         date=str(activity.get("startTimeLocal", ""))[:10],
         start_time=extract_start_time(activity.get("startTimeLocal")),
         activity_type=_infer_type(activity, hr_zones=hr_zones, duration_min=duration_min),
+        is_indoor=is_indoor_activity(activity),
         duration_min=duration_min,
         distance_km=round(distance_m / 1000.0, 2),
         avg_pace=_format_pace(distance_m, duration_s),

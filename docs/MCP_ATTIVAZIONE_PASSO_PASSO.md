@@ -359,3 +359,7 @@ fly ssh console --app ai-running-coach \
 Usa il punto di partenza GPS e l'ora di ogni corsa. Ripetibile a lotti: non
 riscrive mai una temperatura misurata davvero dall'orologio. Le corse nuove lo
 prendono già durante il sync.
+
+Le corse sul **tapis roulant** vengono saltate di proposito: non hanno GPS, e
+attribuire loro la temperatura di fuori direbbe "sei andato piano per il caldo"
+a una seduta fatta in palestra.

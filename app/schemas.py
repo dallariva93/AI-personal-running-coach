@@ -50,6 +50,7 @@ class RunSummary(BaseModel):
     hr_zones: dict[str, float] | None = None
     splits_km: list[str] | None = None
     laps: list[dict] | None = None
+    is_indoor: bool = False
     # Environment (GAP 18) and trail (GAP 20) extras — all optional.
     temperature_c: float | None = None
     humidity_pct: float | None = None
@@ -667,6 +668,7 @@ class ActivityOut(BaseModel):
     hr_zones: dict[str, float] | None = None
     splits_km: list[str] | None = None
     laps: list[dict] | None = None
+    is_indoor: bool = False
     temperature_c: float | None = None
     humidity_pct: float | None = None
     elevation_loss_m: float | None = None

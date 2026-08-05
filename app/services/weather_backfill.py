@@ -91,7 +91,15 @@ def fill_missing_weather(
     rows = list(
         session.scalars(
             select(Activity)
-            .where(or_(Activity.temperature_c.is_(None), Activity.humidity_pct.is_(None)))
+            .where(
+                or_(Activity.temperature_c.is_(None), Activity.humidity_pct.is_(None)),
+                # Never invent weather for a treadmill run: it has no GPS, so
+                # the fallback location would attach the street's temperature
+                # to a session done in an air-conditioned gym. A wrong-but-
+                # plausible number is worse than a missing one — it is exactly
+                # what makes a coach blame the heat for an indoor pace.
+                Activity.is_indoor.is_(False),
+            )
             .order_by(Activity.date.desc())
             .limit(limit)
         ).all()

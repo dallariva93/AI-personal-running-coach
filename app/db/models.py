@@ -75,6 +75,9 @@ class Activity(Base):
     # interval session is unreadable once its repetitions are averaged into
     # kilometres. Populated from the same Garmin payload as splits_km.
     laps: Mapped[list | None] = mapped_column(JSON, nullable=True)
+    # Treadmill / indoor: no GPS, belt-dependent pace, meaningless elevation.
+    # Kept explicit so weather is never invented for a run done inside.
+    is_indoor: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
     # Environment (GAP 18) and trail (GAP 20) extras.
     temperature_c: Mapped[float | None] = mapped_column(Float, nullable=True)
     humidity_pct: Mapped[float | None] = mapped_column(Float, nullable=True)

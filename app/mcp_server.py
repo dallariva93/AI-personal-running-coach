@@ -78,6 +78,11 @@ l'aderenza, altrimenti l'80/20 ti sembrerà sano proprio quando non lo è.
 Il carico non è solo corsa: `get_cross_training` restituisce bici, nuoto e \
 palestra, che le metriche di corsa escludono di proposito. Consultalo prima di \
 prescrivere una settimana pesante.
+
+Quando un'attività ha `is_indoor: true` è un tapis roulant: il passo dipende \
+dalla calibrazione del nastro e non è confrontabile con quello su strada, il \
+dislivello a zero significa "nessun dato" e non "percorso piatto", e il meteo \
+è assente di proposito. Contala nel volume, non usarla per giudicare la forma.
 """
 
 
@@ -179,6 +184,9 @@ def _summary_payload(s: RunSummary) -> dict[str, Any]:
         "avg_hr": s.avg_hr,
         "elevation_gain_m": _r(s.elevation_gain_m, 0),
         "rpe": s.rpe,
+        # Treadmill: pace depends on the belt, elevation is meaningless and
+        # there is no weather. Flagged so none of it reads as fitness.
+        "is_indoor": s.is_indoor,
     }
 
 

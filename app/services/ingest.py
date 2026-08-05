@@ -56,6 +56,7 @@ def _activity_to_summary(a: Activity) -> RunSummary:
         hr_zones=a.hr_zones,
         splits_km=a.splits_km,
         laps=a.laps,
+        is_indoor=a.is_indoor,
         temperature_c=a.temperature_c,
         humidity_pct=a.humidity_pct,
         elevation_loss_m=a.elevation_loss_m,
@@ -316,6 +317,10 @@ def upsert_activity(session: Session, run: RunSummary) -> Activity:
         existing.splits_km = run.splits_km
     if run.laps is not None:
         existing.laps = run.laps
+    # A source that knows it was indoors wins; one that simply doesn't carry
+    # the flag must not clear it (Health Connect has no such marker).
+    if run.is_indoor:
+        existing.is_indoor = True
     if run.temperature_c is not None:
         existing.temperature_c = run.temperature_c
     if run.humidity_pct is not None:
