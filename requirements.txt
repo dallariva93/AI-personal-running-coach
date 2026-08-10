@@ -1,20 +1,20 @@
 # Core web / API
-fastapi==0.138.0
-uvicorn[standard]==0.49.0
+fastapi==0.141.1
+uvicorn[standard]==0.52.1
 jinja2==3.1.6
 python-multipart==0.0.32
 
 # Persistence
 SQLAlchemy==2.0.51
-alembic==1.18.4
+alembic==1.19.0
 
 # Data / config
 pydantic==2.13.4
-pydantic-settings==2.14.2
+pydantic-settings==2.15.0
 python-dotenv==1.2.2
 
 # AI
-anthropic==0.111.0
+anthropic==0.120.2
 
 # Garmin (unofficial library)
 garminconnect==0.3.2
@@ -23,14 +23,14 @@ garminconnect==0.3.2
 requests==2.34.2
 
 # Object storage (Tigris / S3-compatible) for raw activity archive
-boto3==1.35.49
+boto3==1.43.66
 
 # At-rest encryption of stored secrets (Strava OAuth tokens) - A10
-cryptography==49.0.0
+cryptography==50.0.0
 
 # Push notifications (FCM HTTP v1) - A3
 httpx==0.28.1
 
 # MCP server for the Claude custom connector (docs/MCP_CONNECTOR_ROADMAP.md).
 # Only imported when MCP_PATH_TOKEN is set, so the app still boots without it.
-mcp==1.28.1
+mcp==2.0.0
