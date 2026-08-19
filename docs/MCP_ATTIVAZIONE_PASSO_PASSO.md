@@ -363,3 +363,68 @@ prendono già durante il sync.
 Le corse sul **tapis roulant** vengono saltate di proposito: non hanno GPS, e
 attribuire loro la temperatura di fuori direbbe "sei andato piano per il caldo"
 a una seduta fatta in palestra.
+
+---
+
+## Opzionale: collegare il diario alimentare (Yazio)
+
+**A cosa serve.** Un blocco che si inceppa perché mangi poco è identico, dai
+soli dati di corsa, a uno che si inceppa perché ti alleni troppo. Senza il
+diario, Claude non può distinguerli e nel dubbio ti farà tagliare il volume —
+che è la cosa sbagliata da fare se il problema era il piatto.
+
+**Cosa importa.** Solo i **totali del giorno**: calorie, proteine, carboidrati,
+grassi. Non i singoli pasti — non servono a un allenatore e riempirebbero la
+chat.
+
+### Passo 1 — Metti email e password come secret
+
+Le API di Yazio non sono pubbliche e non hanno una schermata di consenso come
+Strava: la password passa dalle mani dell'app. Per questo va messa come secret
+(non scritta nel comando, dove finirebbe nella cronologia del terminale):
+
+```sh
+fly secrets set --app ai-running-coach \
+  YAZIO_USERNAME="la-tua-email@example.com" \
+  YAZIO_PASSWORD="la-tua-password-yazio"
+```
+
+### Passo 2 — Collega l'account
+
+```sh
+fly ssh console --app ai-running-coach \
+  -C "python -m app.cli nutrition --connect --days 90"
+```
+
+Deve rispondere `Yazio collegato come ...` e poi importare gli ultimi 90 giorni.
+
+**La password non viene salvata nel database.** Viene usata una volta sola per
+ottenere i token di accesso; da lì in poi l'app usa solo quelli, cifrati sul
+disco. Se vuoi, dopo il collegamento puoi anche togliere il secret della
+password (`fly secrets unset --app ai-running-coach YAZIO_PASSWORD`): serve solo
+se un giorno dovrai ricollegare l'account.
+
+### Passo 3 — Verifica in chat
+
+Chiedi a Claude:
+
+> Come sto mangiando rispetto al carico delle ultime due settimane?
+
+Deve usare `get_nutrition` e citare calorie e macro medie.
+
+### Buono a sapersi
+
+- **I giorni nuovi arrivano da soli**: ogni sincronizzazione delle corse
+  riprende anche gli ultimi 7 giorni di diario (i pasti registrati in ritardo
+  vengono recuperati).
+- **Diario compilato a metà**: se hai registrato solo la colazione, il totale
+  del giorno sarà basso *per finta*. Il tool lo dichiara (`days_logged`) e
+  avvisa Claude di non trarne conclusioni sul bilancio energetico.
+- **Un giorno non registrato non diventa "0 kcal"**: semplicemente non c'è, che
+  è l'unica lettura onesta.
+- **Per scollegare**: `fly ssh console --app ai-running-coach -C "python -m
+  app.cli nutrition --disconnect"`. Cancella i token ma **tiene** lo storico già
+  importato.
+- **API non ufficiale**: come per Garmin, Yazio può cambiarla senza preavviso.
+  Se un giorno smette di funzionare, l'app continua a lavorare normalmente e
+  Claude semplicemente non parlerà di alimentazione.

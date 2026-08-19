@@ -14,6 +14,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import sys
 from datetime import datetime
 from pathlib import Path
 
@@ -159,6 +160,62 @@ def cmd_weather(args: argparse.Namespace) -> int:
     return 0
 
 
+def cmd_nutrition(args: argparse.Namespace) -> int:
+    """Connect Yazio and import the daily nutrition totals."""
+    from datetime import date, timedelta
+
+    from app.exceptions import CollectionError
+    from app.services import yazio_sync
+
+    with session_scope() as session:
+        if args.disconnect:
+            if yazio_sync.disconnect_account(session):
+                print("Yazio scollegato. Lo storico già importato resta nel database.")
+            else:
+                print("Yazio non era collegato.")
+            return 0
+
+        if args.connect:
+            settings = get_settings()
+            username = args.username or settings.yazio_username
+            # Never from the command line: argv is visible to every process on
+            # the box and lands in the shell history.
+            password = settings.yazio_password
+            if not password and sys.stdin.isatty():
+                import getpass
+
+                username = username or input("Email Yazio: ").strip()
+                password = getpass.getpass("Password Yazio: ")
+            if not username or not password:
+                print(
+                    "Credenziali mancanti. Imposta YAZIO_USERNAME e YAZIO_PASSWORD "
+                    "(come secret del deploy) oppure lancia il comando da un "
+                    "terminale interattivo."
+                )
+                return 1
+            try:
+                yazio_sync.connect_account(session, username, password)
+            except CollectionError as exc:
+                print(f"Collegamento fallito: {exc}")
+                return 1
+            print(f"Yazio collegato come {username}.")
+
+        if not yazio_sync.is_connected(session):
+            print("Yazio non è collegato: lancia prima `nutrition --connect`.")
+            return 1
+
+        end = date.today()
+        start = end - timedelta(days=args.days - 1)
+        result = yazio_sync.sync_nutrition(session, start=start, end=end, progress=print)
+        print(
+            f"\nAlimentazione: {result.saved} giorni salvati su "
+            f"{result.considered} richiesti ({result.empty} senza dati)."
+        )
+        for err in result.errors[:5]:
+            print(f"  ! {err}")
+    return 0
+
+
 def cmd_dedup(args: argparse.Namespace) -> int:
     """Find (and optionally merge) the same run stored twice from two sources."""
     from app.services.ingest import merge_duplicates
@@ -268,6 +325,28 @@ def build_parser() -> argparse.ArgumentParser:
         help="Salta le corse senza GPS invece di usare la posizione di casa",
     )
     p_weather.set_defaults(func=cmd_weather)
+
+    p_nutrition = sub.add_parser(
+        "nutrition",
+        help="Collega Yazio e importa calorie e macro giornaliere",
+    )
+    p_nutrition.add_argument(
+        "--connect", action="store_true",
+        help="Esegui il login Yazio e salva i token (la password non viene salvata)",
+    )
+    p_nutrition.add_argument(
+        "--username", default=None,
+        help="Email Yazio (in alternativa a YAZIO_USERNAME)",
+    )
+    p_nutrition.add_argument(
+        "--disconnect", action="store_true",
+        help="Elimina i token Yazio (lo storico importato resta)",
+    )
+    p_nutrition.add_argument(
+        "--days", type=int, default=30,
+        help="Quanti giorni indietro importare (default: 30)",
+    )
+    p_nutrition.set_defaults(func=cmd_nutrition)
 
     p_migrate = sub.add_parser("migrate", help="Applica le migrazioni del database (Alembic)")
     p_migrate.set_defaults(func=cmd_migrate)

@@ -408,6 +408,11 @@ def ingest_runs(
     # is a couple of calls, not a sweep.
     _try_fill_weather(session, len(saved))
 
+    # Fuelling belongs to the same picture as the load: a stalled block from an
+    # energy deficit looks identical to one from too much training. A short
+    # window, because a diary entry added two days late is normal.
+    _try_sync_nutrition(session)
+
     if settings.raw_archive_active and isinstance(source, GarminSource):
         _try_sync_raw_assets(session, source, limit)
 
@@ -436,6 +441,18 @@ def _try_fill_weather(session: Session, recent_count: int) -> None:
         fill_missing_weather(session, limit=recent_count, throttle_s=0.0)
     except Exception as exc:  # noqa: BLE001 - weather is a nice-to-have
         logger.warning("Recupero meteo fallito: %s", exc)
+
+
+def _try_sync_nutrition(session: Session) -> None:
+    """Import the last few days of nutrition, if Yazio is connected. Never raises."""
+    try:
+        from app.services.yazio_sync import is_connected, try_sync_nutrition
+
+        if not is_connected(session):
+            return
+        try_sync_nutrition(session, throttle_s=0.0)
+    except Exception as exc:  # noqa: BLE001 - nutrition is context, not a dependency
+        logger.warning("Sync nutrizione fallito: %s", exc)
 
 
 def sync_raw_assets(

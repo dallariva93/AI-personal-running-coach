@@ -40,6 +40,8 @@ from app.services import get_profile, hrv_history, latest_checkin
 from app.services.athlete_model_service import estimate_athlete_model
 from app.services.ingest import _activity_to_summary, _all_summaries, list_cross_training
 from app.services.plan_service import get_current_plan
+from app.services.yazio_sync import is_connected as yazio_connected
+from app.services.yazio_sync import recent_nutrition
 
 logger = get_logger("app.mcp")
 
@@ -78,6 +80,12 @@ l'aderenza, altrimenti l'80/20 ti sembrerà sano proprio quando non lo è.
 Il carico non è solo corsa: `get_cross_training` restituisce bici, nuoto e \
 palestra, che le metriche di corsa escludono di proposito. Consultalo prima di \
 prescrivere una settimana pesante.
+
+Se il diario alimentare è collegato, `get_nutrition` dà calorie e macro per \
+giorno: un calo di forma da deficit energetico è indistinguibile da uno da \
+troppo carico se guardi solo le corse. Controllalo prima di prescrivere un \
+taglio di volume — ma leggi `days_logged`: con un diario compilato a metà i \
+totali sottostimano l'assunzione reale.
 
 Quando un'attività ha `is_indoor: true` è un tapis roulant: il passo dipende \
 dalla calibrazione del nastro e non è confrontabile con quello su strada, il \
@@ -981,6 +989,72 @@ def build_mcp_server():  # noqa: ANN201 - FastMCP, imported lazily
                 },
                 "entries": entries,
                 "hint": "Nessun check-in registrato." if not entries else None,
+            }
+
+    @mcp.tool()
+    def get_nutrition(days: int = 14) -> dict[str, Any]:
+        """Calorie e macronutrienti per giorno, dal diario alimentare (Yazio).
+
+        Serve a distinguere due cose che dai soli dati di corsa sembrano
+        identiche: un blocco che si blocca per **troppo carico** e uno che si
+        blocca perché l'atleta **mangia poco**. Guardalo prima di concludere che
+        serve ridurre il volume, e prima di prescrivere una settimana pesante.
+
+        Sono totali giornalieri, non i singoli pasti. Attenzione a
+        `days_logged`: un diario compilato a metà fa sembrare un deficit
+        enorme dove c'è solo un pasto non registrato — con copertura bassa non
+        trarre conclusioni sul bilancio energetico.
+        """
+        days = max(1, min(days, 365))
+        end = date.today()
+        start = end - timedelta(days=days - 1)
+        with _db() as session:
+            if not yazio_connected(session):
+                return {
+                    "connected": False,
+                    "days": [],
+                    "hint": (
+                        "Yazio non è collegato: nessun dato di alimentazione. "
+                        "Non dedurne nulla sul bilancio energetico."
+                    ),
+                }
+            rows = recent_nutrition(session, start, end)
+            entries = [
+                {
+                    "date": r.date,
+                    "energy_kcal": _r(r.energy_kcal, 0),
+                    "protein_g": _r(r.protein_g, 0),
+                    "carbs_g": _r(r.carbs_g, 0),
+                    "fat_g": _r(r.fat_g, 0),
+                }
+                for r in rows
+            ]
+
+            def _avg(field: str) -> float | None:
+                values = [e[field] for e in entries if e[field] is not None]
+                return _r(sum(values) / len(values), 0) if values else None
+
+            return {
+                "connected": True,
+                "days_requested": days,
+                "days_logged": len(entries),
+                "averages": {
+                    "energy_kcal": _avg("energy_kcal"),
+                    "protein_g": _avg("protein_g"),
+                    "carbs_g": _avg("carbs_g"),
+                    "fat_g": _avg("fat_g"),
+                },
+                "days": entries,
+                "hint": (
+                    "Diario vuoto nel periodo richiesto."
+                    if not entries
+                    else (
+                        "Copertura parziale del diario: i totali medi "
+                        "sottostimano l'assunzione reale."
+                        if len(entries) < days * 0.7
+                        else None
+                    )
+                ),
             }
 
     @mcp.prompt()

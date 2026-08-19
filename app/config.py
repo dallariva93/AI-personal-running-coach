@@ -44,6 +44,15 @@ class Settings(BaseSettings):
     # Arbitrary secret echoed back during the webhook subscription handshake.
     strava_webhook_verify_token: str = "running-coach"
 
+    # -- Yazio (diario alimentare) ------------------------------------------
+    # Unofficial API with no OAuth consent screen: the credentials pass through
+    # us. They are read once, at `nutrition --connect`, and exchanged for tokens
+    # that are then stored encrypted; nothing here is persisted to the DB.
+    # Set them as deployment secrets so the password never appears in argv (and
+    # therefore never in `ps` or the shell history).
+    yazio_username: str = ""
+    yazio_password: str = ""
+
     # -- Anthropic / Claude --------------------------------------------------
     anthropic_api_key: str = ""
     coach_model: str = "claude-haiku-4-5-20251001"

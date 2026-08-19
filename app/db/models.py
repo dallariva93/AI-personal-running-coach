@@ -335,6 +335,100 @@ class StravaWebhookEvent(Base):
         return f"<StravaWebhookEvent {self.aspect_type} {self.object_id} {self.status}>"
 
 
+class YazioAccount(Base):
+    """OAuth tokens for the connected Yazio account.
+
+    Same shape and same reasoning as :class:`StravaAccount`: single-athlete app
+    → one row, tokens encrypted at rest, ``expires_at`` (epoch seconds) driving
+    a lazy refresh before each call.
+
+    The Yazio password is *not* stored. It is used once, at connect time, to
+    obtain the first token pair; from then on only the refresh token keeps the
+    session alive. That matters more here than for Strava: Yazio has no OAuth
+    consent screen we can lean on, so the credentials pass through our hands and
+    the only safe thing to do with them is to forget them immediately.
+    """
+
+    __tablename__ = "yazio_accounts"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    # Text, not String(128): Fernet ciphertext of a token is a few hundred chars.
+    _access_token: Mapped[str] = mapped_column("access_token", Text)
+    _refresh_token: Mapped[str] = mapped_column("refresh_token", Text)
+    expires_at: Mapped[int] = mapped_column(Integer, default=0)  # epoch seconds
+
+    @hybrid_property
+    def access_token(self) -> str:  # noqa: D102 - trivial accessor
+        from app.security.crypto import decrypt_secret
+
+        return decrypt_secret(self._access_token)
+
+    @access_token.inplace.setter
+    def _access_token_setter(self, value: str) -> None:
+        from app.security.crypto import encrypt_secret
+
+        self._access_token = encrypt_secret(value)
+
+    @access_token.inplace.expression
+    @classmethod
+    def _access_token_expr(cls):  # noqa: ANN206 - SQL expression
+        return cls._access_token
+
+    @hybrid_property
+    def refresh_token(self) -> str:  # noqa: D102 - trivial accessor
+        from app.security.crypto import decrypt_secret
+
+        return decrypt_secret(self._refresh_token)
+
+    @refresh_token.inplace.setter
+    def _refresh_token_setter(self, value: str) -> None:
+        from app.security.crypto import encrypt_secret
+
+        self._refresh_token = encrypt_secret(value)
+
+    @refresh_token.inplace.expression
+    @classmethod
+    def _refresh_token_expr(cls):  # noqa: ANN206 - SQL expression
+        return cls._refresh_token
+
+    # Only for showing "connected as …" in the UI; never used to authenticate.
+    username: Mapped[str | None] = mapped_column(String(128), nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=_utcnow)
+    updated_at: Mapped[datetime] = mapped_column(DateTime, default=_utcnow, onupdate=_utcnow)
+
+    def __repr__(self) -> str:  # pragma: no cover - debug helper
+        return f"<YazioAccount {self.username or 'connected'}>"
+
+
+class NutritionDay(Base):
+    """One day of nutrition totals, imported from Yazio.
+
+    Daily aggregates only — never the individual diary entries. A coach reasons
+    about "did the fuelling match the load", which needs kcal and macros per day;
+    the meal-by-meal detail would multiply the size of what we hand to the model
+    by two orders of magnitude and answer no question we actually ask.
+
+    Every field is nullable: a day the athlete logged only breakfast is real
+    data about a partial log, and forcing a zero would read as "ate nothing".
+    """
+
+    __tablename__ = "nutrition_days"
+    __table_args__ = (UniqueConstraint("date", name="uq_nutrition_date"),)
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    date: Mapped[str] = mapped_column(String(10), index=True)  # ISO YYYY-MM-DD
+    energy_kcal: Mapped[float | None] = mapped_column(Float, nullable=True)
+    protein_g: Mapped[float | None] = mapped_column(Float, nullable=True)
+    carbs_g: Mapped[float | None] = mapped_column(Float, nullable=True)
+    fat_g: Mapped[float | None] = mapped_column(Float, nullable=True)
+    water_ml: Mapped[float | None] = mapped_column(Float, nullable=True)
+    source: Mapped[str] = mapped_column(String(20), default="yazio")
+    synced_at: Mapped[datetime] = mapped_column(DateTime, default=_utcnow, onupdate=_utcnow)
+
+    def __repr__(self) -> str:  # pragma: no cover - debug helper
+        return f"<NutritionDay {self.date} {self.energy_kcal} kcal>"
+
+
 class DailyCheckinRow(Base):
     """A subjective daily wellness check-in (GAP 9). One row per date."""
 

@@ -239,6 +239,8 @@ def test_mcp_exposesReadOnlyToolsAndCoachPrompt(mcp):
         "get_personal_records",
         "get_cross_training",
         "get_readiness_history",
+        # Nutrizione (Yazio)
+        "get_nutrition",
     }
     # Nothing that writes: a leaked URL must not be able to change state.
     # `generate_plan_draft` computes in memory and persists nothing — asserted
@@ -896,3 +898,59 @@ def test_getActivityDetail_withoutLaps_reportsNoneNotAnError(mcp, session):
     activity_id = _call(mcp, "list_activities")["activities"][0]["id"]
 
     assert _call(mcp, "get_activity_detail", activity_id=activity_id)["laps"] is None
+
+
+# --------------------------------------------------------------------------
+# get_nutrition (Yazio)
+# --------------------------------------------------------------------------
+def _connect_yazio(session) -> None:
+    from app.services import yazio_sync
+
+    def _fake(method, url, *, data=None, params=None, token=None):
+        return {"access_token": "acc", "refresh_token": "ref", "expires_in": 3600}
+
+    yazio_sync.connect_account(session, "me@example.com", "pw", request=_fake)
+
+
+def test_getNutrition_withoutYazio_saysSoInsteadOfImplyingZero(mcp, session):
+    """No diary is "unknown", not "ate nothing" — the difference matters."""
+    out = _call(mcp, "get_nutrition")
+
+    assert out["connected"] is False
+    assert out["days"] == []
+    assert out["hint"]
+
+
+def test_getNutrition_returnsDailyTotalsAndAverages(mcp, session):
+    from app.services.yazio_sync import upsert_day
+
+    _connect_yazio(session)
+    for offset, kcal in [(1, 2400), (2, 2000)]:
+        upsert_day(session, {
+            "date": (date.today() - timedelta(days=offset)).isoformat(),
+            "energy_kcal": kcal, "protein_g": 120, "carbs_g": 300, "fat_g": 70,
+        })
+    session.commit()
+
+    out = _call(mcp, "get_nutrition", days=7)
+
+    assert out["connected"] is True
+    assert out["days_logged"] == 2
+    assert out["averages"]["energy_kcal"] == 2200
+    assert [d["energy_kcal"] for d in out["days"]] == [2000, 2400]  # oldest first
+
+
+def test_getNutrition_withPartialDiary_warnsAboutCoverage(mcp, session):
+    """A half-logged diary looks like a huge deficit; the coach must be told."""
+    from app.services.yazio_sync import upsert_day
+
+    _connect_yazio(session)
+    upsert_day(session, {
+        "date": (date.today() - timedelta(days=1)).isoformat(), "energy_kcal": 2400,
+    })
+    session.commit()
+
+    out = _call(mcp, "get_nutrition", days=14)
+
+    assert out["days_logged"] == 1
+    assert "parziale" in out["hint"].lower()
