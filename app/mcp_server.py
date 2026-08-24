@@ -1000,6 +1000,10 @@ def build_mcp_server():  # noqa: ANN201 - FastMCP, imported lazily
         blocca perché l'atleta **mangia poco**. Guardalo prima di concludere che
         serve ridurre il volume, e prima di prescrivere una settimana pesante.
 
+        `balance_kcal` è la differenza fra assunzione e fabbisogno del giorno
+        (negativo = deficit): è quello che risponde davvero alla domanda, perché
+        1900 kcal sono abbondanti o pochissime a seconda di cosa serviva.
+
         Sono totali giornalieri, non i singoli pasti. Attenzione a
         `days_logged`: un diario compilato a metà fa sembrare un deficit
         enorme dove c'è solo un pasto non registrato — con copertura bassa non
@@ -1023,6 +1027,14 @@ def build_mcp_server():  # noqa: ANN201 - FastMCP, imported lazily
                 {
                     "date": r.date,
                     "energy_kcal": _r(r.energy_kcal, 0),
+                    "energy_goal_kcal": _r(r.energy_goal_kcal, 0),
+                    # The number that actually answers "am I eating enough":
+                    # intake alone is meaningless without what the day required.
+                    "balance_kcal": (
+                        _r(r.energy_kcal - r.energy_goal_kcal, 0)
+                        if r.energy_kcal is not None and r.energy_goal_kcal is not None
+                        else None
+                    ),
                     "protein_g": _r(r.protein_g, 0),
                     "carbs_g": _r(r.carbs_g, 0),
                     "fat_g": _r(r.fat_g, 0),
@@ -1040,6 +1052,8 @@ def build_mcp_server():  # noqa: ANN201 - FastMCP, imported lazily
                 "days_logged": len(entries),
                 "averages": {
                     "energy_kcal": _avg("energy_kcal"),
+                    "energy_goal_kcal": _avg("energy_goal_kcal"),
+                    "balance_kcal": _avg("balance_kcal"),
                     "protein_g": _avg("protein_g"),
                     "carbs_g": _avg("carbs_g"),
                     "fat_g": _avg("fat_g"),

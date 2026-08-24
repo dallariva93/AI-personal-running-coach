@@ -154,6 +154,7 @@ def upsert_day(session: Session, payload: dict[str, Any]) -> NutritionDay:
     row.carbs_g = payload.get("carbs_g")
     row.fat_g = payload.get("fat_g")
     row.water_ml = payload.get("water_ml")
+    row.energy_goal_kcal = payload.get("energy_goal_kcal")
     row.synced_at = datetime.now(UTC)
     return row
 

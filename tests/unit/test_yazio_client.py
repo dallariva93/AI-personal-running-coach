@@ -114,6 +114,7 @@ def test_fetchDay_returnsTotals_andPassesTheDate():
     assert day == {
         "date": "2026-08-20",
         "energy_kcal": 1911.0,
+        "energy_goal_kcal": 2784.0,
         "protein_g": 98.1,
         "carbs_g": 119.4,
         "fat_g": 89.4,
@@ -468,3 +469,28 @@ def test_defaultClientIdentity_isPresent(monkeypatch):
     assert client_id.startswith("1_")
     assert len(client_secret) > 20
     get_settings.cache_clear()
+
+
+def test_parseDay_readsTheGoalWithoutMixingItIntoIntake():
+    """The target comes from `goals`; the intake never does.
+
+    Both are wanted, from adjacent blocks with identical key names — so the test
+    pins them to different numbers on purpose.
+    """
+    parsed = yazio.parse_day(_summary(), "2026-08-20")
+
+    assert parsed is not None
+    assert parsed["energy_goal_kcal"] == 2784.0
+    assert parsed["energy_kcal"] == 1911.0
+
+
+def test_parseDay_withoutGoals_stillReturnsTheDay():
+    """A missing target must not cost us the intake."""
+    payload = _summary()
+    payload.pop("goals")
+
+    parsed = yazio.parse_day(payload, "2026-08-20")
+
+    assert parsed is not None
+    assert parsed["energy_kcal"] == 1911.0
+    assert parsed["energy_goal_kcal"] is None

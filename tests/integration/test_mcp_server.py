@@ -954,3 +954,39 @@ def test_getNutrition_withPartialDiary_warnsAboutCoverage(mcp, session):
 
     assert out["days_logged"] == 1
     assert "parziale" in out["hint"].lower()
+
+
+def test_getNutrition_reportsTheBalanceNotJustTheIntake(mcp, session):
+    """1900 kcal is generous or a deep hole depending on what the day required."""
+    from app.services.yazio_sync import upsert_day
+
+    _connect_yazio(session)
+    upsert_day(session, {
+        "date": (date.today() - timedelta(days=1)).isoformat(),
+        "energy_kcal": 1911, "energy_goal_kcal": 2784,
+    })
+    session.commit()
+
+    out = _call(mcp, "get_nutrition", days=7)
+
+    day = out["days"][0]
+    assert day["energy_kcal"] == 1911
+    assert day["energy_goal_kcal"] == 2784
+    assert day["balance_kcal"] == -873
+    assert out["averages"]["balance_kcal"] == -873
+
+
+def test_getNutrition_withoutAGoal_reportsNoBalance(mcp, session):
+    """No target means the deficit is unknown, not zero."""
+    from app.services.yazio_sync import upsert_day
+
+    _connect_yazio(session)
+    upsert_day(session, {
+        "date": (date.today() - timedelta(days=1)).isoformat(), "energy_kcal": 1911,
+    })
+    session.commit()
+
+    out = _call(mcp, "get_nutrition", days=7)
+
+    assert out["days"][0]["balance_kcal"] is None
+    assert out["averages"]["balance_kcal"] is None

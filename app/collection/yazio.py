@@ -298,9 +298,15 @@ def parse_day(data: Any, day_str: str) -> dict[str, Any] | None:
         return None
 
     water = _num(data.get("water_intake"))
+    unit = _energy_unit(data)
+    # `goals` is read for exactly one field, and only here: the day's calorie
+    # target. It is never allowed anywhere near the intake numbers above.
+    goals = data.get("goals")
+    goal_energy = _num(goals.get(_K_ENERGY)) if isinstance(goals, dict) else None
     return {
         "date": day_str,
-        "energy_kcal": _as_kcal(energy, _energy_unit(data)),
+        "energy_kcal": _as_kcal(energy, unit),
+        "energy_goal_kcal": _as_kcal(goal_energy, unit),
         "protein_g": _round(protein),
         "carbs_g": _round(carbs),
         "fat_g": _round(fat),

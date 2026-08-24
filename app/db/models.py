@@ -403,10 +403,10 @@ class YazioAccount(Base):
 class NutritionDay(Base):
     """One day of nutrition totals, imported from Yazio.
 
-    Daily aggregates only — never the individual diary entries. A coach reasons
-    about "did the fuelling match the load", which needs kcal and macros per day;
-    the meal-by-meal detail would multiply the size of what we hand to the model
-    by two orders of magnitude and answer no question we actually ask.
+    Daily aggregates: kcal, macros, and the day's target. A coach reasons about
+    "did the fuelling match the load", which is a per-day question — the
+    item-by-item diary would multiply the payload by two orders of magnitude to
+    answer something nobody asked.
 
     Every field is nullable: a day the athlete logged only breakfast is real
     data about a partial log, and forcing a zero would read as "ate nothing".
@@ -422,6 +422,12 @@ class NutritionDay(Base):
     carbs_g: Mapped[float | None] = mapped_column(Float, nullable=True)
     fat_g: Mapped[float | None] = mapped_column(Float, nullable=True)
     water_ml: Mapped[float | None] = mapped_column(Float, nullable=True)
+    # The day's calorie *target*, as Yazio computed it. Intake alone says little
+    # — 1900 kcal is generous or a deep hole depending on the goal — and the
+    # deficit is the whole reason nutrition is here: it is what separates "the
+    # block stalled from too much load" from "the block stalled from too little
+    # food".
+    energy_goal_kcal: Mapped[float | None] = mapped_column(Float, nullable=True)
     source: Mapped[str] = mapped_column(String(20), default="yazio")
     synced_at: Mapped[datetime] = mapped_column(DateTime, default=_utcnow, onupdate=_utcnow)
 

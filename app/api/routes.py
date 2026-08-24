@@ -1082,7 +1082,9 @@ def post_yazio_disconnect(session: Session = Depends(get_session)) -> dict:
 
 
 @router.get("/yazio/inspect")
-def get_yazio_inspect(date: str, session: Session = Depends(get_session)) -> dict:
+def get_yazio_inspect(
+    date: str, kind: str = "summary", session: Session = Depends(get_session)
+) -> dict:
     """Cosa risponde davvero Yazio per un giorno, e cosa ne ricava il parser.
 
     Esiste perché "0 giorni salvati" ha due cause opposte — la chiamata fallisce,
@@ -1100,12 +1102,24 @@ def get_yazio_inspect(date: str, session: Session = Depends(get_session)) -> dic
     if account is None:
         raise HTTPException(status_code=409, detail="Yazio non collegato.")
 
+    # A fixed set of paths, not a free-form one: this endpoint must never become
+    # a way to make the server fetch an arbitrary URL.
+    paths = {
+        "summary": yazio.DAILY_SUMMARY_PATH,
+        "consumed": "/user/consumed-items",
+    }
+    if kind not in paths:
+        raise HTTPException(
+            status_code=400, detail=f"kind ammessi: {', '.join(sorted(paths))}"
+        )
+
     token = valid_access_token(session, account)
-    out: dict = {"date": date, "http_error": None, "raw": None, "parsed": None}
+    out: dict = {"date": date, "kind": kind, "http_error": None, "raw": None,
+                 "parsed": None}
     try:
         out["raw"] = yazio._default_request(
             "GET",
-            f"{yazio.BASE_URL}{yazio.DAILY_SUMMARY_PATH}",
+            f"{yazio.BASE_URL}{paths[kind]}",
             params={"date": date},
             token=token,
         )
@@ -1114,5 +1128,6 @@ def get_yazio_inspect(date: str, session: Session = Depends(get_session)) -> dic
         return out
 
     out["top_level_keys"] = sorted(out["raw"].keys()) if isinstance(out["raw"], dict) else None
-    out["parsed"] = yazio.parse_day(out["raw"], date)
+    if kind == "summary":
+        out["parsed"] = yazio.parse_day(out["raw"], date)
     return out
