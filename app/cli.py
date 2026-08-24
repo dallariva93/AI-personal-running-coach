@@ -197,16 +197,25 @@ def cmd_nutrition(args: argparse.Namespace) -> int:
                 yazio_sync.connect_account(session, username, password)
             except CollectionError as exc:
                 print(f"Collegamento fallito: {exc}")
-                # Il caso più probabile non è "password sbagliata": è un account
-                # registrato con Google, che su Yazio una password non ce l'ha
-                # proprio. Senza questa riga si legge solo un 401 e si perde
-                # tempo a riprovare credenziali che non esistono.
-                print(
-                    "\nSe ti sei registrato su Yazio con Google, una password "
-                    "non esiste e questo login non può funzionare. Prova a "
-                    "impostarne una dall'app Yazio ('Password dimenticata' con "
-                    "la stessa email), poi rilancia questo comando."
-                )
+                # Il codice HTTP separa due cause opposte, e confonderle fa
+                # perdere un pomeriggio: 401 vuol dire "credenziali rifiutate"
+                # (e su un account Google una password non esiste proprio),
+                # 400 vuol dire che la richiesta non e' stata nemmeno letta —
+                # le credenziali non c'entrano.
+                text = str(exc)
+                if "401" in text or "invalid_grant" in text:
+                    print(
+                        "\nCredenziali rifiutate. Se ti sei registrato su Yazio "
+                        "con Google, una password non esiste: impostane una "
+                        "dall'app ('Password dimenticata' con la stessa email)."
+                    )
+                elif "400" in text:
+                    print(
+                        "\n400 = richiesta malformata, non credenziali sbagliate: "
+                        "Yazio non è arrivato a controllare la password. Il "
+                        "messaggio qui sopra arriva dal server e dice cosa non "
+                        "gli è piaciuto."
+                    )
                 return 1
             print(f"Yazio collegato come {username}.")
 

@@ -25,8 +25,10 @@ def _api(*, days: dict[str, dict] | None = None, tokens: dict | None = None):
     tokens = tokens or {"access_token": "acc", "refresh_token": "ref", "expires_in": 3600}
     calls: list = []
 
-    def _request(method, url, *, data=None, params=None, token=None):
-        calls.append({"url": url, "data": data, "params": params, "token": token})
+    def _request(method, url, *, data=None, json=None, params=None, token=None):
+        # The token endpoint is tried as JSON first; day reads send params.
+        calls.append({"url": url, "body": json or data, "params": params,
+                      "token": token})
         if url.endswith("/oauth/token"):
             return dict(tokens)
         return days.get((params or {}).get("date"))
@@ -93,7 +95,7 @@ def test_expiredToken_isRefreshedBeforeUse(session):
     token = yazio_sync.valid_access_token(session, account, request=api2)
 
     assert token == "acc2"
-    assert api2.calls[0]["data"]["grant_type"] == "refresh_token"  # type: ignore[attr-defined]
+    assert api2.calls[0]["body"]["grant_type"] == "refresh_token"  # type: ignore[attr-defined]
 
 
 def test_validToken_isNotRefreshed(session):
@@ -173,7 +175,7 @@ def test_sync_whenRefreshFails_reportsInsteadOfRaising(session):
     account.expires_at = 0
     session.commit()
 
-    def _dead(method, url, *, data=None, params=None, token=None):
+    def _dead(method, url, *, data=None, json=None, params=None, token=None):
         raise RuntimeError("401 invalid_grant")
 
     result = yazio_sync.sync_nutrition(session, throttle_s=0.0, request=_dead)
@@ -186,7 +188,7 @@ def test_sync_whenTheApiIsDown_degradesToEmptyDays(session):
     """Yazio being unreachable is indistinguishable from an unlogged day — and
     that is the safe reading: no row, so nothing claims the athlete ate nothing."""
 
-    def _explode(method, url, *, data=None, params=None, token=None):
+    def _explode(method, url, *, data=None, json=None, params=None, token=None):
         if url.endswith("/oauth/token"):
             return {"access_token": "acc", "refresh_token": "ref", "expires_in": 3600}
         raise RuntimeError("boom")

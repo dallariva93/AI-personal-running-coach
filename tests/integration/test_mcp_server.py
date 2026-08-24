@@ -906,7 +906,7 @@ def test_getActivityDetail_withoutLaps_reportsNoneNotAnError(mcp, session):
 def _connect_yazio(session) -> None:
     from app.services import yazio_sync
 
-    def _fake(method, url, *, data=None, params=None, token=None):
+    def _fake(method, url, *, data=None, json=None, params=None, token=None):
         return {"access_token": "acc", "refresh_token": "ref", "expires_in": 3600}
 
     yazio_sync.connect_account(session, "me@example.com", "pw", request=_fake)

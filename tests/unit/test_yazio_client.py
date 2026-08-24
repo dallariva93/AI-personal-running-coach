@@ -21,9 +21,11 @@ from app.exceptions import CollectionError
 
 
 def _responder(payload, *, capture: list | None = None):
-    def _request(method, url, *, data=None, params=None, token=None):
+    def _request(method, url, *, data=None, json=None, params=None, token=None):
         if capture is not None:
-            capture.append({"method": method, "url": url, "data": data,
+            # `body` is whichever encoding was used: the token endpoint is
+            # tried as JSON first, everything else sends plain params.
+            capture.append({"method": method, "url": url, "body": json or data,
                             "params": params, "token": token})
         if isinstance(payload, Exception):
             raise payload
@@ -46,8 +48,8 @@ def test_login_returnsTokenPair_andSendsPasswordGrant():
 
     assert tokens == {"access_token": "acc", "refresh_token": "ref", "expires_in": 3600}
     assert calls[0]["method"] == "POST"
-    assert calls[0]["data"]["grant_type"] == "password"
-    assert calls[0]["data"]["username"] == "me@example.com"
+    assert calls[0]["body"]["grant_type"] == "password"
+    assert calls[0]["body"]["username"] == "me@example.com"
 
 
 def test_login_withBadCredentials_raises():
@@ -74,8 +76,8 @@ def test_refresh_usesRefreshGrant_andNeverThePassword():
     tokens = yazio.refresh("ref", request=request)
 
     assert tokens["access_token"] == "acc2"
-    assert calls[0]["data"]["grant_type"] == "refresh_token"
-    assert "password" not in calls[0]["data"]
+    assert calls[0]["body"]["grant_type"] == "refresh_token"
+    assert "password" not in calls[0]["body"]
 
 
 def test_refresh_withoutNewRefreshToken_returnsNone():
@@ -192,3 +194,86 @@ def test_parseDay_unknownShape_warnsOnlyOnce(caplog):
             yazio.parse_day({"kilojoule": 8000}, "2026-06-22")
 
     assert caplog.text.count("non riconosciuto") == 1
+
+
+# ── encoding negotiation / error surfacing ───────────────────────────────────
+
+
+def _http(status: int, body: str = ""):
+    from app.collection.yazio import YazioHTTPError
+
+    return YazioHTTPError(status, body)
+
+
+def _encoding_recorder(fail_on: set[str]):
+    """Fake token endpoint that rejects the encodings named in ``fail_on``."""
+    seen: list[str] = []
+
+    def _request(method, url, *, data=None, json=None, params=None, token=None):
+        encoding = "json" if json is not None else "form"
+        seen.append(encoding)
+        if encoding in fail_on:
+            raise _http(400, '{"error":"invalid_request"}')
+        return {"access_token": "acc", "refresh_token": "ref", "expires_in": 3600}
+
+    _request.seen = seen  # type: ignore[attr-defined]
+    return _request
+
+
+def test_login_triesJsonFirst():
+    """v15 is a JSON API; form encoding is only the fallback."""
+    request = _encoding_recorder(fail_on=set())
+
+    yazio.login("me@example.com", "pw", request=request)
+
+    assert request.seen == ["json"]  # type: ignore[attr-defined]
+
+
+def test_login_whenJsonIsRejected_retriesAsForm():
+    """A bare 400 means "I couldn't read this" — worth trying the other encoding."""
+    request = _encoding_recorder(fail_on={"json"})
+
+    tokens = yazio.login("me@example.com", "pw", request=request)
+
+    assert tokens["access_token"] == "acc"
+    assert request.seen == ["json", "form"]  # type: ignore[attr-defined]
+
+
+def test_login_on401_doesNotRetry():
+    """401 is a real answer: the password is wrong, and re-encoding hides it."""
+    seen: list[str] = []
+
+    def _request(method, url, *, data=None, json=None, params=None, token=None):
+        seen.append("json" if json is not None else "form")
+        raise _http(401, '{"error":"invalid_grant"}')
+
+    with pytest.raises(CollectionError) as err:
+        yazio.login("me@example.com", "wrong", request=_request)
+
+    assert seen == ["json"]
+    assert "invalid_grant" in str(err.value)
+
+
+def test_login_errorCarriesTheServerBody():
+    """The body is where the server says *why*; a bare status code is useless."""
+
+    def _request(method, url, *, data=None, json=None, params=None, token=None):
+        raise _http(400, '{"error":"invalid_client","error_description":"unknown"}')
+
+    with pytest.raises(CollectionError) as err:
+        yazio.login("me@example.com", "pw", request=_request)
+
+    assert "invalid_client" in str(err.value)
+
+
+def test_login_errorNeverLeaksThePassword():
+    """The message goes to logs and to a terminal someone may screenshot."""
+
+    def _request(method, url, *, data=None, json=None, params=None, token=None):
+        # Worst case: a server that echoes the request back in its error.
+        raise _http(400, str(json or data))
+
+    with pytest.raises(CollectionError) as err:
+        yazio.login("me@example.com", "sup3r-s3cret", request=_request)
+
+    assert "sup3r-s3cret" not in str(err.value)

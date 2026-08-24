@@ -45,8 +45,35 @@ def _num(value: Any) -> float | None:
         return None
 
 
+class YazioHTTPError(Exception):
+    """An HTTP error that keeps the response body.
+
+    ``raise_for_status()`` throws the body away and leaves only "400 Bad
+    Request", which on an OAuth endpoint is the least informative half of the
+    answer: the body is where the server says *invalid_client* vs
+    *invalid_grant* vs *unsupported_grant_type*. Without it, a malformed request
+    and a wrong password look identical from the outside.
+    """
+
+    def __init__(self, status: int, body: str) -> None:
+        super().__init__(f"HTTP {status}: {body}" if body else f"HTTP {status}")
+        self.status = status
+        self.body = body
+
+
+# Enough of the body to carry an OAuth error code and its description, not so
+# much that a stray HTML error page floods the logs.
+_MAX_BODY_CHARS = 400
+
+
 def _default_request(
-    method: str, url: str, *, data: Any = None, params: Any = None, token: str | None = None
+    method: str,
+    url: str,
+    *,
+    data: Any = None,
+    json: Any = None,
+    params: Any = None,
+    token: str | None = None,
 ) -> dict | None:
     """The real HTTP call. Injectable everywhere above, so tests stay offline."""
     import requests
@@ -55,9 +82,16 @@ def _default_request(
     if token:
         headers["Authorization"] = f"Bearer {token}"
     response = requests.request(
-        method, url, data=data, params=params, headers=headers, timeout=TIMEOUT_S
+        method,
+        url,
+        data=data,
+        json=json,
+        params=params,
+        headers=headers,
+        timeout=TIMEOUT_S,
     )
-    response.raise_for_status()
+    if response.status_code >= 400:
+        raise YazioHTTPError(response.status_code, (response.text or "")[:_MAX_BODY_CHARS])
     if not response.content:
         return None
     return response.json()
@@ -71,35 +105,80 @@ def login(username: str, password: str, *, request: Any = None) -> dict[str, Any
     the one Yazio call that must *not* fail silently, because the user is
     standing there waiting to know whether the connection worked.
     """
-    request = request or _default_request
-    payload = {
-        "client_id": CLIENT_ID,
-        "client_secret": CLIENT_SECRET,
-        "grant_type": "password",
-        "username": username,
-        "password": password,
-    }
-    try:
-        data = request("POST", TOKEN_URL, data=payload)
-    except Exception as exc:  # noqa: BLE001 - surfaced to the caller as a domain error
-        raise CollectionError(f"Login Yazio fallito: {exc}") from exc
-    return _token_pair(data, "login")
+    return _token_request(
+        {
+            "client_id": CLIENT_ID,
+            "client_secret": CLIENT_SECRET,
+            "grant_type": "password",
+            "username": username,
+            "password": password,
+        },
+        "login",
+        request or _default_request,
+    )
 
 
 def refresh(refresh_token: str, *, request: Any = None) -> dict[str, Any]:
     """Trade a refresh token for a fresh pair, so the password is never reused."""
-    request = request or _default_request
-    payload = {
-        "client_id": CLIENT_ID,
-        "client_secret": CLIENT_SECRET,
-        "grant_type": "refresh_token",
-        "refresh_token": refresh_token,
-    }
-    try:
-        data = request("POST", TOKEN_URL, data=payload)
-    except Exception as exc:  # noqa: BLE001
-        raise CollectionError(f"Refresh del token Yazio fallito: {exc}") from exc
-    return _token_pair(data, "refresh")
+    return _token_request(
+        {
+            "client_id": CLIENT_ID,
+            "client_secret": CLIENT_SECRET,
+            "grant_type": "refresh_token",
+            "refresh_token": refresh_token,
+        },
+        "refresh",
+        request or _default_request,
+    )
+
+
+def _token_request(payload: dict[str, Any], what: str, request: Any) -> dict[str, Any]:
+    """POST to the token endpoint, trying JSON then form encoding.
+
+    The v15 API is JSON throughout, so that is the first attempt. The fallback
+    exists because the encoding is the one thing we cannot check from here and
+    a wrong guess yields a bare 400 — trying both costs one extra request on a
+    call that happens once per connection, and removes a whole round trip of
+    "deploy, run, read the error, guess again".
+    """
+    attempts = (("json", {"json": payload}), ("form", {"data": payload}))
+    last: Exception | None = None
+    for encoding, kwargs in attempts:
+        try:
+            data = request("POST", TOKEN_URL, **kwargs)
+        except YazioHTTPError as exc:
+            last = exc
+            # 400 is "I could not read this request"; anything else (401 wrong
+            # credentials, 5xx, network) is a real answer and re-encoding it
+            # would only hide the cause.
+            if exc.status != 400:
+                break
+            logger.info("Token Yazio: %s rifiutato in %s, riprovo", what, encoding)
+            continue
+        except Exception as exc:  # noqa: BLE001 - surfaced as a domain error
+            last = exc
+            break
+        else:
+            if encoding == "form":
+                logger.info("Token Yazio ottenuto con encoding form-urlencoded.")
+            return _token_pair(data, what)
+    # The body we just decided to surface is written by someone else's server:
+    # if it echoes the request back, the password rides along into the logs and
+    # onto a terminal that gets screenshotted. Scrub before it leaves here.
+    detail = _scrub(str(last), payload)
+    raise CollectionError(f"{what.capitalize()} Yazio fallito: {detail}") from last
+
+
+# Payload fields that must never appear in an error message or a log line.
+_SECRET_FIELDS = ("password", "client_secret", "refresh_token")
+
+
+def _scrub(text: str, payload: dict[str, Any]) -> str:
+    for field in _SECRET_FIELDS:
+        value = payload.get(field)
+        if value and isinstance(value, str) and value in text:
+            text = text.replace(value, "***")
+    return text
 
 
 def _token_pair(data: Any, what: str) -> dict[str, Any]:
