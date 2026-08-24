@@ -38,7 +38,27 @@ def _api(*, days: dict[str, dict] | None = None, tokens: dict | None = None):
 
 
 def _totals(kcal: float) -> dict:
-    return {"energy": kcal, "protein": 120, "carb": 300, "fat": 70}
+    """A daily-summary payload whose meals add up to ``kcal``.
+
+    The real endpoint carries no totals — one nutrients block per meal, summed
+    by the parser — so the fake has to have the same shape or it would test a
+    payload that does not exist.
+    """
+    return {
+        "units": {"unit_energy": "kcal"},
+        # Present on purpose: the parser must never read the targets as intake.
+        "goals": {"energy.energy": 2784, "nutrient.protein": 103.66},
+        "meals": {
+            "lunch": {
+                "nutrients": {
+                    "energy.energy": kcal,
+                    "nutrient.protein": 120,
+                    "nutrient.carb": 300,
+                    "nutrient.fat": 70,
+                }
+            }
+        },
+    }
 
 
 # ── connect ──────────────────────────────────────────────────────────────────

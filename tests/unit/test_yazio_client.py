@@ -107,22 +107,19 @@ def test_refresh_withoutNewRefreshToken_returnsNone():
 
 def test_fetchDay_returnsTotals_andPassesTheDate():
     calls: list = []
-    request = _responder(
-        {"energy": 2450, "protein": 120.4, "carb": 300.2, "fat": 70.1},
-        capture=calls,
-    )
+    request = _responder(_summary(), capture=calls)
 
-    day = yazio.fetch_day("acc", date(2026, 6, 22), request=request)
+    day = yazio.fetch_day("acc", date(2026, 8, 20), request=request)
 
     assert day == {
-        "date": "2026-06-22",
-        "energy_kcal": 2450.0,
-        "protein_g": 120.4,
-        "carbs_g": 300.2,
-        "fat_g": 70.1,
+        "date": "2026-08-20",
+        "energy_kcal": 1911.0,
+        "protein_g": 98.1,
+        "carbs_g": 119.4,
+        "fat_g": 89.4,
         "water_ml": None,
     }
-    assert calls[0]["params"] == {"date": "2026-06-22"}
+    assert calls[0]["params"] == {"date": "2026-08-20"}
     assert calls[0]["token"] == "acc"
 
 
@@ -144,16 +141,128 @@ def test_fetchDay_withNothingLogged_returnsNone():
     assert yazio.fetch_day("acc", "2026-06-22", request=_responder({})) is None
 
 
-def test_parseDay_readsNestedTotals():
-    """The totals live under a summary key in some payload variants."""
+def _summary(
+    *,
+    breakfast: tuple[float, float, float, float] = (360, 9.4, 19.36, 33.08),
+    lunch: tuple[float, float, float, float] = (1551, 110, 70, 65),
+    dinner: tuple[float, float, float, float] = (0, 0, 0, 0),
+    snack: tuple[float, float, float, float] = (0, 0, 0, 0),
+    water: float = 0,
+    unit_energy: str = "kcal",
+) -> dict:
+    """A real /user/widgets/daily-summary payload, trimmed to what we read.
+
+    Note `goals`: same key names as the meals, but the day's *targets*. It is
+    here on purpose — the tests below check we never read it as intake.
+    """
+
+    def _n(t):
+        return {
+            "nutrients": {
+                "energy.energy": t[0],
+                "nutrient.carb": t[1],
+                "nutrient.fat": t[2],
+                "nutrient.protein": t[3],
+            }
+        }
+
+    return {
+        "activity_energy": 1084,
+        "steps": 20020,
+        "water_intake": water,
+        "goals": {
+            "energy.energy": 2784,
+            "water": 2000,
+            "nutrient.protein": 103.66,
+            "nutrient.fat": 45.70,
+            "nutrient.carb": 207.32,
+        },
+        "units": {"unit_energy": unit_energy, "unit_mass": "kg"},
+        "meals": {
+            "breakfast": _n(breakfast),
+            "lunch": _n(lunch),
+            "dinner": _n(dinner),
+            "snack": _n(snack),
+        },
+    }
+
+
+def test_parseDay_sumsTheMeals():
+    """The summary carries no totals: they are the sum across meals."""
+    parsed = yazio.parse_day(_summary(), "2026-08-20")
+
+    assert parsed is not None
+    assert parsed["energy_kcal"] == 1911.0  # 360 + 1551
+    assert parsed["protein_g"] == 98.1  # 33.08 + 65
+    assert parsed["carbs_g"] == 119.4  # 9.4 + 110
+    assert parsed["fat_g"] == 89.4  # 19.36 + 70
+
+
+def test_parseDay_neverReadsGoalsAsIntake():
+    """The one that would produce a plausible, wrong number.
+
+    `goals` sits beside the meals with identical key names and holds the day's
+    *targets*. Reading it turns "ate 1911" into "ate 2784" — and nothing about
+    the result looks broken, which is exactly why it would survive review.
+    """
+    parsed = yazio.parse_day(_summary(), "2026-08-20")
+
+    assert parsed is not None
+    assert parsed["energy_kcal"] != 2784
+    assert parsed["protein_g"] != 103.7
+    assert parsed["carbs_g"] != 207.3
+
+
+def test_parseDay_goalsAloneAreNotADay():
+    """A payload with targets but no meals must not yield a row of goals."""
+    payload = _summary()
+    payload.pop("meals")
+
+    assert yazio.parse_day(payload, "2026-08-20") is None
+
+
+def test_parseDay_allMealsAtZero_isAnUnloggedDay():
+    """Zero everywhere means "did not log", not "fasted"."""
     parsed = yazio.parse_day(
-        {"summary": {"energy": 2000, "protein": 100, "carb": 250, "fat": 60}},
-        "2026-06-22",
+        _summary(breakfast=(0, 0, 0, 0), lunch=(0, 0, 0, 0)), "2026-08-20"
+    )
+
+    assert parsed is None
+
+
+def test_parseDay_partialDay_keepsWhatWasLogged():
+    """Only breakfast logged is real data about a partial log."""
+    parsed = yazio.parse_day(_summary(lunch=(0, 0, 0, 0)), "2026-08-20")
+
+    assert parsed is not None
+    assert parsed["energy_kcal"] == 360.0
+
+
+def test_parseDay_usesTheDeclaredEnergyUnit():
+    """The payload states its unit; that beats guessing from magnitude."""
+    parsed = yazio.parse_day(
+        _summary(breakfast=(4184, 0, 0, 0), lunch=(0, 0, 0, 0), unit_energy="kJ"),
+        "2026-08-20",
     )
 
     assert parsed is not None
-    assert parsed["energy_kcal"] == 2000.0
-    assert parsed["protein_g"] == 100.0
+    assert parsed["energy_kcal"] == pytest.approx(1000, abs=1)
+
+
+def test_parseDay_kcalIsNotConvertedEvenWhenLarge():
+    """A declared-kcal day stays kcal, however big — no magnitude guessing."""
+    parsed = yazio.parse_day(
+        _summary(breakfast=(12000, 0, 0, 0), lunch=(0, 0, 0, 0)), "2026-08-20"
+    )
+
+    assert parsed is not None
+    assert parsed["energy_kcal"] == 12000.0
+
+
+def test_parseDay_waterZero_isNotStoredAsAMeasurement():
+    """The field is always present; 0 is indistinguishable from "not tracked"."""
+    assert yazio.parse_day(_summary(water=0), "2026-08-20")["water_ml"] is None
+    assert yazio.parse_day(_summary(water=1500), "2026-08-20")["water_ml"] == 1500
 
 
 def test_parseDay_withUnknownShape_returnsNone():
@@ -162,39 +271,6 @@ def test_parseDay_withUnknownShape_returnsNone():
     assert yazio.parse_day({}, "2026-06-22") is None
     assert yazio.parse_day(None, "2026-06-22") is None
     assert yazio.parse_day([1, 2, 3], "2026-06-22") is None
-
-
-def test_parseDay_withPartialData_keepsWhatItHas():
-    """A day logged only at breakfast is real data about a partial log."""
-    parsed = yazio.parse_day({"energy": 500}, "2026-06-22")
-
-    assert parsed is not None
-    assert parsed["energy_kcal"] == 500.0
-    assert parsed["protein_g"] is None
-
-
-def test_parseDay_convertsKilojoules():
-    """Yazio returns kJ in some payloads; 10 460 kJ is 2 500 kcal, not 10 460."""
-    parsed = yazio.parse_day({"energy": 10460, "protein": 100}, "2026-06-22")
-
-    assert parsed is not None
-    assert parsed["energy_kcal"] == pytest.approx(2500, abs=1)
-
-
-def test_parseDay_doesNotConvertPlausibleKcal():
-    """A big-but-real 3 500 kcal day must stay 3 500."""
-    parsed = yazio.parse_day({"energy": 3500}, "2026-06-22")
-
-    assert parsed is not None
-    assert parsed["energy_kcal"] == 3500.0
-
-
-def test_parseDay_ignoresNonNumericValues():
-    parsed = yazio.parse_day({"energy": "n/d", "protein": 100}, "2026-06-22")
-
-    assert parsed is not None
-    assert parsed["energy_kcal"] is None
-    assert parsed["protein_g"] == 100.0
 
 
 def test_parseDay_unknownShape_logsTheFieldsItDidGet(caplog):
@@ -316,39 +392,6 @@ def test_fetchDay_usesTheAggregatedEndpoint():
     yazio.fetch_day("acc", "2026-06-22", request=request)
 
     assert calls[0]["url"].endswith("/user/widgets/daily-summary")
-
-
-def test_parseDay_readsYazioDottedKeys():
-    """Yazio's keys contain literal dots: {"nutrient.protein": 120} is ONE key.
-
-    Traversing on the dot would look for a "nutrient" object that isn't there
-    and report a fully logged day as empty.
-    """
-    parsed = yazio.parse_day(
-        {
-            "nutrients": {
-                "energy.energy": 2450.0,
-                "nutrient.protein": 120.4,
-                "nutrient.carb": 300.2,
-                "nutrient.fat": 70.1,
-            }
-        },
-        "2026-06-22",
-    )
-
-    assert parsed is not None
-    assert parsed["energy_kcal"] == 2450.0
-    assert parsed["protein_g"] == 120.4
-    assert parsed["carbs_g"] == 300.2
-    assert parsed["fat_g"] == 70.1
-
-
-def test_parseDay_stillReadsGenuinelyNestedKeys():
-    """The nested variant must keep working — the literal key is tried first."""
-    parsed = yazio.parse_day({"energy": {"energy": 2000}}, "2026-06-22")
-
-    assert parsed is not None
-    assert parsed["energy_kcal"] == 2000.0
 
 
 # ── client identity ──────────────────────────────────────────────────────────

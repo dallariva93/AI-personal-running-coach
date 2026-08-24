@@ -246,44 +246,79 @@ def fetch_day(token: str, day: date | str, *, request: Any = None) -> dict[str, 
     return parse_day(data, day_str)
 
 
-def parse_day(data: Any, day_str: str) -> dict[str, Any] | None:
-    """Normalise a daily payload into our flat shape.
+# Yazio's nutrient keys contain literal dots: ``{"nutrient.protein": 120}`` is
+# one flat key, not a nested object.
+_K_ENERGY = "energy.energy"
+_K_PROTEIN = "nutrient.protein"
+_K_CARB = "nutrient.carb"
+_K_FAT = "nutrient.fat"
 
-    Tolerant on purpose: the field names below are the ones observed today on
-    an API with no contract. An unknown shape yields ``None`` (treated as "no
-    data for this day"), never a half-filled row that would read as a real
-    measurement of zero calories.
+
+def parse_day(data: Any, day_str: str) -> dict[str, Any] | None:
+    """Normalise a daily-summary payload into our flat shape.
+
+    The daily summary does **not** carry the day's totals: it carries one
+    ``nutrients`` block per meal, and the totals are their sum.
+
+    The trap this function exists to avoid is right next to them. ``goals`` has
+    exactly the same key names — ``energy.energy``, ``nutrient.protein`` — but
+    holds the *targets*. Reading the wrong block turns "ate 1911 kcal" into
+    "ate 2784 kcal": a plausible, wrong number, which is worse than a missing
+    one because nothing about it looks broken. Only ``meals`` is ever summed.
+
+    Returns ``None`` for a day with nothing logged and for a payload we do not
+    recognise — never a row of zeros, which would read as a real measurement of
+    a day spent fasting.
     """
     if not isinstance(data, dict):
         return None
-    # The totals live either at the top level or under a nested key, depending
-    # on the payload variant. `nutrients` is the one daily-summary actually
-    # uses; the others cost nothing and cover the neighbouring shapes.
-    totals = data
-    for key in ("nutrients", "summary", "totals"):
-        nested = data.get(key)
-        if isinstance(nested, dict):
-            totals = {**totals, **nested}
 
-    energy = _first(totals, ("energy", "energy.energy", "calories", "kcal"))
-    protein = _first(totals, ("protein", "nutrient.protein", "proteins"))
-    carbs = _first(totals, ("carb", "carbs", "nutrient.carb", "carbohydrates"))
-    fat = _first(totals, ("fat", "nutrient.fat", "fats"))
-
-    if energy is None and protein is None and carbs is None and fat is None:
-        _warn_unknown_shape(totals)
+    meals = data.get("meals")
+    if not isinstance(meals, dict):
+        _warn_unknown_shape(data)
         return None
 
+    energy = protein = carbs = fat = 0.0
+    seen = False
+    for meal in meals.values():
+        nutrients = meal.get("nutrients") if isinstance(meal, dict) else None
+        if not isinstance(nutrients, dict):
+            continue
+        seen = True
+        energy += _num(nutrients.get(_K_ENERGY)) or 0.0
+        protein += _num(nutrients.get(_K_PROTEIN)) or 0.0
+        carbs += _num(nutrients.get(_K_CARB)) or 0.0
+        fat += _num(nutrients.get(_K_FAT)) or 0.0
+
+    if not seen:
+        _warn_unknown_shape(data)
+        return None
+    # Every meal at zero is a day the athlete did not log, not a day of fasting.
+    if energy <= 0 and protein <= 0 and carbs <= 0 and fat <= 0:
+        return None
+
+    water = _num(data.get("water_intake"))
     return {
         "date": day_str,
-        # Yazio stores energy in kJ in some payloads; anything above a plausible
-        # daily kcal ceiling is converted rather than stored as nonsense.
-        "energy_kcal": _as_kcal(energy),
+        "energy_kcal": _as_kcal(energy, _energy_unit(data)),
         "protein_g": _round(protein),
         "carbs_g": _round(carbs),
         "fat_g": _round(fat),
-        "water_ml": _round(_first(totals, ("water_intake", "water", "water_ml")), 0),
+        # 0 ml is a real reading here (the field is always present), but it is
+        # indistinguishable from "not tracked", so it is not worth storing.
+        "water_ml": _round(water, 0) if water else None,
     }
+
+
+def _energy_unit(data: dict) -> str | None:
+    """The unit Yazio declares for energy, when it says so.
+
+    Better than guessing from magnitude: the payload states it outright in
+    ``units.unit_energy``.
+    """
+    units = data.get("units")
+    unit = units.get("unit_energy") if isinstance(units, dict) else None
+    return str(unit).lower() if unit else None
 
 
 # Fires at most once per process: a 90-day import would otherwise log the same
@@ -311,40 +346,19 @@ def _warn_unknown_shape(totals: dict) -> None:
     )
 
 
-def _first(payload: dict, keys: tuple[str, ...]) -> float | None:
-    """First present numeric value among ``keys``.
-
-    A dotted key is tried **literally first**, then as a path. Yazio uses dots
-    inside the key names themselves — ``{"nutrient.protein": 120}`` is one flat
-    key, not a nested object — so a traversal-only lookup would walk into a
-    ``"nutrient"`` that does not exist and report the day as empty.
-    """
-    for key in keys:
-        value = _num(payload.get(key))
-        if value is not None:
-            return value
-        if "." not in key:
-            continue
-        node: Any = payload
-        for part in key.split("."):
-            node = node.get(part) if isinstance(node, dict) else None
-            if node is None:
-                break
-        value = _num(node)
-        if value is not None:
-            return value
-    return None
-
-
-# Above this a daily "energy" figure is kilojoules, not kilocalories: no diary
-# realistically records 12k kcal, while 12k kJ is an ordinary day.
+# Backstop for payloads that do not declare their unit: above this a daily
+# "energy" figure is kilojoules, not kilocalories — no diary realistically
+# records 12k kcal, while 12k kJ is an ordinary day.
 _KJ_THRESHOLD = 10000.0
 
 
-def _as_kcal(value: float | None) -> float | None:
+def _as_kcal(value: float | None, unit: str | None = None) -> float | None:
+    """Energy in kcal, trusting the declared unit over the magnitude guess."""
     if value is None:
         return None
-    if value > _KJ_THRESHOLD:
+    if unit == "kcal":
+        return round(value, 1)
+    if unit in ("kj", "kilojoule") or (unit is None and value > _KJ_THRESHOLD):
         return round(value / 4.184, 1)
     return round(value, 1)
 
