@@ -40,8 +40,8 @@ from app.services import get_profile, hrv_history, latest_checkin
 from app.services.athlete_model_service import estimate_athlete_model
 from app.services.ingest import _activity_to_summary, _all_summaries, list_cross_training
 from app.services.plan_service import get_current_plan
+from app.services.yazio_sync import food_log, recent_nutrition
 from app.services.yazio_sync import is_connected as yazio_connected
-from app.services.yazio_sync import recent_nutrition
 
 logger = get_logger("app.mcp")
 
@@ -81,11 +81,13 @@ Il carico non è solo corsa: `get_cross_training` restituisce bici, nuoto e \
 palestra, che le metriche di corsa escludono di proposito. Consultalo prima di \
 prescrivere una settimana pesante.
 
-Se il diario alimentare è collegato, `get_nutrition` dà calorie e macro per \
-giorno: un calo di forma da deficit energetico è indistinguibile da uno da \
-troppo carico se guardi solo le corse. Controllalo prima di prescrivere un \
-taglio di volume — ma leggi `days_logged`: con un diario compilato a metà i \
-totali sottostimano l'assunzione reale.
+Se il diario alimentare è collegato, `get_nutrition` dà per ogni giorno \
+calorie, macro e soprattutto `balance_kcal` (assunzione meno fabbisogno): un \
+calo di forma da deficit energetico è indistinguibile da uno da troppo carico \
+se guardi solo le corse. Controllalo prima di prescrivere un taglio di volume \
+— ma leggi `days_logged`: con un diario compilato a metà i totali \
+sottostimano l'assunzione reale. `get_food_diary` scende al singolo alimento \
+di un giorno, e serve solo quando la domanda è *cosa* ha mangiato.
 
 Quando un'attività ha `is_indoor: true` è un tapis roulant: il passo dipende \
 dalla calibrazione del nastro e non è confrontabile con quello su strada, il \
@@ -1068,6 +1070,45 @@ def build_mcp_server():  # noqa: ANN201 - FastMCP, imported lazily
                         if len(entries) < days * 0.7
                         else None
                     )
+                ),
+            }
+
+    @mcp.tool()
+    def get_food_diary(date: str) -> dict[str, Any]:
+        """Cosa ha mangiato l'atleta in un giorno, voce per voce.
+
+        Usalo quando la domanda riguarda **cosa** c'era nel piatto — "da dove
+        vengono i miei carboidrati?", "come mi sono alimentato prima della
+        lunga?" — non per il bilancio del giorno, che è già in `get_nutrition`.
+
+        Una voce per riga, con pasto e quantità. `energy_kcal` c'è solo dove
+        Yazio lo dichiara (voci scritte a mano): per i prodotti a catalogo è
+        assente di proposito, perché ricavarlo richiederebbe un'assunzione sulla
+        porzione. Il totale del giorno affidabile è quello di `get_nutrition`.
+        """
+        day = _parse_date(date, "date")
+        with _db() as session:
+            if not yazio_connected(session):
+                return {"connected": False, "items": [], "hint": "Yazio non è collegato."}
+            rows = food_log(session, day)
+            return {
+                "connected": True,
+                "date": date,
+                "items_found": len(rows),
+                "items": [
+                    {
+                        "meal": r.meal,
+                        "name": r.name,
+                        "amount": _r(r.amount, 0),
+                        "serving": r.serving,
+                        "energy_kcal": _r(r.energy_kcal, 0),
+                    }
+                    for r in rows
+                ],
+                "hint": (
+                    "Nessuna voce registrata per questo giorno."
+                    if not rows
+                    else None
                 ),
             }
 

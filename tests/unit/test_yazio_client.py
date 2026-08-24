@@ -494,3 +494,104 @@ def test_parseDay_withoutGoals_stillReturnsTheDay():
     assert parsed is not None
     assert parsed["energy_kcal"] == 1911.0
     assert parsed["energy_goal_kcal"] is None
+
+
+# ── the item-by-item diary ───────────────────────────────────────────────────
+
+
+def _consumed() -> dict:
+    """A real /user/consumed-items payload, from an actual day.
+
+    Note the first three eggs: logged in the morning at amount 0, then re-logged
+    properly in the evening. Keeping them would show six eggs for a breakfast
+    that had three.
+    """
+    return {
+        "products": [
+            {
+                "id": f"zeroed-{i}", "date": "2026-08-20 09:06:45", "daytime": "breakfast",
+                "type": "product", "product_id": "9d439d10", "amount": 0,
+                "serving": "egg", "serving_quantity": 0,
+            }
+            for i in range(3)
+        ] + [
+            {
+                "id": f"egg-{i}", "date": "2026-08-20 19:24:41", "daytime": "breakfast",
+                "type": "product", "product_id": "16fc6b10", "amount": 60,
+                "serving": "egg", "serving_quantity": 1,
+            }
+            for i in range(3)
+        ] + [
+            {
+                "id": "milk", "date": "2026-08-20 19:25:04", "daytime": "breakfast",
+                "type": "product", "product_id": "9f73ae72", "amount": 200,
+                "serving": "cup", "serving_quantity": 1,
+            }
+        ],
+        "recipe_portions": [],
+        "simple_products": [
+            {
+                "id": "lunch-1", "date": "2026-08-20 19:29:59", "daytime": "lunch",
+                "type": "simple_product",
+                "name": "Pranzo con culatello, polenta e Spritz",
+                "nutrients": {
+                    "energy.energy": 1551, "nutrient.protein": 65,
+                    "nutrient.fat": 70, "nutrient.carb": 110,
+                },
+                "is_ai_generated": True,
+            }
+        ],
+    }
+
+
+def test_parseConsumed_dropsZeroedEntries():
+    """Logged then set to zero: they contribute nothing and would double a meal."""
+    items = yazio.parse_consumed(_consumed(), "2026-08-20")
+
+    assert not [i for i in items if i["yazio_id"].startswith("zeroed")]
+    assert len([i for i in items if i["product_id"] == "16fc6b10"]) == 3
+
+
+def test_parseConsumed_takesSimpleProductsWholesale():
+    """Free-text entries carry name and nutrients inline — nothing to resolve."""
+    items = yazio.parse_consumed(_consumed(), "2026-08-20")
+    lunch = next(i for i in items if i["yazio_id"] == "lunch-1")
+
+    assert lunch["name"].startswith("Pranzo con culatello")
+    assert lunch["energy_kcal"] == 1551
+    assert lunch["meal"] == "lunch"
+    assert lunch["product_id"] is None
+
+
+def test_parseConsumed_leavesCatalogueProductsUnnamed():
+    """A catalogue item is only a UUID here; the name is resolved separately."""
+    items = yazio.parse_consumed(_consumed(), "2026-08-20")
+    egg = next(i for i in items if i["yazio_id"] == "egg-0")
+
+    assert egg["name"] is None
+    assert egg["product_id"] == "16fc6b10"
+    assert egg["amount"] == 60
+    assert egg["serving"] == "egg"
+    # No energy invented from an assumed serving size.
+    assert egg["energy_kcal"] is None
+
+
+def test_parseConsumed_withUnknownShape_returnsEmpty():
+    assert yazio.parse_consumed(None, "2026-08-20") == []
+    assert yazio.parse_consumed({}, "2026-08-20") == []
+    assert yazio.parse_consumed({"products": "nope"}, "2026-08-20") == []
+
+
+def test_fetchProduct_returnsTheName():
+    request = _responder({"id": "16fc6b10", "name": "Uovo", "producer": "Coop"})
+
+    assert yazio.fetch_product("acc", "16fc6b10", request=request) == {
+        "product_id": "16fc6b10",
+        "name": "Uovo",
+        "producer": "Coop",
+    }
+
+
+def test_fetchProduct_withoutAName_isNone():
+    """An unnamed product is no better than an unresolved one."""
+    assert yazio.fetch_product("acc", "x", request=_responder({"id": "x"})) is None

@@ -59,6 +59,10 @@ def _client_identity() -> tuple[str, str]:
 # returns the individual diary entries, which would mean summing meals here and
 # carrying a payload two orders of magnitude larger for the same four numbers.
 DAILY_SUMMARY_PATH = "/user/widgets/daily-summary"
+# The item-by-item diary. Only fetched when someone asks what was actually
+# eaten — the daily totals never come from here.
+CONSUMED_PATH = "/user/consumed-items"
+PRODUCT_PATH = "/products"
 
 TIMEOUT_S = 15.0
 # Refresh this many seconds before the token actually expires, so a call never
@@ -371,3 +375,115 @@ def _as_kcal(value: float | None, unit: str | None = None) -> float | None:
 
 def _round(value: float | None, digits: int = 1) -> float | None:
     return None if value is None else round(value, digits)
+
+
+# ── the item-by-item diary ───────────────────────────────────────────────────
+
+
+def fetch_consumed(token: str, day: date | str, *, request: Any = None) -> list[dict[str, Any]]:
+    """The individual diary entries for one day.
+
+    Raises on a failed call, like :func:`fetch_day`: an empty list must mean
+    "nothing logged", never "the request did not go through".
+    """
+    request = request or _default_request
+    day_str = day.isoformat() if isinstance(day, date) else str(day)
+    data = request("GET", f"{BASE_URL}{CONSUMED_PATH}", params={"date": day_str}, token=token)
+    return parse_consumed(data, day_str)
+
+
+def parse_consumed(data: Any, day_str: str) -> list[dict[str, Any]]:
+    """Flatten Yazio's three diary buckets into one list of entries.
+
+    The buckets differ in a way that matters:
+
+    * ``simple_products`` — free-text or AI-parsed entries. Name **and**
+      nutrients are inline, so nothing more is needed.
+    * ``products`` — catalogue items, identified only by ``product_id``. The
+      name has to be resolved separately (see :func:`fetch_product`).
+    * ``recipe_portions`` — shape unconfirmed; taken only when it carries a
+      name, rather than guessed at.
+    """
+    if not isinstance(data, dict):
+        return []
+
+    items: list[dict[str, Any]] = []
+
+    for raw in data.get("simple_products") or []:
+        if not isinstance(raw, dict):
+            continue
+        nutrients = raw.get("nutrients") if isinstance(raw.get("nutrients"), dict) else {}
+        items.append(
+            {
+                "yazio_id": str(raw.get("id") or ""),
+                "date": day_str,
+                "meal": _meal(raw),
+                "name": str(raw.get("name") or "").strip() or None,
+                "product_id": None,
+                "amount": None,
+                "serving": None,
+                # Given verbatim here, so no unit assumption is involved.
+                "energy_kcal": _round(_num(nutrients.get(_K_ENERGY))),
+            }
+        )
+
+    for raw in data.get("products") or []:
+        if not isinstance(raw, dict):
+            continue
+        amount = _num(raw.get("amount")) or 0.0
+        quantity = _num(raw.get("serving_quantity")) or 0.0
+        # Zeroed-out entries: logged, then set to nothing. Keeping them would
+        # show "3 eggs" for a breakfast where the eggs were re-logged later.
+        if amount <= 0 and quantity <= 0:
+            continue
+        items.append(
+            {
+                "yazio_id": str(raw.get("id") or ""),
+                "date": day_str,
+                "meal": _meal(raw),
+                "name": None,  # resolved from the product catalogue
+                "product_id": str(raw.get("product_id") or "") or None,
+                "amount": _round(amount),
+                "serving": str(raw.get("serving") or "") or None,
+                "energy_kcal": None,
+            }
+        )
+
+    for raw in data.get("recipe_portions") or []:
+        if not isinstance(raw, dict) or not raw.get("name"):
+            continue
+        items.append(
+            {
+                "yazio_id": str(raw.get("id") or ""),
+                "date": day_str,
+                "meal": _meal(raw),
+                "name": str(raw["name"]).strip(),
+                "product_id": None,
+                "amount": None,
+                "serving": None,
+                "energy_kcal": None,
+            }
+        )
+
+    return [i for i in items if i["yazio_id"]]
+
+
+_MEALS = ("breakfast", "lunch", "dinner", "snack")
+
+
+def _meal(raw: dict) -> str | None:
+    meal = str(raw.get("daytime") or "").lower()
+    return meal if meal in _MEALS else None
+
+
+def fetch_product(token: str, product_id: str, *, request: Any = None) -> dict[str, Any] | None:
+    """One catalogue product: its name and producer. ``None`` if unrecognised."""
+    request = request or _default_request
+    data = request("GET", f"{BASE_URL}{PRODUCT_PATH}/{product_id}", token=token)
+    if not isinstance(data, dict) or not data.get("name"):
+        return None
+    return {
+        "product_id": product_id,
+        "name": str(data["name"]).strip(),
+        "producer": str(data.get("producer") or "").strip() or None,
+    }

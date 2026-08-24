@@ -288,3 +288,130 @@ def test_sync_emptyDaysAreNotCountedAsFailures(session):
     assert result.empty == 3
     assert result.failed == 0
     assert result.errors == []
+
+
+# ── the item-by-item diary ───────────────────────────────────────────────────
+
+
+def _api_with_items(day: str):
+    """A fake Yazio serving summary, diary and product catalogue."""
+    calls: list = []
+
+    def _request(method, url, *, data=None, json=None, params=None, token=None):
+        calls.append(url)
+        if url.endswith("/oauth/token"):
+            return {"access_token": "acc", "refresh_token": "ref", "expires_in": 3600}
+        if url.endswith("/daily-summary"):
+            return _totals(2400)
+        if url.endswith("/consumed-items"):
+            return {
+                "products": [
+                    {"id": "egg-1", "daytime": "breakfast", "product_id": "p-egg",
+                     "amount": 60, "serving": "egg", "serving_quantity": 1},
+                    {"id": "egg-2", "daytime": "breakfast", "product_id": "p-egg",
+                     "amount": 60, "serving": "egg", "serving_quantity": 1},
+                ],
+                "simple_products": [
+                    {"id": "lunch-1", "daytime": "lunch", "name": "Polenta e torresano",
+                     "nutrients": {"energy.energy": 1551}},
+                ],
+                "recipe_portions": [],
+            }
+        if "/products/" in url:
+            return {"id": "p-egg", "name": "Uovo di gallina", "producer": None}
+        return None
+
+    _request.calls = calls  # type: ignore[attr-defined]
+    return _request
+
+
+def test_syncItems_storesNamesAndResolvesProducts(session):
+    day = date.today()
+    api = _api_with_items(day.isoformat())
+    yazio_sync.connect_account(session, "me@example.com", "pw", request=api)
+
+    result = yazio_sync.sync_nutrition(
+        session, start=day, end=day, throttle_s=0.0, request=api
+    )
+
+    items = yazio_sync.food_log(session, day)
+    assert result.items_saved == 3
+    names = {i.name for i in items}
+    assert "Uovo di gallina" in names  # resolved from the catalogue
+    assert "Polenta e torresano" in names  # inline, nothing to resolve
+
+
+def test_syncItems_resolvesEachProductOnce(session):
+    """Two eggs, one product lookup — and none at all on the next run."""
+    day = date.today()
+    api = _api_with_items(day.isoformat())
+    yazio_sync.connect_account(session, "me@example.com", "pw", request=api)
+
+    first = yazio_sync.sync_nutrition(
+        session, start=day, end=day, throttle_s=0.0, request=api
+    )
+    assert first.products_resolved == 1
+
+    api2 = _api_with_items(day.isoformat())
+    second = yazio_sync.sync_nutrition(
+        session, start=day, end=day, throttle_s=0.0, request=api2
+    )
+
+    # Cached in the table now: the same yogurt is not re-fetched every morning.
+    assert second.products_resolved == 0
+    assert not [u for u in api2.calls if "/products/" in u]  # type: ignore[attr-defined]
+
+
+def test_syncItems_isIdempotent(session):
+    day = date.today()
+    api = _api_with_items(day.isoformat())
+    yazio_sync.connect_account(session, "me@example.com", "pw", request=api)
+
+    yazio_sync.sync_nutrition(session, start=day, end=day, throttle_s=0.0, request=api)
+    yazio_sync.sync_nutrition(session, start=day, end=day, throttle_s=0.0, request=api)
+
+    assert len(yazio_sync.food_log(session, day)) == 3
+
+
+def test_syncItems_removesEntriesDeletedInTheApp(session):
+    """A meal deleted in Yazio must disappear here, or the log fills with
+    food that was never eaten."""
+    day = date.today()
+    api = _api_with_items(day.isoformat())
+    yazio_sync.connect_account(session, "me@example.com", "pw", request=api)
+    yazio_sync.sync_nutrition(session, start=day, end=day, throttle_s=0.0, request=api)
+
+    def _fewer(method, url, *, data=None, json=None, params=None, token=None):
+        if url.endswith("/consumed-items"):
+            return {"products": [], "simple_products": [
+                {"id": "lunch-1", "daytime": "lunch", "name": "Polenta e torresano",
+                 "nutrients": {"energy.energy": 1551}}],
+                "recipe_portions": []}
+        return api(method, url, data=data, json=json, params=params, token=token)
+
+    yazio_sync.sync_nutrition(session, start=day, end=day, throttle_s=0.0, request=_fewer)
+
+    items = yazio_sync.food_log(session, day)
+    assert [i.name for i in items] == ["Polenta e torresano"]
+
+
+def test_syncItems_failureKeepsTheDayTotals(session):
+    """Losing the item list is a smaller loss than losing the day."""
+    day = date.today()
+
+    def _no_items(method, url, *, data=None, json=None, params=None, token=None):
+        if url.endswith("/oauth/token"):
+            return {"access_token": "acc", "refresh_token": "ref", "expires_in": 3600}
+        if url.endswith("/daily-summary"):
+            return _totals(2400)
+        raise RuntimeError("HTTP 500")
+
+    yazio_sync.connect_account(session, "me@example.com", "pw", request=_no_items)
+
+    result = yazio_sync.sync_nutrition(
+        session, start=day, end=day, throttle_s=0.0, request=_no_items
+    )
+
+    assert result.saved == 1
+    assert result.items_saved == 0
+    assert yazio_sync.recent_nutrition(session, day, day)[0].energy_kcal == 2400

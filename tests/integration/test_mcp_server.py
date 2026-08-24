@@ -241,6 +241,7 @@ def test_mcp_exposesReadOnlyToolsAndCoachPrompt(mcp):
         "get_readiness_history",
         # Nutrizione (Yazio)
         "get_nutrition",
+        "get_food_diary",
     }
     # Nothing that writes: a leaked URL must not be able to change state.
     # `generate_plan_draft` computes in memory and persists nothing — asserted
@@ -990,3 +991,33 @@ def test_getNutrition_withoutAGoal_reportsNoBalance(mcp, session):
 
     assert out["days"][0]["balance_kcal"] is None
     assert out["averages"]["balance_kcal"] is None
+
+
+def test_getFoodDiary_listsWhatWasEaten(mcp, session):
+    from app.services.yazio_sync import upsert_item
+
+    _connect_yazio(session)
+    for payload in [
+        {"yazio_id": "a", "date": "2026-08-20", "meal": "breakfast",
+         "name": "Uovo di gallina", "amount": 60.0, "serving": "egg"},
+        {"yazio_id": "b", "date": "2026-08-20", "meal": "lunch",
+         "name": "Polenta e torresano", "energy_kcal": 1551.0},
+    ]:
+        upsert_item(session, payload)
+    session.commit()
+
+    out = _call(mcp, "get_food_diary", date="2026-08-20")
+
+    assert out["items_found"] == 2
+    assert {i["name"] for i in out["items"]} == {"Uovo di gallina", "Polenta e torresano"}
+    lunch = next(i for i in out["items"] if i["meal"] == "lunch")
+    assert lunch["energy_kcal"] == 1551
+
+
+def test_getFoodDiary_emptyDay_saysSo(mcp, session):
+    _connect_yazio(session)
+
+    out = _call(mcp, "get_food_diary", date="2026-08-20")
+
+    assert out["items_found"] == 0
+    assert out["hint"]

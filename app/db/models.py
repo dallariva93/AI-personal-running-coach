@@ -435,6 +435,64 @@ class NutritionDay(Base):
         return f"<NutritionDay {self.date} {self.energy_kcal} kcal>"
 
 
+class YazioProduct(Base):
+    """Name cache for Yazio's catalogue products.
+
+    The diary references products by UUID only, so every name costs a request.
+    They repeat heavily — the same yogurt every morning — so caching turns a
+    per-day cost into a one-off: after the first backfill almost every lookup
+    is already here.
+    """
+
+    __tablename__ = "yazio_products"
+    __table_args__ = (UniqueConstraint("product_id", name="uq_yazio_product_id"),)
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    product_id: Mapped[str] = mapped_column(String(64), index=True)
+    name: Mapped[str] = mapped_column(String(255))
+    producer: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    fetched_at: Mapped[datetime] = mapped_column(DateTime, default=_utcnow)
+
+    def __repr__(self) -> str:  # pragma: no cover - debug helper
+        return f"<YazioProduct {self.name}>"
+
+
+class NutritionItem(Base):
+    """One entry of the food diary: what was eaten, when, how much.
+
+    Separate from :class:`NutritionDay` because it answers a different question
+    and has a different cost. The day's totals are what a coach reasons over;
+    this is the detail behind them, fetched only when someone asks *what* was
+    eaten. Keeping it out of the daily payload is what stops a two-week summary
+    from carrying two hundred food rows into a chat context.
+
+    ``energy_kcal`` is only set when Yazio states it outright (free-text and
+    AI-parsed entries carry their own nutrients). For catalogue products it
+    stays NULL rather than being derived from an assumed serving unit: the day's
+    real total already comes from the summary endpoint, so a guess here would
+    add risk without adding an answer.
+    """
+
+    __tablename__ = "nutrition_items"
+    __table_args__ = (UniqueConstraint("yazio_id", name="uq_nutrition_item_yazio_id"),)
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    # Yazio's own entry id: makes re-importing a day idempotent, and lets an
+    # entry deleted in the app be recognised as gone.
+    yazio_id: Mapped[str] = mapped_column(String(64), index=True)
+    date: Mapped[str] = mapped_column(String(10), index=True)  # ISO YYYY-MM-DD
+    meal: Mapped[str | None] = mapped_column(String(16), nullable=True)
+    name: Mapped[str | None] = mapped_column(String(500), nullable=True)
+    product_id: Mapped[str | None] = mapped_column(String(64), nullable=True, index=True)
+    amount: Mapped[float | None] = mapped_column(Float, nullable=True)
+    serving: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    energy_kcal: Mapped[float | None] = mapped_column(Float, nullable=True)
+    synced_at: Mapped[datetime] = mapped_column(DateTime, default=_utcnow, onupdate=_utcnow)
+
+    def __repr__(self) -> str:  # pragma: no cover - debug helper
+        return f"<NutritionItem {self.date} {self.name}>"
+
+
 class DailyCheckinRow(Base):
     """A subjective daily wellness check-in (GAP 9). One row per date."""
 
