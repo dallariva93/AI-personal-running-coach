@@ -376,16 +376,41 @@ def test_invalidClientError_isSurfacedVerbatim():
 
 
 def test_missingClientIdentity_failsWithTheFixInTheMessage(monkeypatch):
-    """Empty credentials would earn the same "Invalid client" as stale ones —
-    same symptom, different cause. Say which one it is."""
+    """If the pair is ever blanked — a future rotation, say — say which one it is.
+
+    Sending empty strings would earn "Invalid client" from Yazio: the exact
+    message a *stale* pair produces, for a completely different cause.
+    """
     from app.config import get_settings
 
     monkeypatch.setenv("YAZIO_CLIENT_ID", "")
     monkeypatch.setenv("YAZIO_CLIENT_SECRET", "")
+    monkeypatch.setattr(yazio, "_DEFAULT_CLIENT_ID", "")
+    monkeypatch.setattr(yazio, "_DEFAULT_CLIENT_SECRET", "")
     get_settings.cache_clear()
 
     with pytest.raises(CollectionError) as err:
         yazio.login("me@example.com", "pw", request=_responder({}))
 
     assert "YAZIO_CLIENT_ID" in str(err.value)
+    get_settings.cache_clear()
+
+
+def test_defaultClientIdentity_isPresent(monkeypatch):
+    """Without a secret set, the built-in pair must still work.
+
+    The empty-default version of this shipped once and turned every login into
+    "Invalid client" — the same message a *stale* pair produces, which is the
+    hard-to-diagnose one.
+    """
+    from app.config import get_settings
+
+    monkeypatch.delenv("YAZIO_CLIENT_ID", raising=False)
+    monkeypatch.delenv("YAZIO_CLIENT_SECRET", raising=False)
+    get_settings.cache_clear()
+
+    client_id, client_secret = yazio._client_identity()
+
+    assert client_id.startswith("1_")
+    assert len(client_secret) > 20
     get_settings.cache_clear()

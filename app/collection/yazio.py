@@ -33,8 +33,8 @@ TOKEN_URL = f"{BASE_URL}/oauth/token"
 # by Yazio, and a stale pair is rejected with "Invalid client" before the
 # credentials are even looked at. Overridable by env precisely because of that:
 # when Yazio rotates them, a secret update beats a code change and a deploy.
-_DEFAULT_CLIENT_ID = ""
-_DEFAULT_CLIENT_SECRET = ""
+_DEFAULT_CLIENT_ID = "1_4hiybetvfksgw40o0sog4s884kwc840wwso8go4k8c04goo4c"
+_DEFAULT_CLIENT_SECRET = "6rok2m65xuskgkgogw40wkkk8sw0osg84s8cggsc4woos4s8o"
 
 
 def _client_identity() -> tuple[str, str]:
