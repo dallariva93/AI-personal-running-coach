@@ -377,6 +377,21 @@ che è la cosa sbagliata da fare se il problema era il piatto.
 grassi. Non i singoli pasti — non servono a un allenatore e riempirebbero la
 chat.
 
+### Passo 0 — Ti serve una password Yazio (anche se usi Google)
+
+Il collegamento usa email + password. **Se ti sei registrato con "Accedi con
+Google", una password su Yazio non esiste** — l'accesso lo fa Google — e questo
+giro non può funzionare.
+
+Rimedio, due minuti: app Yazio → schermata di login → **"Password dimenticata"**
+→ metti la stessa email dell'account Google → imposta una password dal link che
+ricevi. Da lì in poi l'account ha due vie d'accesso (Google *e* email+password)
+e i passi seguenti funzionano normalmente.
+
+Se Yazio si rifiuta perché l'account è legato a Google, questa strada è chiusa:
+in quel caso serve un'altra via (import dal file di export di Yazio, o un
+account separato) — parlane prima di procedere.
+
 ### Passo 1 — Metti email e password come secret
 
 Le API di Yazio non sono pubbliche e non hanno una schermata di consenso come

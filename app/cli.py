@@ -197,6 +197,16 @@ def cmd_nutrition(args: argparse.Namespace) -> int:
                 yazio_sync.connect_account(session, username, password)
             except CollectionError as exc:
                 print(f"Collegamento fallito: {exc}")
+                # Il caso più probabile non è "password sbagliata": è un account
+                # registrato con Google, che su Yazio una password non ce l'ha
+                # proprio. Senza questa riga si legge solo un 401 e si perde
+                # tempo a riprovare credenziali che non esistono.
+                print(
+                    "\nSe ti sei registrato su Yazio con Google, una password "
+                    "non esiste e questo login non può funzionare. Prova a "
+                    "impostarne una dall'app Yazio ('Password dimenticata' con "
+                    "la stessa email), poi rilancia questo comando."
+                )
                 return 1
             print(f"Yazio collegato come {username}.")
 
