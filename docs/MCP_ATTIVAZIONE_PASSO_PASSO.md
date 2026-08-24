@@ -458,19 +458,19 @@ impostate come secret — la password **non** va nella richiesta:
 
 ```sh
 # 1. collega (usa i secret YAZIO_* già sul server)
-curl.exe -X POST https://ai-running-coach.fly.dev/api/yazio/connect ^
-  -H "Authorization: Bearer IL_TUO_API_TOKEN"
+curl.exe -X POST -H "Authorization: Bearer IL_TUO_API_TOKEN" https://ai-running-coach.fly.dev/api/yazio/connect
 
 # 2. importa 90 giorni
-curl.exe -X POST "https://ai-running-coach.fly.dev/api/yazio/sync?days=90" ^
-  -H "Authorization: Bearer IL_TUO_API_TOKEN"
+curl.exe -X POST -H "Authorization: Bearer IL_TUO_API_TOKEN" "https://ai-running-coach.fly.dev/api/yazio/sync?days=90"
 
 # 3. controlla la situazione
-curl.exe https://ai-running-coach.fly.dev/api/yazio/status ^
-  -H "Authorization: Bearer IL_TUO_API_TOKEN"
+curl.exe -H "Authorization: Bearer IL_TUO_API_TOKEN" https://ai-running-coach.fly.dev/api/yazio/status
 ```
 
-(`^` è la continuazione di riga in PowerShell/cmd; su Linux/macOS usa `\`.)
+Su Windows usa `curl.exe`, **non** `curl`: in PowerShell `curl` è un alias di
+`Invoke-WebRequest`, che ha una sintassi diversa e non capisce questi flag.
+
+`IL_TUO_API_TOKEN` è lo stesso token con cui entri nella dashboard.
 
 Se il collegamento fallisce, la risposta ha stato **502** e contiene il
 messaggio originale di Yazio — è quello che dice cosa non va.
