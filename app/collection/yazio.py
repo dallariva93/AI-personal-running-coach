@@ -27,9 +27,38 @@ logger = get_logger("app.collection.yazio")
 
 BASE_URL = "https://yzapi.yazio.com/v15"
 TOKEN_URL = f"{BASE_URL}/oauth/token"
-# Yazio's own mobile client id; the API rejects the token request without it.
-CLIENT_ID = "1_4hiybetvfksgw40o0sog4okw4wsgcokwso4openwcwc0w8ldxq"
-CLIENT_SECRET = "6rwct1nmy4wkkgm0ksgw8s804bgcskw0o0c84wo88sgc4gw0ws"
+
+# The app-level client identity Yazio's own mobile client presents. Not a user
+# secret — every copy of the app carries the same pair — but it *is* versioned
+# by Yazio, and a stale pair is rejected with "Invalid client" before the
+# credentials are even looked at. Overridable by env precisely because of that:
+# when Yazio rotates them, a secret update beats a code change and a deploy.
+_DEFAULT_CLIENT_ID = ""
+_DEFAULT_CLIENT_SECRET = ""
+
+
+def _client_identity() -> tuple[str, str]:
+    from app.config import get_settings
+
+    settings = get_settings()
+    client_id = settings.yazio_client_id or _DEFAULT_CLIENT_ID
+    client_secret = settings.yazio_client_secret or _DEFAULT_CLIENT_SECRET
+    if not (client_id and client_secret):
+        # Fail here, with the fix in the message. Sending empty strings would
+        # just earn another "Invalid client" from Yazio — the same symptom for
+        # a completely different cause, which is how an afternoon disappears.
+        raise CollectionError(
+            "Client Yazio non configurato: imposta i secret YAZIO_CLIENT_ID e "
+            "YAZIO_CLIENT_SECRET (la coppia applicativa del client Yazio, non "
+            "le tue credenziali personali)."
+        )
+    return client_id, client_secret
+
+
+# Daily totals, already aggregated by Yazio. NOT /user/consumed-items: that one
+# returns the individual diary entries, which would mean summing meals here and
+# carrying a payload two orders of magnitude larger for the same four numbers.
+DAILY_SUMMARY_PATH = "/user/widgets/daily-summary"
 
 TIMEOUT_S = 15.0
 # Refresh this many seconds before the token actually expires, so a call never
@@ -105,10 +134,11 @@ def login(username: str, password: str, *, request: Any = None) -> dict[str, Any
     the one Yazio call that must *not* fail silently, because the user is
     standing there waiting to know whether the connection worked.
     """
+    client_id, client_secret = _client_identity()
     return _token_request(
         {
-            "client_id": CLIENT_ID,
-            "client_secret": CLIENT_SECRET,
+            "client_id": client_id,
+            "client_secret": client_secret,
             "grant_type": "password",
             "username": username,
             "password": password,
@@ -120,10 +150,11 @@ def login(username: str, password: str, *, request: Any = None) -> dict[str, Any
 
 def refresh(refresh_token: str, *, request: Any = None) -> dict[str, Any]:
     """Trade a refresh token for a fresh pair, so the password is never reused."""
+    client_id, client_secret = _client_identity()
     return _token_request(
         {
-            "client_id": CLIENT_ID,
-            "client_secret": CLIENT_SECRET,
+            "client_id": client_id,
+            "client_secret": client_secret,
             "grant_type": "refresh_token",
             "refresh_token": refresh_token,
         },
@@ -204,7 +235,7 @@ def fetch_day(token: str, day: date | str, *, request: Any = None) -> dict[str, 
     day_str = day.isoformat() if isinstance(day, date) else str(day)
     try:
         data = request(
-            "GET", f"{BASE_URL}/user/consumed-items", params={"date": day_str}, token=token
+            "GET", f"{BASE_URL}{DAILY_SUMMARY_PATH}", params={"date": day_str}, token=token
         )
     except Exception as exc:  # noqa: BLE001 - one missing day is not an error
         logger.warning("Yazio non raggiungibile per %s: %s", day_str, exc)
@@ -222,10 +253,11 @@ def parse_day(data: Any, day_str: str) -> dict[str, Any] | None:
     """
     if not isinstance(data, dict):
         return None
-    # The totals live either at the top level or under a "summary"/"totals" key
-    # depending on the endpoint variant.
+    # The totals live either at the top level or under a nested key, depending
+    # on the payload variant. `nutrients` is the one daily-summary actually
+    # uses; the others cost nothing and cover the neighbouring shapes.
     totals = data
-    for key in ("summary", "totals", "nutrients"):
+    for key in ("nutrients", "summary", "totals"):
         nested = data.get(key)
         if isinstance(nested, dict):
             totals = {**totals, **nested}
@@ -277,8 +309,19 @@ def _warn_unknown_shape(totals: dict) -> None:
 
 
 def _first(payload: dict, keys: tuple[str, ...]) -> float | None:
-    """First present numeric value among ``keys`` (dotted keys are traversed)."""
+    """First present numeric value among ``keys``.
+
+    A dotted key is tried **literally first**, then as a path. Yazio uses dots
+    inside the key names themselves — ``{"nutrient.protein": 120}`` is one flat
+    key, not a nested object — so a traversal-only lookup would walk into a
+    ``"nutrient"`` that does not exist and report the day as empty.
+    """
     for key in keys:
+        value = _num(payload.get(key))
+        if value is not None:
+            return value
+        if "." not in key:
+            continue
         node: Any = payload
         for part in key.split("."):
             node = node.get(part) if isinstance(node, dict) else None

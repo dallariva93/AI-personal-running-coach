@@ -20,6 +20,21 @@ from app.collection import yazio
 from app.exceptions import CollectionError
 
 
+@pytest.fixture(autouse=True)
+def _client_identity(monkeypatch):
+    """Yazio's app-level client pair, which login() now requires.
+
+    Placeholders: every request here is injected, so these only need to exist.
+    """
+    from app.config import get_settings
+
+    monkeypatch.setenv("YAZIO_CLIENT_ID", "test-client-id")
+    monkeypatch.setenv("YAZIO_CLIENT_SECRET", "test-client-secret")
+    get_settings.cache_clear()
+    yield
+    get_settings.cache_clear()
+
+
 def _responder(payload, *, capture: list | None = None):
     def _request(method, url, *, data=None, json=None, params=None, token=None):
         if capture is not None:
@@ -277,3 +292,100 @@ def test_login_errorNeverLeaksThePassword():
         yazio.login("me@example.com", "sup3r-s3cret", request=_request)
 
     assert "sup3r-s3cret" not in str(err.value)
+
+
+# ── daily-summary shape ──────────────────────────────────────────────────────
+
+
+def test_fetchDay_usesTheAggregatedEndpoint():
+    """/user/consumed-items returns the individual meals; we want the totals."""
+    calls: list = []
+    request = _responder({"energy": 2000}, capture=calls)
+
+    yazio.fetch_day("acc", "2026-06-22", request=request)
+
+    assert calls[0]["url"].endswith("/user/widgets/daily-summary")
+
+
+def test_parseDay_readsYazioDottedKeys():
+    """Yazio's keys contain literal dots: {"nutrient.protein": 120} is ONE key.
+
+    Traversing on the dot would look for a "nutrient" object that isn't there
+    and report a fully logged day as empty.
+    """
+    parsed = yazio.parse_day(
+        {
+            "nutrients": {
+                "energy.energy": 2450.0,
+                "nutrient.protein": 120.4,
+                "nutrient.carb": 300.2,
+                "nutrient.fat": 70.1,
+            }
+        },
+        "2026-06-22",
+    )
+
+    assert parsed is not None
+    assert parsed["energy_kcal"] == 2450.0
+    assert parsed["protein_g"] == 120.4
+    assert parsed["carbs_g"] == 300.2
+    assert parsed["fat_g"] == 70.1
+
+
+def test_parseDay_stillReadsGenuinelyNestedKeys():
+    """The nested variant must keep working — the literal key is tried first."""
+    parsed = yazio.parse_day({"energy": {"energy": 2000}}, "2026-06-22")
+
+    assert parsed is not None
+    assert parsed["energy_kcal"] == 2000.0
+
+
+# ── client identity ──────────────────────────────────────────────────────────
+
+
+def test_clientIdentity_comesFromSettings(monkeypatch):
+    """Yazio rotates the app-level pair; a rotation must not need a deploy."""
+    from app.config import get_settings
+
+    monkeypatch.setenv("YAZIO_CLIENT_ID", "id-from-secret")
+    monkeypatch.setenv("YAZIO_CLIENT_SECRET", "secret-from-secret")
+    get_settings.cache_clear()
+    calls: list = []
+    request = _responder(
+        {"access_token": "a", "refresh_token": "r", "expires_in": 60}, capture=calls
+    )
+
+    yazio.login("me@example.com", "pw", request=request)
+
+    assert calls[0]["body"]["client_id"] == "id-from-secret"
+    assert calls[0]["body"]["client_secret"] == "secret-from-secret"
+    get_settings.cache_clear()
+
+
+def test_invalidClientError_isSurfacedVerbatim():
+    """"Invalid client" means the app-level pair, not the user's password —
+    and only the server's own wording makes that distinction visible."""
+
+    def _request(method, url, *, data=None, json=None, params=None, token=None):
+        raise _http(400, '[{"property_path":"","message":"Invalid client"}]')
+
+    with pytest.raises(CollectionError) as err:
+        yazio.login("me@example.com", "pw", request=_request)
+
+    assert "Invalid client" in str(err.value)
+
+
+def test_missingClientIdentity_failsWithTheFixInTheMessage(monkeypatch):
+    """Empty credentials would earn the same "Invalid client" as stale ones —
+    same symptom, different cause. Say which one it is."""
+    from app.config import get_settings
+
+    monkeypatch.setenv("YAZIO_CLIENT_ID", "")
+    monkeypatch.setenv("YAZIO_CLIENT_SECRET", "")
+    get_settings.cache_clear()
+
+    with pytest.raises(CollectionError) as err:
+        yazio.login("me@example.com", "pw", request=_responder({}))
+
+    assert "YAZIO_CLIENT_ID" in str(err.value)
+    get_settings.cache_clear()

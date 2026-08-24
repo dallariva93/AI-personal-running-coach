@@ -52,6 +52,12 @@ class Settings(BaseSettings):
     # therefore never in `ps` or the shell history).
     yazio_username: str = ""
     yazio_password: str = ""
+    # The app-level client identity Yazio's mobile client presents — not a user
+    # secret, but versioned by Yazio: a stale pair is refused with "Invalid
+    # client" before the credentials are even read. Kept configurable so a
+    # rotation is a secret update, not a code change and a deploy.
+    yazio_client_id: str = ""
+    yazio_client_secret: str = ""
 
     # -- Anthropic / Claude --------------------------------------------------
     anthropic_api_key: str = ""
