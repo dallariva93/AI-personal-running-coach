@@ -157,6 +157,7 @@ def parse_day(data: Any, day_str: str) -> dict[str, Any] | None:
     fat = _first(totals, ("fat", "nutrient.fat", "fats"))
 
     if energy is None and protein is None and carbs is None and fat is None:
+        _warn_unknown_shape(totals)
         return None
 
     return {
@@ -169,6 +170,31 @@ def parse_day(data: Any, day_str: str) -> dict[str, Any] | None:
         "fat_g": _round(fat),
         "water_ml": _round(_first(totals, ("water_intake", "water", "water_ml")), 0),
     }
+
+
+# Fires at most once per process: a 90-day import would otherwise log the same
+# diagnosis ninety times.
+_shape_warned = False
+
+
+def _warn_unknown_shape(totals: dict) -> None:
+    """Log which field names *did* arrive, when none of the expected ones did.
+
+    The whole risk of an undocumented API is a silent rename: without this, a
+    changed schema is indistinguishable from an empty diary — both show up as
+    "0 giorni salvati" and there is nothing to go on. Only the **keys** are
+    logged, never the values: what someone ate is not diagnostic data.
+    """
+    global _shape_warned
+    if _shape_warned or not totals:
+        return
+    _shape_warned = True
+    logger.warning(
+        "Payload Yazio non riconosciuto: nessun campo atteso (energy/protein/"
+        "carb/fat) fra quelli ricevuti: %s. Probabile rinomina dei campi "
+        "nell'API: vanno aggiornati i nomi in parse_day().",
+        sorted(totals.keys())[:40],
+    )
 
 
 def _first(payload: dict, keys: tuple[str, ...]) -> float | None:

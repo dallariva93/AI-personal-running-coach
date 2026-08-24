@@ -167,3 +167,28 @@ def test_parseDay_ignoresNonNumericValues():
     assert parsed is not None
     assert parsed["energy_kcal"] is None
     assert parsed["protein_g"] == 100.0
+
+
+def test_parseDay_unknownShape_logsTheFieldsItDidGet(caplog):
+    """A silent rename must leave a trail: otherwise it looks like an empty diary.
+
+    Only the keys are logged — what someone ate is not diagnostic data.
+    """
+    yazio._shape_warned = False  # the warning fires once per process
+
+    with caplog.at_level("WARNING"):
+        assert yazio.parse_day({"kilojoule": 8000, "eiweiss": 100}, "2026-06-22") is None
+
+    assert "kilojoule" in caplog.text
+    assert "8000" not in caplog.text  # values stay out of the logs
+
+
+def test_parseDay_unknownShape_warnsOnlyOnce(caplog):
+    """A 90-day import must not log the same diagnosis ninety times."""
+    yazio._shape_warned = False
+
+    with caplog.at_level("WARNING"):
+        for _ in range(5):
+            yazio.parse_day({"kilojoule": 8000}, "2026-06-22")
+
+    assert caplog.text.count("non riconosciuto") == 1
