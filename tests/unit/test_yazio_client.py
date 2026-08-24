@@ -126,11 +126,22 @@ def test_fetchDay_returnsTotals_andPassesTheDate():
     assert calls[0]["token"] == "acc"
 
 
-def test_fetchDay_whenApiFails_returnsNone():
-    """One unreachable day is a gap in the diary, not an error to propagate."""
+def test_fetchDay_whenApiFails_raises():
+    """A failed call must not masquerade as an empty day.
+
+    They used to collapse into the same None, so an import where every request
+    was rejected reported "90 giorni vuoti" — identical to a genuinely empty
+    diary, and impossible to tell apart from outside.
+    """
     request = _responder(RuntimeError("503"))
 
-    assert yazio.fetch_day("acc", "2026-06-22", request=request) is None
+    with pytest.raises(RuntimeError):
+        yazio.fetch_day("acc", "2026-06-22", request=request)
+
+
+def test_fetchDay_withNothingLogged_returnsNone():
+    """An unlogged day is still None — that part was right."""
+    assert yazio.fetch_day("acc", "2026-06-22", request=_responder({})) is None
 
 
 def test_parseDay_readsNestedTotals():

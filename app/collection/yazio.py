@@ -225,7 +225,14 @@ def _token_pair(data: Any, what: str) -> dict[str, Any]:
 
 
 def fetch_day(token: str, day: date | str, *, request: Any = None) -> dict[str, Any] | None:
-    """One day of nutrition, already aggregated. ``None`` when unavailable.
+    """One day of nutrition, already aggregated.
+
+    Returns ``None`` for a day with nothing logged, and **raises** when the call
+    itself failed. The two used to collapse into the same ``None``, which made a
+    90-day import report "90 giorni vuoti" whether the diary was empty or every
+    single request had been rejected — the same number for the two opposite
+    causes, and no way to tell them apart from outside. The caller keeps going
+    either way; it just counts them separately now.
 
     Yazio's daily summary carries the totals we want (energy and macros) without
     walking the individual diary entries — which is also what keeps the payload
@@ -233,13 +240,9 @@ def fetch_day(token: str, day: date | str, *, request: Any = None) -> dict[str, 
     """
     request = request or _default_request
     day_str = day.isoformat() if isinstance(day, date) else str(day)
-    try:
-        data = request(
-            "GET", f"{BASE_URL}{DAILY_SUMMARY_PATH}", params={"date": day_str}, token=token
-        )
-    except Exception as exc:  # noqa: BLE001 - one missing day is not an error
-        logger.warning("Yazio non raggiungibile per %s: %s", day_str, exc)
-        return None
+    data = request(
+        "GET", f"{BASE_URL}{DAILY_SUMMARY_PATH}", params={"date": day_str}, token=token
+    )
     return parse_day(data, day_str)
 
 

@@ -1079,3 +1079,40 @@ def post_yazio_disconnect(session: Session = Depends(get_session)) -> dict:
     from app.services.yazio_sync import disconnect_account
 
     return {"disconnected": disconnect_account(session)}
+
+
+@router.get("/yazio/inspect")
+def get_yazio_inspect(date: str, session: Session = Depends(get_session)) -> dict:
+    """Cosa risponde davvero Yazio per un giorno, e cosa ne ricava il parser.
+
+    Esiste perché "0 giorni salvati" ha due cause opposte — la chiamata fallisce,
+    oppure riesce e il parser non riconosce i campi — e dai log non sempre si
+    riesce a guardare (il piano di controllo del deploy può essere
+    irraggiungibile mentre l'app sta benissimo).
+
+    Restituisce il payload grezzo: sono i dati del diario di chi possiede questa
+    app, dietro lo stesso bearer token di tutto il resto.
+    """
+    from app.collection import yazio
+    from app.services.yazio_sync import get_account, valid_access_token
+
+    account = get_account(session)
+    if account is None:
+        raise HTTPException(status_code=409, detail="Yazio non collegato.")
+
+    token = valid_access_token(session, account)
+    out: dict = {"date": date, "http_error": None, "raw": None, "parsed": None}
+    try:
+        out["raw"] = yazio._default_request(
+            "GET",
+            f"{yazio.BASE_URL}{yazio.DAILY_SUMMARY_PATH}",
+            params={"date": date},
+            token=token,
+        )
+    except Exception as exc:  # noqa: BLE001 - reporting the failure IS the job
+        out["http_error"] = str(exc)
+        return out
+
+    out["top_level_keys"] = sorted(out["raw"].keys()) if isinstance(out["raw"], dict) else None
+    out["parsed"] = yazio.parse_day(out["raw"], date)
+    return out

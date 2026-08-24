@@ -124,6 +124,10 @@ class NutritionSyncResult:
     considered: int = 0
     saved: int = 0
     empty: int = 0
+    # Distinct from `empty` on purpose: a diary with nothing logged and an API
+    # rejecting every call are opposite problems that used to report the same
+    # number.
+    failed: int = 0
     errors: list[str] = field(default_factory=list)
 
     def as_dict(self) -> dict:
@@ -131,6 +135,7 @@ class NutritionSyncResult:
             "considered": self.considered,
             "saved": self.saved,
             "empty": self.empty,
+            "failed": self.failed,
             "errors": self.errors,
         }
 
@@ -195,15 +200,23 @@ def sync_nutrition(
     day = start
     while day <= end:
         result.considered += 1
-        payload = yazio.fetch_day(token, day, request=request)
-        if payload is None:
-            result.empty += 1
+        try:
+            payload = yazio.fetch_day(token, day, request=request)
+        except Exception as exc:  # noqa: BLE001 - one bad day must not stop the rest
+            result.failed += 1
+            # Only the first few: ninety identical rejections say nothing ninety
+            # times, and the caller reads this in a terminal.
+            if len(result.errors) < 3:
+                result.errors.append(f"{day.isoformat()}: {exc}")
         else:
-            upsert_day(session, payload)
-            result.saved += 1
-            if result.saved % 25 == 0:
-                session.commit()
-                _emit(progress, f"…{result.saved}/{total} salvati")
+            if payload is None:
+                result.empty += 1
+            else:
+                upsert_day(session, payload)
+                result.saved += 1
+                if result.saved % 25 == 0:
+                    session.commit()
+                    _emit(progress, f"…{result.saved}/{total} salvati")
         day += timedelta(days=1)
         if day <= end:
             time.sleep(throttle_s)

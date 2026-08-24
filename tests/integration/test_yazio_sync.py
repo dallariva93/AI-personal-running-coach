@@ -184,9 +184,13 @@ def test_sync_whenRefreshFails_reportsInsteadOfRaising(session):
     assert result.errors
 
 
-def test_sync_whenTheApiIsDown_degradesToEmptyDays(session):
-    """Yazio being unreachable is indistinguishable from an unlogged day — and
-    that is the safe reading: no row, so nothing claims the athlete ate nothing."""
+def test_sync_whenTheApiIsDown_writesNothing(session):
+    """An unreachable API must never leave a row behind.
+
+    It is now counted as `failed`, not `empty`: reading a broken API as "the
+    athlete logged nothing" is what would let the coach conclude there is an
+    energy deficit where there is only a network problem.
+    """
 
     def _explode(method, url, *, data=None, json=None, params=None, token=None):
         if url.endswith("/oauth/token"):
@@ -200,7 +204,8 @@ def test_sync_whenTheApiIsDown_degradesToEmptyDays(session):
     )
 
     assert result.saved == 0
-    assert result.empty == 3
+    assert result.failed == 3
+    assert result.empty == 0
     assert session.scalars(select(NutritionDay)).all() == []
 
 
@@ -226,3 +231,40 @@ def test_ingestRuns_worksWithoutYazioConnected(session, demo_source):
 
     assert saved
     assert session.scalars(select(NutritionDay)).all() == []
+
+
+def test_sync_countsFailuresApartFromEmptyDays(session):
+    """The distinction that a whole afternoon hinged on.
+
+    "90 giorni vuoti" meant either "the diary is empty" or "every request was
+    rejected" — the same number for opposite problems.
+    """
+
+    def _failing(method, url, *, data=None, json=None, params=None, token=None):
+        if url.endswith("/oauth/token"):
+            return {"access_token": "acc", "refresh_token": "ref", "expires_in": 3600}
+        raise RuntimeError("HTTP 404")
+
+    yazio_sync.connect_account(session, "me@example.com", "pw", request=_failing)
+
+    result = yazio_sync.sync_nutrition(
+        session, days=5, throttle_s=0.0, request=_failing
+    )
+
+    assert result.failed == 5
+    assert result.empty == 0
+    # Only the first few errors: ninety identical ones say nothing ninety times.
+    assert 0 < len(result.errors) <= 3
+    assert "404" in result.errors[0]
+
+
+def test_sync_emptyDaysAreNotCountedAsFailures(session):
+    """The mirror case: the API answers fine, the diary just has nothing."""
+    api = _api(days={})
+    yazio_sync.connect_account(session, "me@example.com", "pw", request=api)
+
+    result = yazio_sync.sync_nutrition(session, days=3, throttle_s=0.0, request=api)
+
+    assert result.empty == 3
+    assert result.failed == 0
+    assert result.errors == []
