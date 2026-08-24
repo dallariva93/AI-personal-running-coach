@@ -999,3 +999,83 @@ def rotate_token(session: Session = Depends(get_session)) -> dict:
         "note": "Conservalo ora: è mostrato una sola volta e il token "
         "precedente non è più valido.",
     }
+
+
+# ── Yazio (diario alimentare) ───────────────────────────────────────────────
+# Gli stessi tre comandi della CLI, raggiungibili via HTTP. Esistono perché
+# `fly ssh console` passa dal piano di controllo di Fly, che può essere
+# irraggiungibile (rete aziendale, API di Fly giù) mentre l'app sta benissimo:
+# questa strada usa solo l'URL pubblico dell'app. Protetti dal bearer token come
+# tutto /api — il connettore MCP resta in sola lettura, le scritture stanno qui.
+
+
+@router.get("/yazio/status")
+def get_yazio_status(session: Session = Depends(get_session)) -> dict:
+    """Se l'account è collegato e quanti giorni di diario sono già importati."""
+    from app.db.models import NutritionDay
+    from app.services.yazio_sync import get_account
+
+    account = get_account(session)
+    days = session.scalar(select(func.count()).select_from(NutritionDay)) or 0
+    latest = session.scalar(select(func.max(NutritionDay.date)))
+    return {
+        "connected": account is not None,
+        "username": account.username if account else None,
+        "credentials_configured": bool(
+            get_settings().yazio_username and get_settings().yazio_password
+        ),
+        "days_stored": days,
+        "latest_day": latest,
+    }
+
+
+@router.post("/yazio/connect")
+def post_yazio_connect(session: Session = Depends(get_session)) -> dict:
+    """Login a Yazio con le credenziali già configurate sul server.
+
+    Di proposito **non** accetta la password nel corpo della richiesta: la
+    prende dai secret del deploy. Così non attraversa la rete una seconda volta
+    e non può finire in un log di accesso o nella cronologia di una shell.
+    """
+    from app.exceptions import CollectionError
+    from app.services.yazio_sync import connect_account
+
+    settings = get_settings()
+    if not (settings.yazio_username and settings.yazio_password):
+        raise HTTPException(
+            status_code=400,
+            detail="Credenziali Yazio non configurate: imposta i secret "
+            "YAZIO_USERNAME e YAZIO_PASSWORD sul deploy.",
+        )
+    try:
+        account = connect_account(
+            session, settings.yazio_username, settings.yazio_password
+        )
+    except CollectionError as exc:
+        # 502: il rifiuto arriva da Yazio, non da una richiesta sbagliata di chi
+        # ci sta chiamando. Il messaggio porta già il corpo della risposta di
+        # Yazio, ripulito dai segreti.
+        raise HTTPException(status_code=502, detail=str(exc)) from exc
+    return {"connected": True, "username": account.username}
+
+
+@router.post("/yazio/sync")
+def post_yazio_sync(days: int = 30, session: Session = Depends(get_session)) -> dict:
+    """Importa gli ultimi ``days`` giorni di diario."""
+    from app.services.yazio_sync import is_connected, sync_nutrition
+
+    if not is_connected(session):
+        raise HTTPException(
+            status_code=409,
+            detail="Yazio non collegato: chiama prima POST /api/yazio/connect.",
+        )
+    result = sync_nutrition(session, days=max(1, min(days, 365)))
+    return result.as_dict()
+
+
+@router.post("/yazio/disconnect")
+def post_yazio_disconnect(session: Session = Depends(get_session)) -> dict:
+    """Elimina i token. Lo storico già importato resta."""
+    from app.services.yazio_sync import disconnect_account
+
+    return {"disconnected": disconnect_account(session)}

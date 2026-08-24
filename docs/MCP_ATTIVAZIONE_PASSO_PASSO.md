@@ -443,3 +443,34 @@ Deve usare `get_nutrition` e citare calorie e macro medie.
 - **API non ufficiale**: come per Garmin, Yazio può cambiarla senza preavviso.
   Se un giorno smette di funzionare, l'app continua a lavorare normalmente e
   Claude semplicemente non parlerà di alimentazione.
+
+### Se `fly ssh console` non funziona
+
+`fly ssh console` passa dal piano di controllo di Fly (`api.fly.io`), che può
+essere irraggiungibile — rete aziendale che blocca, disservizio di Fly — mentre
+l'app sta benissimo: il traffico verso `ai-running-coach.fly.dev` prende un'altra
+strada. Sintomi tipici: `tunnel unavailable`, oppure un timeout TCP verso
+`api.fly.io`.
+
+Gli stessi tre comandi esistono come endpoint HTTP, che usano solo l'URL
+pubblico dell'app. Servono il token API (`API_TOKEN`) e le credenziali già
+impostate come secret — la password **non** va nella richiesta:
+
+```sh
+# 1. collega (usa i secret YAZIO_* già sul server)
+curl.exe -X POST https://ai-running-coach.fly.dev/api/yazio/connect ^
+  -H "Authorization: Bearer IL_TUO_API_TOKEN"
+
+# 2. importa 90 giorni
+curl.exe -X POST "https://ai-running-coach.fly.dev/api/yazio/sync?days=90" ^
+  -H "Authorization: Bearer IL_TUO_API_TOKEN"
+
+# 3. controlla la situazione
+curl.exe https://ai-running-coach.fly.dev/api/yazio/status ^
+  -H "Authorization: Bearer IL_TUO_API_TOKEN"
+```
+
+(`^` è la continuazione di riga in PowerShell/cmd; su Linux/macOS usa `\`.)
+
+Se il collegamento fallisce, la risposta ha stato **502** e contiene il
+messaggio originale di Yazio — è quello che dice cosa non va.
