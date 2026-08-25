@@ -222,6 +222,14 @@ def _adapt_after_change(session: Session, run_analysis: bool = False) -> None:
 
         evaluate_plan_executions(session)
         adapt_plan_after_sync(session)
+        # Rolling horizon (Fase D): re-derive the future weeks from fresh form,
+        # at most once a week. Best-effort — a failure must not break the sync.
+        try:
+            from app.services.replan_service import maybe_replan_weekly
+
+            maybe_replan_weekly(session)
+        except Exception as exc:  # noqa: BLE001
+            logger.warning("Weekly re-plan skipped: %s", exc)
         if run_analysis:
             try:
                 run_single_analysis(session, presync=False)
@@ -991,3 +999,232 @@ def rotate_token(session: Session = Depends(get_session)) -> dict:
         "note": "Conservalo ora: è mostrato una sola volta e il token "
         "precedente non è più valido.",
     }
+
+
+# ── Yazio (diario alimentare) ───────────────────────────────────────────────
+# Gli stessi tre comandi della CLI, raggiungibili via HTTP. Esistono perché
+# `fly ssh console` passa dal piano di controllo di Fly, che può essere
+# irraggiungibile (rete aziendale, API di Fly giù) mentre l'app sta benissimo:
+# questa strada usa solo l'URL pubblico dell'app. Protetti dal bearer token come
+# tutto /api — il connettore MCP resta in sola lettura, le scritture stanno qui.
+
+
+@router.get("/yazio/status")
+def get_yazio_status(session: Session = Depends(get_session)) -> dict:
+    """Se l'account è collegato e quanti giorni di diario sono già importati."""
+    from app.db.models import NutritionDay
+    from app.services.yazio_sync import get_account
+
+    account = get_account(session)
+    days = session.scalar(select(func.count()).select_from(NutritionDay)) or 0
+    latest = session.scalar(select(func.max(NutritionDay.date)))
+    return {
+        "connected": account is not None,
+        "username": account.username if account else None,
+        "credentials_configured": bool(
+            get_settings().yazio_username and get_settings().yazio_password
+        ),
+        "days_stored": days,
+        "latest_day": latest,
+    }
+
+
+@router.post("/yazio/connect")
+def post_yazio_connect(session: Session = Depends(get_session)) -> dict:
+    """Login a Yazio con le credenziali già configurate sul server.
+
+    Di proposito **non** accetta la password nel corpo della richiesta: la
+    prende dai secret del deploy. Così non attraversa la rete una seconda volta
+    e non può finire in un log di accesso o nella cronologia di una shell.
+    """
+    from app.exceptions import CollectionError
+    from app.services.yazio_sync import connect_account
+
+    settings = get_settings()
+    if not (settings.yazio_username and settings.yazio_password):
+        raise HTTPException(
+            status_code=400,
+            detail="Credenziali Yazio non configurate: imposta i secret "
+            "YAZIO_USERNAME e YAZIO_PASSWORD sul deploy.",
+        )
+    try:
+        account = connect_account(
+            session, settings.yazio_username, settings.yazio_password
+        )
+    except CollectionError as exc:
+        # 502: il rifiuto arriva da Yazio, non da una richiesta sbagliata di chi
+        # ci sta chiamando. Il messaggio porta già il corpo della risposta di
+        # Yazio, ripulito dai segreti.
+        raise HTTPException(status_code=502, detail=str(exc)) from exc
+    return {"connected": True, "username": account.username}
+
+
+@router.post("/yazio/sync")
+def post_yazio_sync(days: int = 30, session: Session = Depends(get_session)) -> dict:
+    """Importa gli ultimi ``days`` giorni di diario."""
+    from app.services.yazio_sync import is_connected, sync_nutrition
+
+    if not is_connected(session):
+        raise HTTPException(
+            status_code=409,
+            detail="Yazio non collegato: chiama prima POST /api/yazio/connect.",
+        )
+    result = sync_nutrition(session, days=max(1, min(days, 365)))
+    return result.as_dict()
+
+
+@router.post("/yazio/disconnect")
+def post_yazio_disconnect(session: Session = Depends(get_session)) -> dict:
+    """Elimina i token. Lo storico già importato resta."""
+    from app.services.yazio_sync import disconnect_account
+
+    return {"disconnected": disconnect_account(session)}
+
+
+@router.get("/yazio/inspect")
+def get_yazio_inspect(
+    date: str, kind: str = "summary", session: Session = Depends(get_session)
+) -> dict:
+    """Cosa risponde davvero Yazio per un giorno, e cosa ne ricava il parser.
+
+    Esiste perché "0 giorni salvati" ha due cause opposte — la chiamata fallisce,
+    oppure riesce e il parser non riconosce i campi — e dai log non sempre si
+    riesce a guardare (il piano di controllo del deploy può essere
+    irraggiungibile mentre l'app sta benissimo).
+
+    Restituisce il payload grezzo: sono i dati del diario di chi possiede questa
+    app, dietro lo stesso bearer token di tutto il resto.
+    """
+    from app.collection import yazio
+    from app.services.yazio_sync import get_account, valid_access_token
+
+    account = get_account(session)
+    if account is None:
+        raise HTTPException(status_code=409, detail="Yazio non collegato.")
+
+    # A fixed set of paths, not a free-form one: this endpoint must never become
+    # a way to make the server fetch an arbitrary URL.
+    paths = {
+        "summary": yazio.DAILY_SUMMARY_PATH,
+        "consumed": "/user/consumed-items",
+    }
+    if kind not in paths:
+        raise HTTPException(
+            status_code=400, detail=f"kind ammessi: {', '.join(sorted(paths))}"
+        )
+
+    token = valid_access_token(session, account)
+    out: dict = {"date": date, "kind": kind, "http_error": None, "raw": None,
+                 "parsed": None}
+    try:
+        out["raw"] = yazio._default_request(
+            "GET",
+            f"{yazio.BASE_URL}{paths[kind]}",
+            params={"date": date},
+            token=token,
+        )
+    except Exception as exc:  # noqa: BLE001 - reporting the failure IS the job
+        out["http_error"] = str(exc)
+        return out
+
+    out["top_level_keys"] = sorted(out["raw"].keys()) if isinstance(out["raw"], dict) else None
+    if kind == "summary":
+        out["parsed"] = yazio.parse_day(out["raw"], date)
+    return out
+
+
+# ── Garmin: leggere indietro cosa è stato creato ────────────────────────────
+# Diagnostica in sola lettura. Serve perché la tassonomia dei target di Garmin
+# (quale id sia "pace" e quale "speed") non è pubblicata nella libreria e non è
+# interrogabile da dove giriamo i test: l'unico modo onesto di saperlo è
+# guardare cosa il server ha effettivamente memorizzato.
+
+
+@router.get("/garmin/workouts")
+def get_garmin_workouts(limit: int = 500, page_size: int = 100) -> dict:
+    """Tutti gli allenamenti su Garmin Connect, dal più recente.
+
+    Pagina da sola: Garmin restituisce una finestra alla volta e li ordina per
+    data di aggiornamento, quindi una singola richiesta con un limite basso
+    mostra solo gli ultimi creati — e fa sembrare che gli altri non ci siano.
+    """
+    from app.services.garmin_export import _garmin_client
+
+    client = _garmin_client()
+    page_size = max(1, min(page_size, 100))
+    limit = max(1, min(limit, 2000))
+
+    rows: list = []
+    start = 0
+    try:
+        while len(rows) < limit:
+            page = client.get_workouts(start, min(page_size, limit - len(rows)))
+            if not page:
+                break
+            rows.extend(page)
+            # A short page means the end: asking again would loop forever on an
+            # API that happily returns an empty list past the last item.
+            if len(page) < page_size:
+                break
+            start += len(page)
+    except Exception as exc:  # noqa: BLE001 - upstream failure, reported as such
+        if not rows:
+            raise HTTPException(status_code=502, detail=str(exc)) from exc
+        # Partial is better than nothing, as long as it says it is partial.
+        return {
+            "returned": len(rows),
+            "complete": False,
+            "error": str(exc),
+            "workouts": [_workout_row(w) for w in rows],
+        }
+
+    return {
+        "returned": len(rows),
+        "complete": len(rows) < limit,
+        "workouts": [_workout_row(w) for w in rows],
+    }
+
+
+def _workout_row(w: dict) -> dict:
+    return {
+        "workout_id": w.get("workoutId"),
+        "name": w.get("workoutName"),
+        "sport": (w.get("sportType") or {}).get("sportTypeKey"),
+        "created": w.get("createdDate"),
+        "updated": w.get("updateDate"),
+    }
+
+
+@router.get("/garmin/workouts/{workout_id}")
+def get_garmin_workout(workout_id: str) -> dict:
+    """Un allenamento come Garmin lo ha salvato, con i target normalizzati.
+
+    Il campo da guardare è `targetType` di ogni step: mostra quale
+    `workoutTargetTypeId` Garmin considera valido, che è l'unico modo per sapere
+    se un allenamento sta usando il passo o la velocità.
+    """
+    from app.services.garmin_export import _garmin_client
+
+    try:
+        return {"workout": _garmin_client().get_workout_by_id(workout_id)}
+    except Exception as exc:  # noqa: BLE001
+        raise HTTPException(status_code=502, detail=str(exc)) from exc
+
+
+@router.get("/garmin/scheduled")
+def get_garmin_scheduled(year: int, month: int) -> dict:
+    """Cosa è a calendario su Garmin in un dato mese.
+
+    Diverso da `/garmin/workouts`, che elenca gli allenamenti *salvati*: qui si
+    vede se e quando sono stati programmati. Un allenamento può esistere senza
+    essere a calendario, e un piano Garmin può occupare dei giorni senza
+    comparire fra i propri allenamenti.
+    """
+    from app.services.garmin_export import _garmin_client
+
+    if not 1 <= month <= 12:
+        raise HTTPException(status_code=400, detail="Mese non valido (1-12).")
+    try:
+        return {"scheduled": _garmin_client().get_scheduled_workouts(year, month)}
+    except Exception as exc:  # noqa: BLE001
+        raise HTTPException(status_code=502, detail=str(exc)) from exc

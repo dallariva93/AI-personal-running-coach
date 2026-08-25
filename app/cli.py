@@ -3,6 +3,7 @@
 Examples::
 
     python -m app.cli ingest            # pull + store recent runs
+    python -m app.cli backfill --months 12   # import the whole history
     python -m app.cli analyze           # analyse the latest run
     python -m app.cli weekly            # weekly analysis + plan
     python -m app.cli metrics           # print current form metrics
@@ -13,6 +14,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import sys
 from datetime import datetime
 from pathlib import Path
 
@@ -81,6 +83,180 @@ def cmd_metrics(_: argparse.Namespace) -> int:
     return 0
 
 
+def cmd_backfill(args: argparse.Namespace) -> int:
+    """Walk the whole Garmin history (see app/services/backfill.py)."""
+    from app.collection import get_source
+    from app.collection.sources import GarminSource
+    from app.services.backfill import (
+        backfill_activities,
+        enrich_missing,
+        reset_checkpoint,
+    )
+
+    source = get_source()
+    if not isinstance(source, GarminSource):
+        print(
+            "Backfill non disponibile in modalità demo: servono GARMIN_EMAIL e "
+            "GARMIN_PASSWORD."
+        )
+        return 1
+
+    with session_scope() as session:
+        if args.restart:
+            reset_checkpoint(session)
+            print("Checkpoint azzerato: riparto dall'attività più recente.")
+
+        if not args.enrich_only:
+            result = backfill_activities(
+                session,
+                source,
+                months=args.months,
+                throttle_s=args.throttle,
+                resume=not args.restart,
+                progress=print,
+            )
+            print(
+                f"\nSintesi: {result.runs_imported} corse e "
+                f"{result.cross_training_imported} sedute cross importate "
+                f"({result.skipped_existing} già presenti), "
+                f"fino al {result.oldest_date or 'n/d'}."
+            )
+            if not result.completed:
+                print(
+                    "Backfill INTERROTTO prima del limite: rilancia lo stesso "
+                    "comando per riprendere dal checkpoint."
+                )
+            for err in result.errors[:5]:
+                print(f"  ! {err}")
+
+        if args.enrich or args.enrich_only:
+            enriched = enrich_missing(
+                session,
+                source,
+                limit=args.enrich_limit,
+                throttle_s=args.throttle,
+                progress=print,
+            )
+            print(f"\nArricchite {enriched.enriched} corse con split e zone HR.")
+    return 0
+
+
+def cmd_weather(args: argparse.Namespace) -> int:
+    """Fill in the weather Garmin never recorded (Open-Meteo, no API key)."""
+    from app.services.weather_backfill import fill_missing_weather
+
+    with session_scope() as session:
+        result = fill_missing_weather(
+            session, limit=args.limit, progress=print,
+            use_fallback_location=not args.gps_only,
+        )
+        print(
+            f"\nMeteo: {result.filled} attività completate su {result.considered} "
+            f"esaminate ({result.no_location} senza posizione, "
+            f"{result.no_data} senza dati meteo)."
+        )
+        if result.filled == args.limit:
+            print("Raggiunto il limite del lotto: rilancia per continuare.")
+    return 0
+
+
+def cmd_nutrition(args: argparse.Namespace) -> int:
+    """Connect Yazio and import the daily nutrition totals."""
+    from datetime import date, timedelta
+
+    from app.exceptions import CollectionError
+    from app.services import yazio_sync
+
+    with session_scope() as session:
+        if args.disconnect:
+            if yazio_sync.disconnect_account(session):
+                print("Yazio scollegato. Lo storico già importato resta nel database.")
+            else:
+                print("Yazio non era collegato.")
+            return 0
+
+        if args.connect:
+            settings = get_settings()
+            username = args.username or settings.yazio_username
+            # Never from the command line: argv is visible to every process on
+            # the box and lands in the shell history.
+            password = settings.yazio_password
+            if not password and sys.stdin.isatty():
+                import getpass
+
+                username = username or input("Email Yazio: ").strip()
+                password = getpass.getpass("Password Yazio: ")
+            if not username or not password:
+                print(
+                    "Credenziali mancanti. Imposta YAZIO_USERNAME e YAZIO_PASSWORD "
+                    "(come secret del deploy) oppure lancia il comando da un "
+                    "terminale interattivo."
+                )
+                return 1
+            try:
+                yazio_sync.connect_account(session, username, password)
+            except CollectionError as exc:
+                print(f"Collegamento fallito: {exc}")
+                # Il codice HTTP separa due cause opposte, e confonderle fa
+                # perdere un pomeriggio: 401 vuol dire "credenziali rifiutate"
+                # (e su un account Google una password non esiste proprio),
+                # 400 vuol dire che la richiesta non e' stata nemmeno letta —
+                # le credenziali non c'entrano.
+                text = str(exc)
+                if "401" in text or "invalid_grant" in text:
+                    print(
+                        "\nCredenziali rifiutate. Se ti sei registrato su Yazio "
+                        "con Google, una password non esiste: impostane una "
+                        "dall'app ('Password dimenticata' con la stessa email)."
+                    )
+                elif "400" in text:
+                    print(
+                        "\n400 = richiesta malformata, non credenziali sbagliate: "
+                        "Yazio non è arrivato a controllare la password. Il "
+                        "messaggio qui sopra arriva dal server e dice cosa non "
+                        "gli è piaciuto."
+                    )
+                return 1
+            print(f"Yazio collegato come {username}.")
+
+        if not yazio_sync.is_connected(session):
+            print("Yazio non è collegato: lancia prima `nutrition --connect`.")
+            return 1
+
+        end = date.today()
+        start = end - timedelta(days=args.days - 1)
+        result = yazio_sync.sync_nutrition(session, start=start, end=end, progress=print)
+        print(
+            f"\nAlimentazione: {result.saved} giorni salvati su "
+            f"{result.considered} richiesti ({result.empty} senza dati)."
+        )
+        for err in result.errors[:5]:
+            print(f"  ! {err}")
+    return 0
+
+
+def cmd_dedup(args: argparse.Namespace) -> int:
+    """Find (and optionally merge) the same run stored twice from two sources."""
+    from app.services.ingest import merge_duplicates
+
+    with session_scope() as session:
+        report = merge_duplicates(session, dry_run=not args.apply)
+        if not report:
+            print("Nessun duplicato trovato.")
+            return 0
+        verb = "Uniti" if args.apply else "Da unire"
+        print(f"{verb} {len(report)} duplicati:\n")
+        for r in report:
+            print(
+                f"  {r['date']}  {r['distance_km']:5.1f} km   "
+                f"tengo #{r['kept']['id']} ({r['kept']['source']})   "
+                f"elimino #{r['dropped']['id']} ({r['dropped']['source']})"
+            )
+        if not args.apply:
+            print("\nAnteprima: nessuna modifica applicata. Rilancia con --apply.")
+    return 0
+
+
 def cmd_migrate(_: argparse.Namespace) -> int:
     from app.db.database import run_migrations
 
@@ -115,6 +291,81 @@ def build_parser() -> argparse.ArgumentParser:
 
     p_metrics = sub.add_parser("metrics", help="Stampa le metriche di carico/forma")
     p_metrics.set_defaults(func=cmd_metrics)
+
+    p_backfill = sub.add_parser(
+        "backfill",
+        help="Importa tutto lo storico Garmin (riprendibile, idempotente)",
+    )
+    p_backfill.add_argument(
+        "--months", type=int, default=12, help="Quanti mesi indietro (default: 12)"
+    )
+    p_backfill.add_argument(
+        "--throttle", type=float, default=1.0,
+        help="Pausa in secondi fra le chiamate a Garmin (default: 1.0)",
+    )
+    p_backfill.add_argument(
+        "--restart", action="store_true",
+        help="Ignora il checkpoint e riparti dall'attività più recente",
+    )
+    p_backfill.add_argument(
+        "--enrich", action="store_true",
+        help="Dopo le sintesi, scarica anche split e zone HR (lento)",
+    )
+    p_backfill.add_argument(
+        "--enrich-only", action="store_true",
+        help="Salta le sintesi ed esegui solo l'arricchimento",
+    )
+    p_backfill.add_argument(
+        "--enrich-limit", type=int, default=200,
+        help="Quante corse arricchire in questa esecuzione (default: 200)",
+    )
+    p_backfill.set_defaults(func=cmd_backfill)
+
+    p_dedup = sub.add_parser(
+        "dedup",
+        help="Trova e unisce la stessa corsa salvata due volte (Garmin + Health Connect)",
+    )
+    p_dedup.add_argument(
+        "--apply", action="store_true",
+        help="Applica davvero l'unione (senza, mostra solo l'anteprima)",
+    )
+    p_dedup.set_defaults(func=cmd_dedup)
+
+    p_weather = sub.add_parser(
+        "weather",
+        help="Recupera il meteo storico delle corse da Open-Meteo (senza API key)",
+    )
+    p_weather.add_argument(
+        "--limit", type=int, default=200,
+        help="Quante attività elaborare in questa esecuzione (default: 200)",
+    )
+    p_weather.add_argument(
+        "--gps-only", action="store_true",
+        help="Salta le corse senza GPS invece di usare la posizione di casa",
+    )
+    p_weather.set_defaults(func=cmd_weather)
+
+    p_nutrition = sub.add_parser(
+        "nutrition",
+        help="Collega Yazio e importa calorie e macro giornaliere",
+    )
+    p_nutrition.add_argument(
+        "--connect", action="store_true",
+        help="Esegui il login Yazio e salva i token (la password non viene salvata)",
+    )
+    p_nutrition.add_argument(
+        "--username", default=None,
+        help="Email Yazio (in alternativa a YAZIO_USERNAME)",
+    )
+    p_nutrition.add_argument(
+        "--disconnect", action="store_true",
+        help="Elimina i token Yazio (lo storico importato resta)",
+    )
+    p_nutrition.add_argument(
+        "--days", type=int, default=30,
+        help="Quanti giorni indietro importare (default: 30)",
+    )
+    p_nutrition.set_defaults(func=cmd_nutrition)
 
     p_migrate = sub.add_parser("migrate", help="Applica le migrazioni del database (Alembic)")
     p_migrate.set_defaults(func=cmd_migrate)

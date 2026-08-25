@@ -26,6 +26,7 @@ from app.collection.synthesize import (
     _match_name_hint,
     _num,
     extract_start_time,
+    is_indoor_activity,
 )
 from app.config import Settings, get_settings
 from app.exceptions import CollectionError
@@ -258,6 +259,7 @@ def synthesize_strava(activity: dict[str, Any]) -> RunSummary:
         date=date,
         start_time=extract_start_time(start_local),
         activity_type=_infer_strava_type(activity),
+        is_indoor=is_indoor_activity(activity),
         duration_min=duration_min,
         distance_km=round(distance_m / 1000.0, 2),
         avg_pace=_format_pace(distance_m, moving_s or elapsed_s),

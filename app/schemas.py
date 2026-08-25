@@ -49,6 +49,8 @@ class RunSummary(BaseModel):
     notes: str | None = None
     hr_zones: dict[str, float] | None = None
     splits_km: list[str] | None = None
+    laps: list[dict] | None = None
+    is_indoor: bool = False
     # Environment (GAP 18) and trail (GAP 20) extras — all optional.
     temperature_c: float | None = None
     humidity_pct: float | None = None
@@ -183,6 +185,8 @@ class AthleteModel(BaseModel):
     ramp_tolerance_pct: AthleteModelEstimate
     recovery_halflife_days: AthleteModelEstimate
     heat_sensitivity_s_per_c: AthleteModelEstimate
+    # A5 extension (section 2.3): fade-resistance in long runs, 0-100.
+    durability: AthleteModelEstimate | None = None
     computed_at: str | None = None
 
 
@@ -484,6 +488,9 @@ class TrainingMetrics(BaseModel):
     # Latest Garmin VO2max and adaptive-plan adjustments (Fase 4).
     vo2max: float | None = None
     adaptive_notes: list[str] = Field(default_factory=list)
+    # Digital Twin durability (0-100), injected by the plan service so the
+    # engine can size the long run to the athlete's fade-resistance (section 2.3).
+    durability: float | None = None
 
 
 class CoachDecision(BaseModel):
@@ -660,6 +667,8 @@ class ActivityOut(BaseModel):
     # the native app render a full per-activity detail view.
     hr_zones: dict[str, float] | None = None
     splits_km: list[str] | None = None
+    laps: list[dict] | None = None
+    is_indoor: bool = False
     temperature_c: float | None = None
     humidity_pct: float | None = None
     elevation_loss_m: float | None = None
@@ -873,6 +882,11 @@ class PlanSessionOut(BaseModel):
     execution_score: float | None = None
     execution_status: str | None = None
     execution_note: str | None = None
+    # Structured workout view (Fase E): warm-up / work / recovery / cool-down
+    # segments derived from the prescription. Empty for rest/race/cross.
+    segments: list[WorkoutSegmentIn] = Field(default_factory=list)
+    # Fueling & hydration guidance for long runs / races (Fase F), else None.
+    fueling: str | None = None
 
 
 class PlanWeekOut(BaseModel):
@@ -885,6 +899,8 @@ class PlanWeekOut(BaseModel):
     phase: str
     target_km: float
     description: str | None = None
+    # Coach-grade explainability (Fase F): why this week looks the way it does.
+    rationale: str | None = None
     sessions: list[PlanSessionOut]
     completion_pct: float = 0.0  # computed: completed non-rest / total non-rest
 
@@ -916,10 +932,13 @@ class PlanSessionMoveRequest(BaseModel):
 
 
 class PlanMoveResult(BaseModel):
-    """Outcome of a session move: the recalculated plan plus safety warnings."""
+    """Outcome of a session move: the recalculated plan, reshapes and warnings."""
 
     plan: TrainingPlanOut
     warnings: list[str] = Field(default_factory=list)
+    # Fase E: deterministic reshapes the coach applied to keep the week sound
+    # (e.g. re-spacing quality days) — distinct from unresolved ``warnings``.
+    rebalanced: list[str] = Field(default_factory=list)
 
 
 class PlanChatMessage(BaseModel):
@@ -953,6 +972,41 @@ class PlanGenerateRequest(BaseModel):
     days_per_week: int = 4
     long_run_day: int = 6  # 0=Mon, 6=Sun (default Sunday)
     runner_context: str | None = None  # JSON summary from pre-plan chat
+
+
+class PlanWhatIfRequest(BaseModel):
+    """What-if on the whole plan (Fase F): a base request plus the fields to change.
+
+    Any override left ``None`` keeps the base value. Because the periodization
+    engine is pure and instant, the comparison is computed without persisting
+    anything.
+    """
+
+    base: PlanGenerateRequest
+    goal_type: str | None = None
+    goal_date: str | None = None
+    goal_time: str | None = None
+    level: str | None = None
+    days_per_week: int | None = None
+    long_run_day: int | None = None
+
+
+class PlanWhatIfSummary(BaseModel):
+    """Headline numbers for one plan variant."""
+
+    weeks_total: int
+    total_km: float
+    peak_week_km: float
+    avg_weekly_km: float
+
+
+class PlanWhatIfOut(BaseModel):
+    """Baseline vs scenario comparison for a whole-plan what-if."""
+
+    baseline: PlanWhatIfSummary
+    scenario: PlanWhatIfSummary
+    deltas: dict[str, float]
+    notes: list[str] = Field(default_factory=list)
 
 
 # ── Coach chat schemas ───────────────────────────────────────────────────────
@@ -1032,6 +1086,11 @@ class WorkoutSegmentOut(WorkoutSegmentIn):
 
     id: int
     model_config = ConfigDict(from_attributes=True)
+
+
+# ``PlanSessionOut.segments`` forward-references ``WorkoutSegmentIn`` (defined
+# above): resolve the reference now that the target type exists.
+PlanSessionOut.model_rebuild()
 
 
 class WorkoutTemplateIn(BaseModel):

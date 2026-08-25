@@ -20,6 +20,7 @@ from app.collection.synthesize import (
     extract_details_enrichment,
     extract_gps_from_details,
     extract_hr_zones_from_timezones,
+    extract_laps,
     extract_splits,
     extract_weather,
     garmin_sport,
@@ -185,6 +186,32 @@ class GarminSource:
         activities.sort(key=lambda a: str(a.get("startTimeLocal", "")), reverse=True)
         return activities[:limit]
 
+    def get_activities_page(self, start: int, limit: int) -> list[dict[str, Any]]:
+        """One page of raw activities, newest first, starting at offset ``start``.
+
+        ``get_recent_activities`` only ever reads the head of the history; the
+        backfill needs to walk backwards through it, which is the same Garmin
+        call with a non-zero offset. Kept separate so the hot sync path keeps
+        its "fetch a window and sort" behaviour unchanged.
+        """
+        try:
+            client = self._login()
+            activities = retry_call(
+                lambda: client.get_activities(start, limit),
+                retries=self.settings.garmin_max_retries,
+                description=f"garmin.get_activities[{start}:{start + limit}]",
+            )
+        except Exception as exc:  # network, auth, library breakage
+            logger.error("Garmin page fetch failed at offset %d: %s", start, exc)
+            raise CollectionError(
+                f"Impossibile scaricare la pagina {start} da Garmin: {exc}"
+            ) from exc
+        return [a for a in (activities or []) if isinstance(a, dict)]
+
+    def get_activity_enrichment(self, activity_id: Any) -> dict[str, Any]:
+        """Per-activity detail (splits, HR zones, weather, GPS) for one activity."""
+        return self._fetch_enrichment(self._login(), activity_id, skip_gps=False)
+
     def get_client(self) -> Any:
         """Return the underlying logged-in client (for raw archival)."""
         return self._login()
@@ -246,7 +273,7 @@ class GarminSource:
             if zones:
                 out["hr_zones"] = zones
 
-        if "splits_km" not in out or "altitude_profile" not in out:
+        if "splits_km" not in out or "altitude_profile" not in out or "laps" not in out:
             splits_payload = self._safe_call(
                 getattr(client, "get_activity_splits", None), activity_id, "splits"
             )
@@ -255,6 +282,17 @@ class GarminSource:
                     splits = extract_splits(splits_payload)
                     if splits:
                         out["splits_km"] = splits
+                # Same payload, kept whole: the per-km view above cannot show
+                # a 500 m repetition or the jog between two of them.
+                #
+                # An empty list is written deliberately when the payload came
+                # back without laps: it records "asked, there are none", which
+                # NULL cannot express. Without that, the enrichment pass would
+                # re-fetch every lapless activity forever, never converging.
+                # A *failed* payload fetch leaves the field unset, so it is
+                # retried later — which is what we want.
+                if "laps" not in out:
+                    out["laps"] = extract_laps(splits_payload) or []
                 if "altitude_profile" not in out:
                     alt_profile = extract_altitude_profile(splits_payload)
                     if alt_profile:

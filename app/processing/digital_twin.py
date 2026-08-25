@@ -34,6 +34,15 @@ HEAT_MIN, HEAT_MAX = 0.0, 6.0
 HEAT_HOT_THRESHOLD_C = 15.0
 HEAT_MIN_HOT_SAMPLES = 10
 
+# Durability (A5 extension, section 2.3): how well the athlete holds pace deep
+# into a long run — the resistance to late-run fade (aerobic decoupling proxy).
+# Score 0-100: 100 = no fade / negative split, 50 ≈ a 10% late slowdown. A durable
+# athlete can absorb bigger long runs and marathon-specific work.
+DURABILITY_DEFAULT = 65.0  # neutral prior until we've seen enough long runs
+DURABILITY_MIN, DURABILITY_MAX = 0.0, 100.0
+DURABILITY_MIN_SAMPLES = 3  # long runs with splits before we trust it
+_DURABILITY_FADE_SCALE = 5.0  # 1% late-third fade → 5 points off durability
+
 
 @dataclass
 class WeekObservation:
@@ -123,10 +132,33 @@ def estimate_heat_sensitivity(
     return AthleteModelEstimate(value=value, confidence=confidence, learning=False)
 
 
+def estimate_durability(fade_pcts: list[float]) -> AthleteModelEstimate:
+    """Learn durability from per-long-run late-third fade percentages.
+
+    ``fade_pcts`` is one number per qualifying long run: how much slower the last
+    third ran than the first third, in percent (negative = negative split). The
+    median fade maps to a 0-100 durability score; below
+    :data:`DURABILITY_MIN_SAMPLES` runs the neutral default is kept.
+    """
+    confidence = len(fade_pcts)
+    if confidence < DURABILITY_MIN_SAMPLES:
+        return AthleteModelEstimate(
+            value=DURABILITY_DEFAULT, confidence=confidence, learning=True
+        )
+    median_fade = statistics.median(fade_pcts)
+    score = _clamp(
+        100.0 - median_fade * _DURABILITY_FADE_SCALE, DURABILITY_MIN, DURABILITY_MAX
+    )
+    return AthleteModelEstimate(
+        value=round(score, 1), confidence=confidence, learning=False
+    )
+
+
 def build_athlete_model(
     weeks: list[WeekObservation],
     recovery_days: list[float],
     heat_points: list[tuple[float, float]],
+    durability_fades: list[float] | None = None,
     computed_at: str | None = None,
 ) -> AthleteModel:
     """Assemble the full :class:`AthleteModel` from derived history (pure)."""
@@ -134,5 +166,6 @@ def build_athlete_model(
         ramp_tolerance_pct=estimate_ramp_tolerance(weeks),
         recovery_halflife_days=estimate_recovery_halflife(recovery_days),
         heat_sensitivity_s_per_c=estimate_heat_sensitivity(heat_points),
+        durability=estimate_durability(durability_fades or []),
         computed_at=computed_at,
     )

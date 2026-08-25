@@ -15,6 +15,13 @@ from app.services.ingest import ingest_runs, upsert_activity
 FIXTURES = Path(__file__).parent.parent / "fixtures"
 
 
+def _this_monday(today: date | None = None) -> date:
+    """Monday of the current week — a stable weekday anchor inside any
+    lookback window, so tests don't expire as the calendar moves on."""
+    today = today or date.today()
+    return today - timedelta(days=today.weekday())
+
+
 def _seed_runs(session) -> None:
     ingest_runs(session, source=DemoSource(FIXTURES / "garmin_activities.json"))
     session.flush()
@@ -44,7 +51,9 @@ def _plan_with_session(session, start: date, dow: int, st: str, km: float) -> Tr
 
 
 def test_execution_scored_and_autocompletes(session):
-    start = date(2026, 6, 22)  # Monday
+    # `recent_executions` looks back 30 days, so anchor to a Monday relative
+    # to today rather than a fixed date that eventually falls out of range.
+    start = _this_monday()
     _plan_with_session(session, start, dow=0, st="easy", km=8.0)
     # An activity on the session's date that matches the prescription.
     upsert_activity(

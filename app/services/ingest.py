@@ -55,6 +55,8 @@ def _activity_to_summary(a: Activity) -> RunSummary:
         notes=a.notes,
         hr_zones=a.hr_zones,
         splits_km=a.splits_km,
+        laps=a.laps,
+        is_indoor=a.is_indoor,
         temperature_c=a.temperature_c,
         humidity_pct=a.humidity_pct,
         elevation_loss_m=a.elevation_loss_m,
@@ -73,6 +75,149 @@ def _activity_to_summary(a: Activity) -> RunSummary:
         route_polyline=a.route_polyline,
         shoe_id=a.shoe_id,
     )
+
+
+# Source ranking for the same physical run. Garmin carries splits, HR zones,
+# RPE and training load; Health Connect v0 derives pace from distance+duration
+# and has no splits. When both describe the same activity the richer one wins.
+_SOURCE_RANK = {"garmin": 3, "strava": 2, "health_connect": 1, "live": 0}
+
+# Tolerances for deciding "this is the same run from another app". Two sources
+# reading the same GPS track agree closely; the absolute floors keep short runs
+# from failing a purely relative check.
+_DUP_DURATION_TOL = 0.05
+_DUP_DISTANCE_TOL = 0.05
+_DUP_DURATION_FLOOR_MIN = 1.5
+_DUP_DISTANCE_FLOOR_KM = 0.3
+
+
+def _source_of(obj: Activity | RunSummary) -> str:
+    if getattr(obj, "garmin_activity_id", None):
+        return "garmin"
+    if getattr(obj, "strava_activity_id", None):
+        return "strava"
+    if getattr(obj, "health_connect_id", None):
+        return "health_connect"
+    return "live"
+
+
+def _close(a: float | None, b: float | None, tol: float, floor: float) -> bool:
+    """True when two measurements of the same thing agree within tolerance."""
+    if a is None or b is None:
+        return False
+    return abs(a - b) <= max(floor, tol * max(a, b))
+
+
+def find_duplicate(session: Session, run: RunSummary) -> Activity | None:
+    """The same physical run already stored under a *different* source id.
+
+    Garmin and Health Connect both see the phone/watch's run but share no
+    identifier, so an id-only upsert stores it twice — double-counting volume
+    in every load metric downstream. Matching is deliberately conservative:
+    same day, same sport, and both duration and distance within tolerance.
+    """
+    if not run.date:
+        return None
+    candidates = session.scalars(
+        select(Activity).where(Activity.date == run.date, Activity.sport == run.sport)
+    ).all()
+    for other in candidates:
+        # Never merge rows that both carry the *same kind* of id: two Garmin
+        # activities on one day are two real runs, not a duplicate.
+        if _source_of(other) == _source_of(run):
+            continue
+        if _close(
+            run.duration_min, other.duration_min, _DUP_DURATION_TOL, _DUP_DURATION_FLOOR_MIN
+        ) and _close(
+            run.distance_km, other.distance_km, _DUP_DISTANCE_TOL, _DUP_DISTANCE_FLOOR_KM
+        ):
+            return other
+    return None
+
+
+def find_existing_duplicates(session: Session) -> list[tuple[Activity, Activity]]:
+    """Duplicate pairs already stored as ``(keep, drop)``, richest source first.
+
+    The id-only upsert that shipped first let the same run land twice (once per
+    source). Those rows are still there and double-count in every load metric,
+    so they need finding and merging, not just preventing.
+    """
+    rows = list(session.scalars(select(Activity).order_by(Activity.date.desc())).all())
+    by_day: dict[tuple[str, str], list[Activity]] = {}
+    for row in rows:
+        by_day.setdefault((row.date, row.sport), []).append(row)
+
+    pairs: list[tuple[Activity, Activity]] = []
+    merged_ids: set[int] = set()
+    for group in by_day.values():
+        for i, a in enumerate(group):
+            for b in group[i + 1:]:
+                if a.id in merged_ids or b.id in merged_ids:
+                    continue
+                if _source_of(a) == _source_of(b):
+                    continue
+                if not (
+                    _close(a.duration_min, b.duration_min,
+                           _DUP_DURATION_TOL, _DUP_DURATION_FLOOR_MIN)
+                    and _close(a.distance_km, b.distance_km,
+                               _DUP_DISTANCE_TOL, _DUP_DISTANCE_FLOOR_KM)
+                ):
+                    continue
+                keep, drop = (
+                    (a, b)
+                    if _SOURCE_RANK[_source_of(a)] >= _SOURCE_RANK[_source_of(b)]
+                    else (b, a)
+                )
+                pairs.append((keep, drop))
+                merged_ids.add(drop.id)
+    return pairs
+
+
+def merge_duplicates(session: Session, dry_run: bool = True) -> list[dict]:
+    """Merge duplicate activities, keeping the richest source of each pair.
+
+    The surviving row inherits the other's external ids (so a future sync from
+    either source matches it directly) and any field the richer source happens
+    to be missing. Returns one report dict per pair, whether or not applied.
+    """
+    report: list[dict] = []
+    for keep, drop in find_existing_duplicates(session):
+        report.append({
+            "date": keep.date,
+            "distance_km": round(keep.distance_km or 0.0, 1),
+            "kept": {"id": keep.id, "source": _source_of(keep)},
+            "dropped": {"id": drop.id, "source": _source_of(drop)},
+        })
+        if dry_run:
+            continue
+        # Fill only genuine gaps: the richer source stays authoritative.
+        for field in (
+            "start_time", "avg_hr", "max_hr", "elevation_gain_m", "avg_cadence",
+            "rpe", "notes", "hr_zones", "splits_km", "laps", "route_polyline",
+        ):
+            if getattr(keep, field, None) is None and getattr(drop, field, None) is not None:
+                setattr(keep, field, getattr(drop, field))
+        # Inherit the other source's ids so neither can re-create the duplicate
+        # on the next sync. Each id column is UNIQUE, so the losing row has to
+        # release its value (and that has to reach the database) before the
+        # surviving row can take it.
+        inherited = {
+            field: getattr(drop, field)
+            for field in (
+                "garmin_activity_id", "strava_activity_id", "health_connect_id", "live_id",
+            )
+            if getattr(drop, field) and not getattr(keep, field)
+        }
+        for field in inherited:
+            setattr(drop, field, None)
+        session.flush()
+        for field, value in inherited.items():
+            setattr(keep, field, value)
+        session.delete(drop)
+    if not dry_run and report:
+        session.flush()
+        logger.info("Uniti %d duplicati", len(report))
+    return report
 
 
 def upsert_activity(session: Session, run: RunSummary) -> Activity:
@@ -99,6 +244,38 @@ def upsert_activity(session: Session, run: RunSummary) -> Activity:
         existing = session.scalar(
             select(Activity).where(Activity.live_id == run.live_id)
         )
+    # No id matched: the same run may still be here under another source's id
+    # (Garmin + Health Connect see the same activity but share no identifier).
+    if existing is None:
+        existing = find_duplicate(session, run)
+        if existing is not None:
+            # Read both sources BEFORE linking ids: attaching the incoming id
+            # would otherwise change what `existing` looks like it came from.
+            incoming_source = _source_of(run)
+            stored_source = _source_of(existing)
+            logger.info(
+                "Attività duplicata riconosciuta (%s già presente come %s): unita invece "
+                "di essere duplicata — %s, %.1f km",
+                incoming_source, stored_source, run.date, run.distance_km,
+            )
+            # Link the new id onto the existing row so the next sync matches
+            # directly and this fuzzy path is never needed again.
+            if run.garmin_activity_id and not existing.garmin_activity_id:
+                existing.garmin_activity_id = run.garmin_activity_id
+            if run.strava_activity_id and not existing.strava_activity_id:
+                existing.strava_activity_id = run.strava_activity_id
+            if run.health_connect_id and not existing.health_connect_id:
+                existing.health_connect_id = run.health_connect_id
+            if run.live_id and not existing.live_id:
+                existing.live_id = run.live_id
+            # A poorer source must not degrade a richer one: Health Connect's
+            # derived pace would overwrite Garmin's measured one, and its
+            # missing RPE/splits would look like "no data" rather than "not
+            # carried by this source".
+            if _SOURCE_RANK[incoming_source] < _SOURCE_RANK[stored_source]:
+                session.flush()
+                return existing
+
     if existing is None:
         existing = Activity(
             garmin_activity_id=run.garmin_activity_id,
@@ -138,6 +315,12 @@ def upsert_activity(session: Session, run: RunSummary) -> Activity:
         existing.hr_zones = run.hr_zones
     if run.splits_km is not None:
         existing.splits_km = run.splits_km
+    if run.laps is not None:
+        existing.laps = run.laps
+    # A source that knows it was indoors wins; one that simply doesn't carry
+    # the flag must not clear it (Health Connect has no such marker).
+    if run.is_indoor:
+        existing.is_indoor = True
     if run.temperature_c is not None:
         existing.temperature_c = run.temperature_c
     if run.humidity_pct is not None:
@@ -214,10 +397,62 @@ def ingest_runs(
     session.flush()
     _refresh_physiology(session)
 
+    # Cross-training is load too: a week with two hours on the bike and two gym
+    # sessions is not a light week, even though it adds no running kilometres.
+    # It used to arrive only via its own manual endpoint, so in practice it
+    # never arrived at all. Best-effort: it must not break the run sync.
+    _try_ingest_cross_training(session, source, limit)
+
+    # Garmin rarely records temperature, and without it a coach reads August
+    # heat as a loss of form. Only the runs just synced are considered, so this
+    # is a couple of calls, not a sweep.
+    _try_fill_weather(session, len(saved))
+
+    # Fuelling belongs to the same picture as the load: a stalled block from an
+    # energy deficit looks identical to one from too much training. A short
+    # window, because a diary entry added two days late is normal.
+    _try_sync_nutrition(session)
+
     if settings.raw_archive_active and isinstance(source, GarminSource):
         _try_sync_raw_assets(session, source, limit)
 
     return saved
+
+
+def _try_ingest_cross_training(
+    session: Session, source: ActivitySource, limit: int
+) -> None:
+    """Pull bike/swim/strength alongside the runs, never raising into the run path."""
+    try:
+        saved = ingest_cross_training(session, limit=limit, source=source)
+        if saved:
+            logger.info("Cross-training sincronizzato: %d sedute", len(saved))
+    except Exception as exc:  # noqa: BLE001 - a secondary signal must not block ingest
+        logger.warning("Sync cross-training fallito: %s", exc)
+
+
+def _try_fill_weather(session: Session, recent_count: int) -> None:
+    """Look up the weather for the runs just synced. Never raises."""
+    if recent_count <= 0:
+        return
+    try:
+        from app.services.weather_backfill import fill_missing_weather
+
+        fill_missing_weather(session, limit=recent_count, throttle_s=0.0)
+    except Exception as exc:  # noqa: BLE001 - weather is a nice-to-have
+        logger.warning("Recupero meteo fallito: %s", exc)
+
+
+def _try_sync_nutrition(session: Session) -> None:
+    """Import the last few days of nutrition, if Yazio is connected. Never raises."""
+    try:
+        from app.services.yazio_sync import is_connected, try_sync_nutrition
+
+        if not is_connected(session):
+            return
+        try_sync_nutrition(session, throttle_s=0.0)
+    except Exception as exc:  # noqa: BLE001 - nutrition is context, not a dependency
+        logger.warning("Sync nutrizione fallito: %s", exc)
 
 
 def sync_raw_assets(
