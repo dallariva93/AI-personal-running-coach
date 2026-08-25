@@ -1141,24 +1141,57 @@ def get_yazio_inspect(
 
 
 @router.get("/garmin/workouts")
-def get_garmin_workouts(limit: int = 10) -> dict:
-    """Gli ultimi allenamenti presenti su Garmin Connect."""
+def get_garmin_workouts(limit: int = 500, page_size: int = 100) -> dict:
+    """Tutti gli allenamenti su Garmin Connect, dal più recente.
+
+    Pagina da sola: Garmin restituisce una finestra alla volta e li ordina per
+    data di aggiornamento, quindi una singola richiesta con un limite basso
+    mostra solo gli ultimi creati — e fa sembrare che gli altri non ci siano.
+    """
     from app.services.garmin_export import _garmin_client
 
+    client = _garmin_client()
+    page_size = max(1, min(page_size, 100))
+    limit = max(1, min(limit, 2000))
+
+    rows: list = []
+    start = 0
     try:
-        rows = _garmin_client().get_workouts(0, max(1, min(limit, 50)))
+        while len(rows) < limit:
+            page = client.get_workouts(start, min(page_size, limit - len(rows)))
+            if not page:
+                break
+            rows.extend(page)
+            # A short page means the end: asking again would loop forever on an
+            # API that happily returns an empty list past the last item.
+            if len(page) < page_size:
+                break
+            start += len(page)
     except Exception as exc:  # noqa: BLE001 - upstream failure, reported as such
-        raise HTTPException(status_code=502, detail=str(exc)) from exc
+        if not rows:
+            raise HTTPException(status_code=502, detail=str(exc)) from exc
+        # Partial is better than nothing, as long as it says it is partial.
+        return {
+            "returned": len(rows),
+            "complete": False,
+            "error": str(exc),
+            "workouts": [_workout_row(w) for w in rows],
+        }
+
     return {
-        "workouts": [
-            {
-                "workout_id": w.get("workoutId"),
-                "name": w.get("workoutName"),
-                "sport": (w.get("sportType") or {}).get("sportTypeKey"),
-                "updated": w.get("updateDate"),
-            }
-            for w in (rows or [])
-        ]
+        "returned": len(rows),
+        "complete": len(rows) < limit,
+        "workouts": [_workout_row(w) for w in rows],
+    }
+
+
+def _workout_row(w: dict) -> dict:
+    return {
+        "workout_id": w.get("workoutId"),
+        "name": w.get("workoutName"),
+        "sport": (w.get("sportType") or {}).get("sportTypeKey"),
+        "created": w.get("createdDate"),
+        "updated": w.get("updateDate"),
     }
 
 
@@ -1174,5 +1207,24 @@ def get_garmin_workout(workout_id: str) -> dict:
 
     try:
         return {"workout": _garmin_client().get_workout_by_id(workout_id)}
+    except Exception as exc:  # noqa: BLE001
+        raise HTTPException(status_code=502, detail=str(exc)) from exc
+
+
+@router.get("/garmin/scheduled")
+def get_garmin_scheduled(year: int, month: int) -> dict:
+    """Cosa è a calendario su Garmin in un dato mese.
+
+    Diverso da `/garmin/workouts`, che elenca gli allenamenti *salvati*: qui si
+    vede se e quando sono stati programmati. Un allenamento può esistere senza
+    essere a calendario, e un piano Garmin può occupare dei giorni senza
+    comparire fra i propri allenamenti.
+    """
+    from app.services.garmin_export import _garmin_client
+
+    if not 1 <= month <= 12:
+        raise HTTPException(status_code=400, detail="Mese non valido (1-12).")
+    try:
+        return {"scheduled": _garmin_client().get_scheduled_workouts(year, month)}
     except Exception as exc:  # noqa: BLE001
         raise HTTPException(status_code=502, detail=str(exc)) from exc
