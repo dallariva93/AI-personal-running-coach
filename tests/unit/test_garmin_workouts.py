@@ -100,8 +100,10 @@ def test_build_targetsPaceNotSpeed():
     step = _steps(build_workout("X", [{"kind": "interval", "distance_km": 1,
                                        "pace": "4:00/km"}]))[0]
 
-    assert step["targetType"]["workoutTargetTypeKey"] == "pace.zone"
-    assert step["targetType"]["workoutTargetTypeId"] != 5  # 5 is speed.zone
+    assert step["targetType"] == {
+        "workoutTargetTypeId": 6,  # confirmed by reading a workout back
+        "workoutTargetTypeKey": "pace.zone",
+    }
 
 
 def test_build_paceTargetIdIsConfigurable(monkeypatch):

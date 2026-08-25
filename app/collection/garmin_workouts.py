@@ -49,10 +49,15 @@ _TARGET_NONE = {"workoutTargetTypeId": 1, "workoutTargetTypeKey": "no.target"}
 # for running that is the whole difference between a usable workout and one the
 # athlete has to convert in their head.
 #
-# Configurable because this is a vendor taxonomy we cannot query from here: if
-# the id below turns out to be wrong, it is a secret to change rather than a
-# deploy to wait for. Read one back with /api/garmin/workouts/{id} to see what
-# Garmin itself stores for a pace-targeted workout.
+# Verified against a real workout read back from Garmin, which answered with
+# {"workoutTargetTypeId": 6, "workoutTargetTypeKey": "pace.zone",
+#  "displayOrder": 6}. The `displayOrder` is the proof: it is not something we
+# send, so the server looked the id up in its own taxonomy rather than echoing
+# our payload back.
+#
+# Still configurable, as an escape hatch if Garmin ever renumbers: a secret to
+# change rather than a deploy to wait for. /api/garmin/workouts/{id} reads back
+# what the service actually stored.
 _DEFAULT_PACE_TARGET_ID = 6
 
 
