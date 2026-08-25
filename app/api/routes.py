@@ -1131,3 +1131,48 @@ def get_yazio_inspect(
     if kind == "summary":
         out["parsed"] = yazio.parse_day(out["raw"], date)
     return out
+
+
+# ── Garmin: leggere indietro cosa è stato creato ────────────────────────────
+# Diagnostica in sola lettura. Serve perché la tassonomia dei target di Garmin
+# (quale id sia "pace" e quale "speed") non è pubblicata nella libreria e non è
+# interrogabile da dove giriamo i test: l'unico modo onesto di saperlo è
+# guardare cosa il server ha effettivamente memorizzato.
+
+
+@router.get("/garmin/workouts")
+def get_garmin_workouts(limit: int = 10) -> dict:
+    """Gli ultimi allenamenti presenti su Garmin Connect."""
+    from app.services.garmin_export import _garmin_client
+
+    try:
+        rows = _garmin_client().get_workouts(0, max(1, min(limit, 50)))
+    except Exception as exc:  # noqa: BLE001 - upstream failure, reported as such
+        raise HTTPException(status_code=502, detail=str(exc)) from exc
+    return {
+        "workouts": [
+            {
+                "workout_id": w.get("workoutId"),
+                "name": w.get("workoutName"),
+                "sport": (w.get("sportType") or {}).get("sportTypeKey"),
+                "updated": w.get("updateDate"),
+            }
+            for w in (rows or [])
+        ]
+    }
+
+
+@router.get("/garmin/workouts/{workout_id}")
+def get_garmin_workout(workout_id: str) -> dict:
+    """Un allenamento come Garmin lo ha salvato, con i target normalizzati.
+
+    Il campo da guardare è `targetType` di ogni step: mostra quale
+    `workoutTargetTypeId` Garmin considera valido, che è l'unico modo per sapere
+    se un allenamento sta usando il passo o la velocità.
+    """
+    from app.services.garmin_export import _garmin_client
+
+    try:
+        return {"workout": _garmin_client().get_workout_by_id(workout_id)}
+    except Exception as exc:  # noqa: BLE001
+        raise HTTPException(status_code=502, detail=str(exc)) from exc

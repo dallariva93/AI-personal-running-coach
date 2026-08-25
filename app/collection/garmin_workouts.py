@@ -40,8 +40,30 @@ _END_DISTANCE = {"conditionTypeId": 3, "conditionTypeKey": "distance"}
 _END_TIME = {"conditionTypeId": 2, "conditionTypeKey": "time"}
 _END_ITERATIONS = {"conditionTypeId": 7, "conditionTypeKey": "iterations"}
 _END_LAP_BUTTON = {"conditionTypeId": 1, "conditionTypeKey": "lap.button"}
-_TARGET_SPEED = {"workoutTargetTypeId": 5, "workoutTargetTypeKey": "pace.zone"}
 _TARGET_NONE = {"workoutTargetTypeId": 1, "workoutTargetTypeKey": "no.target"}
+
+# Garmin decides the target from the **id**, not the key string: pairing id 5
+# ("speed.zone") with the key "pace.zone" produced workouts that showed speed in
+# km/h on the watch. The numbers sent are identical either way — metres per
+# second — so this only chooses how the target is displayed and enforced, but
+# for running that is the whole difference between a usable workout and one the
+# athlete has to convert in their head.
+#
+# Configurable because this is a vendor taxonomy we cannot query from here: if
+# the id below turns out to be wrong, it is a secret to change rather than a
+# deploy to wait for. Read one back with /api/garmin/workouts/{id} to see what
+# Garmin itself stores for a pace-targeted workout.
+_DEFAULT_PACE_TARGET_ID = 6
+
+
+def _pace_target() -> dict[str, Any]:
+    from app.config import get_settings
+
+    return {
+        "workoutTargetTypeId": get_settings().garmin_pace_target_id
+        or _DEFAULT_PACE_TARGET_ID,
+        "workoutTargetTypeKey": "pace.zone",
+    }
 
 # Default half-width of the pace window, in seconds per km, when a step does
 # not state its own. A single fixed value cannot serve every session: ±8 s is
@@ -129,7 +151,7 @@ def _executable(kind: str, order: int, step: dict[str, Any]) -> Any:
 
     speeds = _speed_range(step.get("pace"), _tolerance(step))
     if speeds:
-        fields["targetType"] = _TARGET_SPEED
+        fields["targetType"] = _pace_target()
         fields["targetValueOne"] = speeds[0]
         fields["targetValueTwo"] = speeds[1]
     else:

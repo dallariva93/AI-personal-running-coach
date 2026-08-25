@@ -90,6 +90,34 @@ def test_build_stepOrderIsContinuousAcrossRepeats():
 # ── targets ──────────────────────────────────────────────────────────────────
 
 
+def test_build_targetsPaceNotSpeed():
+    """Garmin reads the numeric id and ignores the key string.
+
+    Pairing id 5 (speed.zone) with the key "pace.zone" produced workouts that
+    showed km/h on the watch: the numbers sent are the same either way, so
+    nothing looked broken until the athlete was standing there reading speed.
+    """
+    step = _steps(build_workout("X", [{"kind": "interval", "distance_km": 1,
+                                       "pace": "4:00/km"}]))[0]
+
+    assert step["targetType"]["workoutTargetTypeKey"] == "pace.zone"
+    assert step["targetType"]["workoutTargetTypeId"] != 5  # 5 is speed.zone
+
+
+def test_build_paceTargetIdIsConfigurable(monkeypatch):
+    """A vendor taxonomy we cannot query from here: a secret, not a deploy."""
+    from app.config import get_settings
+
+    monkeypatch.setenv("GARMIN_PACE_TARGET_ID", "7")
+    get_settings.cache_clear()
+    try:
+        step = _steps(build_workout("X", [{"kind": "interval", "distance_km": 1,
+                                           "pace": "4:00/km"}]))[0]
+        assert step["targetType"]["workoutTargetTypeId"] == 7
+    finally:
+        get_settings.cache_clear()
+
+
 def test_build_paceBecomesARange_notAPoint():
     """A watch alerting on an exact figure beeps the whole session."""
     steps = _steps(build_workout("Ripetute", _INTERVALS))

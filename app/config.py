@@ -59,6 +59,14 @@ class Settings(BaseSettings):
     yazio_client_id: str = ""
     yazio_client_secret: str = ""
 
+    # -- Garmin workout export ----------------------------------------------
+    # Garmin picks a workout's target from the numeric id, not the key string.
+    # Id 5 is speed.zone (km/h on the watch), which is wrong for running; the
+    # pace id is not published in the client library and cannot be queried from
+    # this environment, so it stays configurable: being wrong here is a secret
+    # to change, not a deploy to wait for. 0 means "use the built-in default".
+    garmin_pace_target_id: int = 0
+
     # -- Anthropic / Claude --------------------------------------------------
     anthropic_api_key: str = ""
     coach_model: str = "claude-haiku-4-5-20251001"
