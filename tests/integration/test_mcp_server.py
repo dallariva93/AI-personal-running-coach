@@ -242,7 +242,11 @@ def test_mcp_exposesReadOnlyToolsAndCoachPrompt(mcp):
         # Nutrizione (Yazio)
         "get_nutrition",
         "get_food_diary",
-        # Export verso Garmin: l'unico tool che scrive, dietro conferma.
+        # Export verso Garmin, dietro conferma. Due coppie: le sedute che
+        # arrivano dalla chat (il piano vive nel progetto) e, in subordine, la
+        # settimana di un piano salvato nell'app.
+        "preview_garmin_sessions",
+        "push_garmin_sessions",
         "preview_garmin_week",
         "push_garmin_week",
     }
@@ -254,7 +258,7 @@ def test_mcp_exposesReadOnlyToolsAndCoachPrompt(mcp):
     # by test_generatePlanDraft_isMarkedAsDraftAndNotPersisted.
     # Whole words only: "physiology" contains "log" but writes nothing.
     write_verbs = {"create", "update", "delete", "save", "log", "set", "add", "remove"}
-    for name in names - {"push_garmin_week"}:
+    for name in names - {"push_garmin_week", "push_garmin_sessions"}:
         assert not (set(name.split("_")) & write_verbs), f"tool sospetto: {name}"
     assert [p.name for p in asyncio.run(mcp.list_prompts())] == ["running_coach"]
 
@@ -1045,3 +1049,36 @@ def test_pushGarminWeek_withoutAValidCode_refuses(mcp, session):
 
     assert out["pushed"] == 0
     assert out["error"]
+
+
+def test_pushGarminSessions_withoutAValidCode_refuses(mcp):
+    """The gate on the path that matters now: the week comes from the chat."""
+    out = _call(
+        mcp,
+        "push_garmin_sessions",
+        sessions=[{
+            "date": date.today().isoformat(), "title": "Test", "type": "easy",
+            "steps": [{"kind": "interval", "distance_km": 5.0, "pace": "5:30/km"}],
+        }],
+        confirm_code="NOPE12",
+    )
+
+    assert out["pushed"] == 0
+    assert out["error"]
+
+
+def test_previewGarminSessions_rendersTheWeekAndWarns(mcp, session):
+    """No history seeded: the preview must say so rather than look approving."""
+    out = _call(
+        mcp,
+        "preview_garmin_sessions",
+        sessions=[{
+            "date": date.today().isoformat(), "title": "Corsa facile", "type": "easy",
+            "steps": [{"kind": "interval", "distance_km": 8.0, "pace": "5:30/km",
+                       "tolerance_s": 25}],
+        }],
+    )
+
+    assert out["confirm_code"]
+    assert out["total_km"] == 8.0
+    assert out["warnings"]

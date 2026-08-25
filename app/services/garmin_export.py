@@ -309,3 +309,252 @@ def _garmin_client() -> Any:
 
     source = GarminSource()
     return source._login()  # noqa: SLF001 - same package, deliberate reuse
+
+
+# ── a week proposed by the coach, not read from a stored plan ────────────────
+#
+# The plan lives in the conversation, not in this database: the app is the
+# source of truth for what was *run*, and the coach decides what to run next.
+# That trade is the athlete's to make, but it costs the guarantees the
+# periodization engine used to provide for free — ramp limits, an easy/hard
+# balance, paces anchored to a measured threshold.
+#
+# So the engine stops authoring and starts checking. Nothing below blocks a
+# push: these are warnings the athlete reads in the preview, next to the
+# sessions they are about to approve.
+
+# A week more than this much bigger than the recent average is a ramp worth
+# naming. Not a rule — the athlete may be coming back from a taper — but the
+# single most common way a self-written plan hurts someone.
+_RAMP_WARN = 1.15
+# Above this share of weekly volume spent at quality pace, the 80/20 balance is
+# gone. Deliberately generous: the point is to catch 40 % weeks, not 22 % ones.
+_QUALITY_WARN = 0.30
+# A prescribed pace this much faster than the measured LT2 is either a mistake
+# or a very short repetition. Worth a second look either way.
+_PACE_WARN_RATIO = 0.88
+
+
+def _week_km(sessions: list[dict[str, Any]]) -> float:
+    total = 0.0
+    for entry in sessions:
+        total += _steps_km(entry.get("steps") or [])
+    return round(total, 1)
+
+
+def _steps_km(steps: list[Any], quality_only: bool = False) -> float:
+    from app.collection.garmin_workouts import _pace_seconds
+
+    total = 0.0
+    for step in steps:
+        if not isinstance(step, dict):
+            continue
+        if step.get("kind") == "repeat":
+            total += int(step.get("times") or 0) * _steps_km(
+                step.get("steps") or [], quality_only
+            )
+            continue
+        km = float(step.get("distance_km") or 0)
+        if not km:
+            continue
+        if quality_only:
+            # "Quality" is anything with a pace target meaningfully faster than
+            # conversational; a warmup carries a pace too, so the caller passes
+            # the threshold in via the step's own tolerance being tight.
+            tol = step.get("tolerance_s")
+            if tol is None or int(tol) > 10 or _pace_seconds(step.get("pace")) is None:
+                continue
+        total += km
+    return total
+
+
+def validate_week(session: Session, sessions: list[dict[str, Any]]) -> list[str]:
+    """Check a proposed week against what the athlete has actually been doing.
+
+    Returns plain-language warnings, never an exception: the coach and the
+    athlete decide, this only makes sure they decide knowing.
+    """
+    from app.collection.garmin_workouts import _pace_seconds
+    from app.processing import compute_metrics
+    from app.processing.performance import estimate_thresholds
+    from app.services import get_profile, latest_checkin
+    from app.services.ingest import _all_summaries
+
+    warnings: list[str] = []
+    runs = _all_summaries(session)
+    if not runs:
+        return ["Nessuno storico di corse: impossibile verificare questa settimana."]
+
+    metrics = compute_metrics(
+        runs, profile=get_profile(session), checkin=latest_checkin(session)
+    )
+    planned_km = _week_km(sessions)
+    recent_km = metrics.weekly_distance_km or 0.0
+
+    if recent_km > 0 and planned_km > recent_km * _RAMP_WARN:
+        warnings.append(
+            f"Volume in salita: {planned_km:g} km contro una media recente di "
+            f"{recent_km:.0f} km (+{(planned_km / recent_km - 1) * 100:.0f}%). "
+            "Oltre il 10-15% a settimana è il modo più comune di farsi male."
+        )
+
+    quality_km = sum(_steps_km(s.get("steps") or [], quality_only=True) for s in sessions)
+    if planned_km > 0 and quality_km / planned_km > _QUALITY_WARN:
+        warnings.append(
+            f"Qualità al {quality_km / planned_km * 100:.0f}% del volume "
+            f"({quality_km:g} km su {planned_km:g}): la distribuzione 80/20 "
+            "salta. Controlla che sia voluto."
+        )
+
+    physio = estimate_thresholds(runs)
+    lt2 = _pace_seconds(physio.lt2_pace) if physio and physio.lt2_pace else None
+    if lt2:
+        for entry in sessions:
+            for pace_s, label in _prescribed_paces(entry.get("steps") or []):
+                if pace_s < lt2 * _PACE_WARN_RATIO:
+                    warnings.append(
+                        f"«{entry.get('title', 'seduta')}»: {label} è più veloce "
+                        f"della soglia misurata ({physio.lt2_pace}) di oltre il "
+                        f"{(1 - _PACE_WARN_RATIO) * 100:.0f}%. Se non è una "
+                        "ripetuta breve, il ritmo non è ancorato ai tuoi dati."
+                    )
+                    break
+
+    return warnings
+
+
+def _prescribed_paces(steps: list[Any]) -> list[tuple[int, str]]:
+    from app.collection.garmin_workouts import _pace_seconds
+
+    found: list[tuple[int, str]] = []
+    for step in steps:
+        if not isinstance(step, dict):
+            continue
+        if step.get("kind") == "repeat":
+            found += _prescribed_paces(step.get("steps") or [])
+            continue
+        seconds = _pace_seconds(step.get("pace"))
+        if seconds:
+            found.append((seconds, str(step.get("pace"))))
+    return found
+
+
+def _normalise(sessions: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    """Validate the shape of a coach-proposed week. Refuses, never repairs."""
+    from app.collection.garmin_workouts import describe_steps
+
+    if not sessions:
+        raise CollectionError("Nessuna seduta da esportare.")
+    if len(sessions) > 7:
+        raise CollectionError(
+            "Una settimana per volta: al massimo 7 sedute in un export."
+        )
+
+    out: list[dict[str, Any]] = []
+    seen_dates: set[str] = set()
+    for entry in sessions:
+        if not isinstance(entry, dict):
+            raise CollectionError(f"Seduta non valida: {entry!r}")
+        when = str(entry.get("date") or "").strip()
+        try:
+            parsed = date.fromisoformat(when)
+        except ValueError as exc:
+            raise CollectionError(
+                f"Data non valida '{when}': serve YYYY-MM-DD."
+            ) from exc
+        if when in seen_dates:
+            raise CollectionError(f"Due sedute sullo stesso giorno ({when}).")
+        seen_dates.add(when)
+
+        steps = entry.get("steps")
+        if not isinstance(steps, list) or not steps:
+            raise CollectionError(
+                f"La seduta del {when} non ha step: senza struttura non può "
+                "finire sull'orologio."
+            )
+        out.append(
+            {
+                "date": parsed.isoformat(),
+                "title": str(entry.get("title") or "Allenamento")[:80],
+                "type": str(entry.get("type") or "run"),
+                "steps": steps,
+                "rendered": describe_steps(steps),
+            }
+        )
+
+    span = (max(seen_dates), min(seen_dates))
+    if (date.fromisoformat(span[0]) - date.fromisoformat(span[1])).days > 6:
+        raise CollectionError(
+            "Le sedute coprono più di 7 giorni: esporta una settimana per volta."
+        )
+    return sorted(out, key=lambda s: s["date"])
+
+
+def preview_sessions(
+    session: Session, sessions: list[dict[str, Any]]
+) -> dict[str, Any]:
+    """Render a coach-proposed week, with the engine's warnings attached."""
+    from app.collection.garmin_workouts import WorkoutBuildError, build_workout
+
+    entries = _normalise(sessions)
+
+    # Build every workout now, so a session that cannot be expressed fails here
+    # — in front of the athlete — rather than halfway through the push.
+    for entry in entries:
+        try:
+            build_workout(entry["title"], entry["steps"])
+        except WorkoutBuildError as exc:
+            raise CollectionError(f"{entry['date']} «{entry['title']}»: {exc}") from exc
+
+    fingerprint = _week_fingerprint([
+        {k: e[k] for k in ("date", "title", "steps")} for e in entries
+    ])
+    return {
+        "sessions_to_push": entries,
+        "warnings": validate_week(session, entries),
+        "total_km": _week_km(entries),
+        "confirm_code": _code_for(fingerprint, _bucket()),
+        "expires_in_minutes": CODE_TTL_S // 60,
+    }
+
+
+def push_sessions(
+    session: Session,
+    sessions: list[dict[str, Any]],
+    confirm_code: str,
+    *,
+    client: Any = None,
+) -> ExportResult:
+    """Upload and schedule a coach-proposed week. Requires a valid code."""
+    from app.collection.garmin_workouts import WorkoutBuildError, build_workout
+
+    entries = _normalise(sessions)
+    fingerprint = _week_fingerprint([
+        {k: e[k] for k in ("date", "title", "steps")} for e in entries
+    ])
+    now = _bucket()
+    valid = {_code_for(fingerprint, now), _code_for(fingerprint, now - 1)}
+    if not any(hmac.compare_digest((confirm_code or "").strip().upper(), c) for c in valid):
+        raise CollectionError(
+            "Codice di conferma non valido o scaduto. Deve essere quello "
+            "dell'anteprima di *queste* sedute: se ne è cambiata anche una, "
+            "rifai l'anteprima e falla rivedere prima di inviare."
+        )
+
+    client = client or _garmin_client()
+    result = ExportResult()
+    for entry in entries:
+        try:
+            workout = build_workout(entry["title"], entry["steps"])
+            created = client.upload_running_workout(workout)
+            workout_id = str(
+                created.get("workoutId") or created.get("workoutIdString") or ""
+            )
+            if not workout_id:
+                raise CollectionError("Garmin non ha restituito un workoutId.")
+            client.schedule_workout(workout_id, entry["date"])
+            result.pushed += 1
+        except (WorkoutBuildError, Exception) as exc:  # noqa: BLE001
+            result.errors.append(f"{entry['date']} {entry['title']}: {exc}")
+    logger.info("Export Garmin (sedute dalla chat): %s", result.as_dict())
+    return result

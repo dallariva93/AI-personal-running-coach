@@ -255,3 +255,199 @@ def test_previewAgainAfterPush_marksWhatIsAlreadyThere(session, plan):
     out = garmin_export.preview_week(session, 1)
 
     assert all(s["already_on_garmin"] for s in out["sessions_to_push"])
+
+
+# ── a week that lives in the conversation, not in the database ───────────────
+#
+# The plan is kept in the Claude project: this app is the source of truth for
+# what was *run*, not for what was prescribed. The engine stops authoring and
+# starts checking.
+
+
+def _week_from_chat(monday: date | None = None) -> list[dict]:
+    monday = monday or _monday()
+    return [
+        {
+            "date": (monday + timedelta(days=1)).isoformat(),
+            "title": "Ripetute 6×1000",
+            "type": "intervals",
+            "steps": [
+                {"kind": "warmup", "distance_km": 2.5, "pace": "5:30/km",
+                 "tolerance_s": 25},
+                {"kind": "repeat", "times": 6, "steps": [
+                    {"kind": "interval", "distance_km": 1.0, "pace": "4:00/km",
+                     "tolerance_s": 6},
+                    {"kind": "recovery", "duration_min": 2},
+                ]},
+                {"kind": "cooldown", "distance_km": 2.0, "pace": "5:30/km",
+                 "tolerance_s": 25},
+            ],
+        },
+        {
+            "date": (monday + timedelta(days=3)).isoformat(),
+            "title": "Corsa facile",
+            "type": "easy",
+            "steps": [{"kind": "interval", "distance_km": 8.0, "pace": "5:30/km",
+                       "tolerance_s": 25}],
+        },
+    ]
+
+
+def test_previewSessions_rendersAndReturnsACode(session):
+    out = garmin_export.preview_sessions(session, _week_from_chat())
+
+    assert len(out["sessions_to_push"]) == 2
+    assert out["confirm_code"]
+    assert out["total_km"] == 18.5  # 2.5 + 6×1 + 2 + 8
+    assert any("6×" in line for line in out["sessions_to_push"][0]["rendered"])
+
+
+def test_pushSessions_requiresTheCodeForThoseExactSessions(session):
+    client = FakeGarmin()
+    week = _week_from_chat()
+    code = garmin_export.preview_sessions(session, week)["confirm_code"]
+
+    # One rep more than what was approved.
+    changed = [dict(s) for s in week]
+    changed[0] = {**changed[0], "title": "Ripetute 8×1000"}
+
+    with pytest.raises(CollectionError):
+        garmin_export.push_sessions(session, changed, code, client=client)
+
+    assert client.uploaded == []
+
+
+def test_pushSessions_withTheRightCode_schedulesEachDay(session):
+    client = FakeGarmin()
+    week = _week_from_chat()
+    code = garmin_export.preview_sessions(session, week)["confirm_code"]
+
+    result = garmin_export.push_sessions(session, week, code, client=client)
+
+    assert result.pushed == 2
+    assert [d for _, d in client.scheduled] == [s["date"] for s in week]
+
+
+# ── the refusals: shape ──────────────────────────────────────────────────────
+
+
+def test_previewSessions_refusesMoreThanAWeek(session):
+    monday = _monday()
+    two_weeks = _week_from_chat() + [
+        {**_week_from_chat()[0], "date": (monday + timedelta(days=10)).isoformat()}
+    ]
+
+    with pytest.raises(CollectionError, match="settimana"):
+        garmin_export.preview_sessions(session, two_weeks)
+
+
+def test_previewSessions_refusesTwoSessionsOnTheSameDay(session):
+    week = _week_from_chat()
+    clash = [week[0], {**week[1], "date": week[0]["date"]}]
+
+    with pytest.raises(CollectionError, match="stesso giorno"):
+        garmin_export.preview_sessions(session, clash)
+
+
+def test_previewSessions_refusesASessionWithoutSteps(session):
+    week = _week_from_chat()
+    week[1] = {**week[1], "steps": []}
+
+    with pytest.raises(CollectionError, match="step"):
+        garmin_export.preview_sessions(session, week)
+
+
+def test_previewSessions_refusesABadDate(session):
+    week = _week_from_chat()
+    week[0] = {**week[0], "date": "martedì"}
+
+    with pytest.raises(CollectionError, match="Data non valida"):
+        garmin_export.preview_sessions(session, week)
+
+
+def test_previewSessions_failsOnAnUnbuildableSessionBeforeAnythingIsSent(session):
+    """Better to fail in front of the athlete than halfway through the push."""
+    week = _week_from_chat()
+    week[0]["steps"] = [{"kind": "repeat", "times": 0, "steps": []}]
+
+    with pytest.raises(CollectionError):
+        garmin_export.preview_sessions(session, week)
+
+
+# ── the engine as a checker ──────────────────────────────────────────────────
+
+
+def _seed_history(session, weekly_km: float, weeks: int = 4) -> None:
+    """Runs at a steady weekly volume, so the ramp check has a baseline."""
+    from app.schemas import RunSummary
+    from app.services.ingest import upsert_activity
+
+    today = date.today()
+    per_run = weekly_km / 4
+    for w in range(weeks):
+        for d in (0, 2, 4, 6):
+            upsert_activity(session, RunSummary(
+                date=(today - timedelta(days=w * 7 + d)).isoformat(),
+                activity_type="easy", distance_km=per_run,
+                duration_min=per_run * 5.5, avg_pace="5:30/km", avg_hr=140,
+            ))
+    session.commit()
+
+
+def test_validate_warnsWhenTheWeekRampsTooFast(session):
+    """The single most common way a self-written plan hurts someone.
+
+    18.5 km proposed against a 12 km/week base is a +54 % jump.
+    """
+    _seed_history(session, weekly_km=12.0)
+
+    out = garmin_export.preview_sessions(session, _week_from_chat())
+
+    assert any("Volume in salita" in w for w in out["warnings"])
+
+
+def test_validate_isQuietOnASensibleWeek(session):
+    _seed_history(session, weekly_km=40.0)
+
+    out = garmin_export.preview_sessions(session, _week_from_chat())
+
+    assert not [w for w in out["warnings"] if "Volume in salita" in w]
+
+
+def test_validate_warnsWhenQualityEatsTheWeek(session):
+    """80/20 gone: worth naming before it reaches the watch."""
+    _seed_history(session, weekly_km=40.0)
+    monday = _monday()
+    heavy = [
+        {
+            "date": (monday + timedelta(days=i)).isoformat(),
+            "title": f"Ripetute {i}", "type": "intervals",
+            "steps": [{"kind": "interval", "distance_km": 8.0, "pace": "4:00/km",
+                       "tolerance_s": 6}],
+        }
+        for i in range(3)
+    ]
+
+    out = garmin_export.preview_sessions(session, heavy)
+
+    assert any("Qualità al" in w for w in out["warnings"])
+
+
+def test_validate_withoutHistory_saysSoRatherThanApproving(session):
+    """No baseline is not the same as a clean bill of health."""
+    out = garmin_export.preview_sessions(session, _week_from_chat())
+
+    assert any("Nessuno storico" in w for w in out["warnings"])
+
+
+def test_validate_warningsNeverBlockThePush(session):
+    """The engine advises; the athlete and the coach decide."""
+    _seed_history(session, weekly_km=12.0)
+    client = FakeGarmin()
+    week = _week_from_chat()
+    out = garmin_export.preview_sessions(session, week)
+    assert out["warnings"]
+
+    result = garmin_export.push_sessions(session, week, out["confirm_code"], client=client)
+
+    assert result.pushed == 2

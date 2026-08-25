@@ -43,7 +43,12 @@ from app.processing.records import compute_personal_records
 from app.schemas import PlanGenerateRequest, RunSummary, TrainingMetrics
 from app.services import get_profile, hrv_history, latest_checkin
 from app.services.athlete_model_service import estimate_athlete_model
-from app.services.garmin_export import preview_week, push_week
+from app.services.garmin_export import (
+    preview_sessions,
+    preview_week,
+    push_sessions,
+    push_week,
+)
 from app.services.ingest import _activity_to_summary, _all_summaries, list_cross_training
 from app.services.plan_service import get_current_plan
 from app.services.yazio_sync import food_log, recent_nutrition
@@ -72,16 +77,24 @@ Due regole che valgono sempre:
 Chiama `get_athlete_physiology` prima di prescrivere passi: contiene LT1/LT2, \
 zone HR e il Digital Twin (tolleranza alla rampa, recupero, sensibilità al \
 caldo, durabilità) appreso dallo storico di questo atleta.
-* **I piani si generano con `generate_plan_draft`**, non a mano. Il motore \
-deterministico garantisce volumi coerenti, rampe limitate, scarichi e taper \
-al punto giusto. Tu interpreti e adatti il risultato; scrivere un piano \
-freehand reintroduce esattamente gli errori che il motore evita.
+* **Il piano lo tieni tu**, nel progetto: questo server è la fonte di verità \
+su ciò che è stato *corso*, non su ciò che è stato prescritto. Prima di \
+scrivere o aggiornare un piano parti dallo storico reale — \
+`get_training_history_summary`, `get_training_metrics`, \
+`get_athlete_physiology` — e non da assunzioni.
+
+`generate_plan_draft` resta disponibile come **secondo parere**: è il motore \
+deterministico, e ti dice che volumi, rampe, scarichi e taper prescriverebbe \
+una periodizzazione ortodossa per questo atleta. Usalo per confrontare il tuo \
+piano, non per sostituirlo.
 
 Attenzione al tipo di seduta: il campo `type` di un'attività è **dedotto** dal \
-payload Garmin e sbaglia spesso (una seduta di qualità può risultare "easy"). \
-Quando l'attività porta `planned`, quello è ciò che il piano prescriveva ed è \
-il dato attendibile — basa su quello la distribuzione delle intensità e \
-l'aderenza, altrimenti l'80/20 ti sembrerà sano proprio quando non lo è.
+payload Garmin e sbaglia spesso — una seduta di qualità può risultare "easy", \
+quindi l'80/20 calcolato dai dati può sembrare più sano di com'è. Il campo \
+`planned` è quasi sempre vuoto, perché il piano vive qui nel progetto e non \
+nel database: se ti serve sapere cosa prescriveva una seduta, guarda il piano \
+che hai tu, non aspettartelo dai dati. In dubbio, apri i lap con \
+`get_activity_detail`: la struttura reale di una seduta si vede lì.
 
 Il carico non è solo corsa: `get_cross_training` restituisce bici, nuoto e \
 palestra, che le metriche di corsa escludono di proposito. Consultalo prima di \
@@ -95,13 +108,14 @@ se guardi solo le corse. Controllalo prima di prescrivere un taglio di volume \
 sottostimano l'assunzione reale. `get_food_diary` scende al singolo alimento \
 di un giorno, e serve solo quando la domanda è *cosa* ha mangiato.
 
-Puoi mettere le sedute pianificate sull'orologio, ma **solo se te lo chiede** e \
-**una settimana per volta**: `preview_garmin_week` mostra cosa arriverebbe e \
-restituisce un codice, `push_garmin_week` invia. Fai sempre vedere l'anteprima \
-per intero e aspetta un sì esplicito prima di inviare — quello che approva non \
-è un numero su uno schermo, è la seduta che poi corre. Se il piano si adatta \
-nel frattempo il codice scade da solo: è voluto, rimostra l'anteprima. Non \
-esportare mai di tua iniziativa, né più settimane insieme.
+Puoi mettere le sedute sull'orologio, ma **solo se te lo chiede** e **una \
+settimana per volta**: `preview_garmin_sessions` mostra cosa arriverebbe e \
+restituisce un codice, `push_garmin_sessions` invia le stesse identiche \
+sedute. Fai sempre vedere l'anteprima per intero — e con essa i `warnings`, \
+dove il motore confronta la settimana con lo storico reale — e aspetta un sì \
+esplicito prima di inviare. Quello che l'atleta approva non è un numero su uno \
+schermo, è la seduta che poi corre. Non esportare mai di tua iniziativa, né \
+più settimane insieme.
 
 Quando un'attività ha `is_indoor: true` è un tapis roulant: il passo dipende \
 dalla calibrazione del nastro e non è confrontabile con quello su strada, il \
@@ -1128,8 +1142,84 @@ def build_mcp_server():  # noqa: ANN201 - FastMCP, imported lazily
             }
 
     @mcp.tool()
+    def preview_garmin_sessions(sessions: list[dict[str, Any]]) -> dict[str, Any]:
+        """Mostra cosa finirebbe sull'orologio per le sedute che gli passi.
+
+        Questo è il tool da usare quando il piano lo tieni tu (nel progetto,
+        nella conversazione) e non nel database dell'app.
+
+        Passa una settimana per volta, al massimo 7 sedute, ognuna così::
+
+            {"date": "2026-08-25", "title": "Ripetute 6×1000",
+             "type": "intervals",
+             "steps": [
+               {"kind": "warmup", "distance_km": 2.5, "pace": "5:30/km",
+                "tolerance_s": 25},
+               {"kind": "repeat", "times": 6, "steps": [
+                  {"kind": "interval", "distance_km": 1.0, "pace": "3:45/km",
+                   "tolerance_s": 6},
+                  {"kind": "recovery", "duration_min": 2}]},
+               {"kind": "cooldown", "distance_km": 2.0, "pace": "5:30/km",
+                "tolerance_s": 25}]}
+
+        `kind`: warmup | interval | recovery | cooldown | rest | repeat.
+        Ogni step vuole `distance_km` **oppure** `duration_min`; senza nessuno
+        dei due finisce al giro (lap). `pace` è opzionale: omettilo dove si
+        corre a sensazione (recuperi, allunghi) — non inventarlo.
+        `tolerance_s` è la semiampiezza della finestra di passo: **6** sulle
+        ripetute, **8** in soglia, **25** su facile, lungo, riscaldamento e
+        defaticamento. Una finestra stretta su una corsa facile fa suonare
+        l'orologio a ogni salitella.
+
+        **Ancora i passi a `get_athlete_physiology` (LT2), non al tempo
+        obiettivo.** Leggi `warnings`: il motore confronta la settimana con lo
+        storico reale (rampa del volume, quota di qualità, ritmi rispetto alla
+        soglia misurata) e ti dice cosa non torna. Non bloccano nulla, ma
+        riportali all'atleta insieme all'anteprima.
+
+        Non scrive niente: restituisce il `confirm_code` per
+        `push_garmin_sessions`.
+        """
+        with _db() as session:
+            try:
+                return preview_sessions(session, sessions)
+            except CollectionError as exc:
+                return {"error": str(exc), "sessions_to_push": []}
+
+    @mcp.tool()
+    def push_garmin_sessions(
+        sessions: list[dict[str, Any]], confirm_code: str
+    ) -> dict[str, Any]:
+        """Carica su Garmin le sedute mostrate in anteprima, a calendario.
+
+        Passa **le stesse identiche sedute** di `preview_garmin_sessions`
+        insieme al suo `confirm_code`: il codice è legato al loro contenuto, e
+        se ne cambi una smette di valere.
+
+        Chiamalo solo dopo un sì esplicito dell'atleta sull'anteprima. Non di
+        tua iniziativa, non nella stessa risposta dell'anteprima, non per più
+        di una settimana.
+        """
+        with _db() as session:
+            try:
+                result = push_sessions(session, sessions, confirm_code)
+            except CollectionError as exc:
+                return {"pushed": 0, "error": str(exc)}
+            return {
+                **result.as_dict(),
+                "hint": (
+                    "Sedute caricate e messe a calendario su Garmin Connect."
+                    if result.pushed
+                    else "Nessuna seduta caricata."
+                ),
+            }
+
+    @mcp.tool()
     def preview_garmin_week(week_number: int | None = None) -> dict[str, Any]:
-        """Mostra cosa finirebbe sull'orologio per una settimana del piano.
+        """Come sopra, ma per una settimana del piano **salvato nell'app**.
+
+        Serve solo se l'app tiene un piano attivo. Se il piano lo tieni tu nel
+        progetto, usa `preview_garmin_sessions`.
 
         Non scrive nulla: rende la settimana esattamente come arriverebbe su
         Garmin — step per step, con i range di passo — e restituisce un
