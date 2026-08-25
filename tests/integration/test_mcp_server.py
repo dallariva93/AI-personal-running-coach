@@ -242,13 +242,19 @@ def test_mcp_exposesReadOnlyToolsAndCoachPrompt(mcp):
         # Nutrizione (Yazio)
         "get_nutrition",
         "get_food_diary",
+        # Export verso Garmin: l'unico tool che scrive, dietro conferma.
+        "preview_garmin_week",
+        "push_garmin_week",
     }
-    # Nothing that writes: a leaked URL must not be able to change state.
+    # Nothing that writes *except* the Garmin export, which was added
+    # deliberately and is fenced by a content-bound confirmation code (see
+    # test_pushGarminWeek_*). The guard stays strict for everything else: a
+    # leaked URL must not be able to change state.
     # `generate_plan_draft` computes in memory and persists nothing — asserted
     # by test_generatePlanDraft_isMarkedAsDraftAndNotPersisted.
     # Whole words only: "physiology" contains "log" but writes nothing.
     write_verbs = {"create", "update", "delete", "save", "log", "set", "add", "remove"}
-    for name in names:
+    for name in names - {"push_garmin_week"}:
         assert not (set(name.split("_")) & write_verbs), f"tool sospetto: {name}"
     assert [p.name for p in asyncio.run(mcp.list_prompts())] == ["running_coach"]
 
@@ -1021,3 +1027,21 @@ def test_getFoodDiary_emptyDay_saysSo(mcp, session):
 
     assert out["items_found"] == 0
     assert out["hint"]
+
+
+# --------------------------------------------------------------------------
+# Garmin export — the only writing tool
+# --------------------------------------------------------------------------
+def test_previewGarminWeek_withoutAPlan_answersInsteadOfFailing(mcp):
+    out = _call(mcp, "preview_garmin_week")
+
+    assert out["sessions_to_push"] == []
+    assert out["error"]
+
+
+def test_pushGarminWeek_withoutAValidCode_refuses(mcp, session):
+    """The gate, from Claude's side: no code, nothing reaches the watch."""
+    out = _call(mcp, "push_garmin_week", week_number=1, confirm_code="NOPE12")
+
+    assert out["pushed"] == 0
+    assert out["error"]

@@ -137,6 +137,7 @@ def _session_from_spec(week_id: int, sess_data: dict) -> TrainingPlanSession:
             if sess_data.get("target_duration_min") is not None
             else None
         ),
+        steps=sess_data.get("steps"),
         completed=bool(sess_data.get("completed", False)),
         # P0-10: capture base prescription at creation time.
         base_target_distance_km=target_dist,

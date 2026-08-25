@@ -7,10 +7,14 @@ with ``app/services`` — so there is exactly one implementation of every metric
 
 Two design rules the tools follow:
 
-* **Read-only.** Nothing here mutates state. The connector is reachable from
-  the public internet behind an unguessable path, so the blast radius of a
-  leaked URL stays "someone read my running data", never "someone changed my
-  plan". Writes stay on the authenticated REST API.
+* **Read-only, with one deliberate exception.** Everything here reads. The one
+  tool that writes — ``push_garmin_week``, which puts the planned sessions on
+  the athlete's watch — was added knowingly, and is fenced: it does nothing
+  without a confirmation code that only ``preview_garmin_week`` issues, that is
+  bound to the week's exact content, and that expires. So the blast radius of a
+  leaked URL stays "someone read my running data", and a push cannot happen
+  without the preview having been shown first. Every other write stays on the
+  authenticated REST API.
 * **Parsimonious.** The chat context window is the scarce resource, not CPU.
   Tools return compact, pre-digested dicts (rounded floats, ISO dates, no ORM
   dumps); the expensive per-activity detail is a separate opt-in call.
@@ -30,6 +34,7 @@ from app.coaching.prompts import semantic_summary
 from app.config import get_settings
 from app.db.database import get_session_factory
 from app.db.models import Activity, DailyCheckinRow, TrainingPlanSession
+from app.exceptions import CollectionError
 from app.logging_config import get_logger
 from app.processing import compute_metrics
 from app.processing.performance import estimate_thresholds
@@ -38,6 +43,7 @@ from app.processing.records import compute_personal_records
 from app.schemas import PlanGenerateRequest, RunSummary, TrainingMetrics
 from app.services import get_profile, hrv_history, latest_checkin
 from app.services.athlete_model_service import estimate_athlete_model
+from app.services.garmin_export import preview_week, push_week
 from app.services.ingest import _activity_to_summary, _all_summaries, list_cross_training
 from app.services.plan_service import get_current_plan
 from app.services.yazio_sync import food_log, recent_nutrition
@@ -89,6 +95,14 @@ se guardi solo le corse. Controllalo prima di prescrivere un taglio di volume \
 sottostimano l'assunzione reale. `get_food_diary` scende al singolo alimento \
 di un giorno, e serve solo quando la domanda è *cosa* ha mangiato.
 
+Puoi mettere le sedute pianificate sull'orologio, ma **solo se te lo chiede** e \
+**una settimana per volta**: `preview_garmin_week` mostra cosa arriverebbe e \
+restituisce un codice, `push_garmin_week` invia. Fai sempre vedere l'anteprima \
+per intero e aspetta un sì esplicito prima di inviare — quello che approva non \
+è un numero su uno schermo, è la seduta che poi corre. Se il piano si adatta \
+nel frattempo il codice scade da solo: è voluto, rimostra l'anteprima. Non \
+esportare mai di tua iniziativa, né più settimane insieme.
+
 Quando un'attività ha `is_indoor: true` è un tapis roulant: il passo dipende \
 dalla calibrazione del nastro e non è confrontabile con quello su strada, il \
 dislivello a zero significa "nessun dato" e non "percorso piatto", e il meteo \
@@ -98,10 +112,11 @@ dislivello a zero significa "nessun dato" e non "percorso piatto", e il meteo \
 
 @contextmanager
 def _db() -> Iterator[Session]:
-    """A short-lived read-only session, one per tool call.
+    """A short-lived session, one per tool call.
 
-    Tools never write, so this deliberately does not commit: it opens, reads
-    and closes, keeping no transaction open between calls.
+    Deliberately does not commit: the reading tools have nothing to commit, and
+    the one writing tool (``push_garmin_week``) commits explicitly inside its
+    own service call, so an accidental write can never ride out on the way past.
     """
     session = get_session_factory()()
     try:
@@ -1109,6 +1124,57 @@ def build_mcp_server():  # noqa: ANN201 - FastMCP, imported lazily
                     "Nessuna voce registrata per questo giorno."
                     if not rows
                     else None
+                ),
+            }
+
+    @mcp.tool()
+    def preview_garmin_week(week_number: int | None = None) -> dict[str, Any]:
+        """Mostra cosa finirebbe sull'orologio per una settimana del piano.
+
+        Non scrive nulla: rende la settimana esattamente come arriverebbe su
+        Garmin — step per step, con i range di passo — e restituisce un
+        `confirm_code`.
+
+        Usalo **solo quando l'atleta chiede di esportare**. Mostragli
+        `sessions_to_push` per intero e chiedi conferma esplicita prima di
+        chiamare `push_garmin_week`: quello che sta approvando non è un numero
+        su uno schermo, è la seduta che poi corre davvero.
+
+        Guarda anche `not_exported`: le sedute senza struttura non vengono
+        inviate di proposito, e vale la pena dirglielo.
+        """
+        with _db() as session:
+            try:
+                return preview_week(session, week_number)
+            except CollectionError as exc:
+                return {"error": str(exc), "sessions_to_push": []}
+
+    @mcp.tool()
+    def push_garmin_week(week_number: int, confirm_code: str) -> dict[str, Any]:
+        """Carica su Garmin Connect le sedute della settimana, a calendario.
+
+        **L'unico tool di questo server che scrive**, e l'unico che tocca il
+        mondo esterno. Richiede il `confirm_code` di `preview_garmin_week`.
+
+        Chiamalo solo dopo che l'atleta ha visto l'anteprima e ha detto
+        esplicitamente di procedere. Non chiamarlo per iniziativa tua, non
+        incatenarlo all'anteprima nella stessa risposta, e non riusare un codice
+        di una conversazione precedente: se il piano nel frattempo si è
+        adattato, il codice non è più valido — è voluto, e significa che
+        l'atleta deve rivedere la settimana aggiornata prima di mandarla.
+        """
+        with _db() as session:
+            try:
+                result = push_week(session, week_number, confirm_code)
+            except CollectionError as exc:
+                return {"pushed": 0, "error": str(exc)}
+            return {
+                **result.as_dict(),
+                "week_number": week_number,
+                "hint": (
+                    "Sedute caricate e messe a calendario su Garmin Connect."
+                    if result.pushed or result.updated
+                    else "Nessuna seduta caricata."
                 ),
             }
 

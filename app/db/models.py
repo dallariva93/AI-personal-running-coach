@@ -640,6 +640,16 @@ class TrainingPlanSession(Base):
     execution_note: Mapped[str | None] = mapped_column(Text, nullable=True)
     execution_evidence: Mapped[list | None] = mapped_column(JSON, nullable=True)
     executed_activity_id: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    # The session as structure rather than prose: warmup / repeat×N / recovery /
+    # cooldown, with pace targets. The engine has always known these numbers; it
+    # used to spend them on a sentence, which meant anything downstream had to
+    # parse Italian back into integers to use them.
+    steps: Mapped[list | None] = mapped_column(JSON, nullable=True)
+    # Set once this session has been pushed to the Garmin calendar, so a second
+    # export updates the same workout instead of stacking duplicates on the
+    # watch — and so an adapted plan can withdraw what it already sent.
+    garmin_workout_id: Mapped[str | None] = mapped_column(String(32), nullable=True)
+    garmin_scheduled_date: Mapped[str | None] = mapped_column(String(10), nullable=True)
     # Multi-dimensional execution sub-scores stored as JSON (P0-5, P0-6).
     execution_detail: Mapped[dict | None] = mapped_column(JSON, nullable=True)
 

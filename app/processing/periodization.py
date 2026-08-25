@@ -719,12 +719,14 @@ def _spec_render(
             dow, "easy", "Corsa facile",
             f"Corsa facile in Z2 a {ep}. Ritmo di conversazione.",
             km, ep, round(km * _spec_pace_min(ep) + 0.5),
+            steps=[{"kind": "interval", "distance_km": km, "pace": ep}],
         )
     if stype == "long":
         return _spec_dict(
             dow, "long", "Lungo",
             f"Lungo in Z2 a {lp}. Parti piano, chiudi controllato.",
             km, lp, round(km * _spec_pace_min(lp) + 0.5),
+            steps=[{"kind": "interval", "distance_km": km, "pace": lp}],
         )
     if stype == "tempo":
         warm, cool = 2.0, 2.0
@@ -736,6 +738,11 @@ def _spec_render(
             round(warm + quality + cool, 1), tp,
             round(warm * _spec_pace_min(ep) + quality * _spec_pace_min(tp)
                   + cool * _spec_pace_min(ep) + 0.5),
+            steps=[
+                {"kind": "warmup", "distance_km": warm, "pace": ep},
+                {"kind": "interval", "distance_km": quality, "pace": tp},
+                {"kind": "cooldown", "distance_km": cool, "pace": ep},
+            ],
         )
     if stype == "intervals":
         reps = 5 if goal_type in ("marathon", "half") else 6
@@ -750,12 +757,38 @@ def _spec_render(
             round(warm + quality + cool, 1), ip,
             round(warm * _spec_pace_min(ep) + quality * _spec_pace_min(ip)
                   + reps * rec + cool * _spec_pace_min(ep) + 0.5),
+            steps=[
+                {"kind": "warmup", "distance_km": warm, "pace": ep},
+                {
+                    "kind": "repeat",
+                    "times": reps,
+                    "steps": [
+                        {"kind": "interval", "distance_km": rep_dist, "pace": ip},
+                        {"kind": "recovery", "duration_min": rec},
+                    ],
+                },
+                {"kind": "cooldown", "distance_km": cool, "pace": ep},
+            ],
         )
     if stype == "strides":
         return _spec_dict(
             dow, "strides", "Corsa con allunghi",
             f"{km:.0f} km facili a {ep} + 4-6 allunghi da 100 m con recupero.",
             km, ep, round(km * _spec_pace_min(ep) + 12 + 0.5),
+            steps=[
+                {"kind": "interval", "distance_km": km, "pace": ep},
+                {
+                    "kind": "repeat",
+                    "times": 5,
+                    "steps": [
+                        # No pace target: a stride is run by feel, and a range
+                        # here would have the watch beeping through a 100 m
+                        # acceleration.
+                        {"kind": "interval", "distance_km": 0.1},
+                        {"kind": "recovery", "duration_min": 1},
+                    ],
+                },
+            ],
         )
     if stype == "race":
         return _spec_dict(
@@ -776,7 +809,7 @@ def _spec_render(
     )
 
 
-def _spec_dict(dow, stype, title, desc, km, pace, dur) -> dict:
+def _spec_dict(dow, stype, title, desc, km, pace, dur, steps=None) -> dict:
     return {
         "day_of_week": dow,
         "session_type": stype,
@@ -785,6 +818,12 @@ def _spec_dict(dow, stype, title, desc, km, pace, dur) -> dict:
         "target_distance_km": km,
         "target_pace": pace,
         "target_duration_min": dur,
+        # The same session as structure rather than prose. The engine already
+        # knows the repetitions, their distance and the recovery — until now it
+        # spent those numbers on a sentence and threw them away, so anything
+        # downstream (a watch export, a stricter execution score) had to parse
+        # Italian back into integers. See app/collection/garmin_workouts.py.
+        "steps": steps,
     }
 
 
