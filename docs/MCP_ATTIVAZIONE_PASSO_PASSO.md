@@ -276,6 +276,27 @@ Così ogni chat dentro il progetto parte già calibrata, senza doverlo ripetere.
 
 ## Se qualcosa non va
 
+### "Impossibile registrarsi con il servizio di accesso"
+
+Compare quando aggiungi il connettore su claude.ai, con un riferimento tipo
+`ofid_...`. **Non è un problema di credenziali.**
+
+Claude, prima di collegarsi, chiede a `/.well-known/oauth-protected-resource` se
+il server usa OAuth. Se quel percorso risponde 401 (la pagina di login), Claude
+capisce "c'è un sistema di autenticazione" e prova a registrarsi come client
+OAuth — cosa che questo server non offre, perché la credenziale è l'indirizzo
+segreto.
+
+Deve rispondere **404**. Verifica così:
+
+```powershell
+curl.exe -i https://ai-running-coach.fly.dev/.well-known/oauth-protected-resource
+```
+
+- `HTTP/2 404` → giusto, il problema è altrove
+- `HTTP/2 401` → il server è indietro di un deploy: aspetta che finisca e riprova
+
+
 | Cosa vedi | Perché | Cosa fare |
 |---|---|---|
 | `404` o *"Not Found"* | Il connettore è spento, o l'indirizzo è sbagliato | Controlla con `fly secrets list` che ci sia `MCP_PATH_TOKEN`; ricontrolla di aver incollato la chiave giusta e la `/` finale |

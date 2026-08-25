@@ -29,6 +29,17 @@ _PUBLIC_PREFIXES = (
     "/api/strava/callback",
     "/static",
     "/favicon.ico",
+    # Discovery probes, which must be allowed through in order to 404.
+    #
+    # A client adding the MCP connector asks for
+    # /.well-known/oauth-protected-resource to find out whether this server
+    # needs OAuth. Behind the auth gate that request got a 401 with the login
+    # page — which reads as "yes, there is an authorization server here", so the
+    # client tries to register itself as an OAuth client, finds no registration
+    # endpoint, and fails with "impossibile registrarsi con il servizio di
+    # accesso". Nothing is served under this prefix, so letting it past the gate
+    # produces the honest answer: 404, no OAuth, connect with the secret path.
+    "/.well-known/",
 )
 
 _LOGIN_HTML = """<!doctype html><html lang="it"><head><meta charset="utf-8">

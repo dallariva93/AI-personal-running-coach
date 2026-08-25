@@ -1082,3 +1082,66 @@ def test_previewGarminSessions_rendersTheWeekAndWarns(mcp, session):
     assert out["confirm_code"]
     assert out["total_km"] == 8.0
     assert out["warnings"]
+
+
+# --------------------------------------------------------------------------
+# OAuth discovery — the probe that decides whether the connector can be added
+# --------------------------------------------------------------------------
+@pytest.mark.parametrize(
+    "path",
+    [
+        "/.well-known/oauth-protected-resource",
+        "/.well-known/oauth-authorization-server",
+        f"/.well-known/oauth-protected-resource/mcp-{TOKEN}",
+    ],
+)
+def test_oauthDiscovery_is404_notALoginPage(db_env, monkeypatch, path):
+    """A 401 here breaks adding the connector, and the failure names OAuth.
+
+    claude.ai probes these to decide whether the server needs OAuth. Behind the
+    auth gate they answered 401 with the login HTML, which reads as "there is an
+    authorization server" — so the client tried to register itself, found no
+    registration endpoint, and gave up with "impossibile registrarsi con il
+    servizio di accesso". 404 is the honest answer: no OAuth here.
+    """
+    from fastapi.testclient import TestClient
+
+    from app.config import get_settings
+
+    monkeypatch.setenv("API_TOKEN", "an-api-token")
+    monkeypatch.setenv("MCP_PATH_TOKEN", TOKEN)
+    get_settings.cache_clear()
+    import app.main as main_module
+
+    importlib.reload(main_module)
+    try:
+        with TestClient(main_module.app) as c:
+            resp = c.get(path)
+            assert resp.status_code == 404
+            assert "Token di accesso" not in resp.text  # not the login page
+    finally:
+        monkeypatch.delenv("API_TOKEN", raising=False)
+        monkeypatch.delenv("MCP_PATH_TOKEN", raising=False)
+        get_settings.cache_clear()
+        importlib.reload(main_module)
+
+
+def test_wellKnown_doesNotOpenTheRestOfTheApp(db_env, monkeypatch):
+    """The exemption is for discovery only: everything else stays gated."""
+    from fastapi.testclient import TestClient
+
+    from app.config import get_settings
+
+    monkeypatch.setenv("API_TOKEN", "an-api-token")
+    get_settings.cache_clear()
+    import app.main as main_module
+
+    importlib.reload(main_module)
+    try:
+        with TestClient(main_module.app) as c:
+            assert c.get("/api/metrics").status_code == 401
+            assert c.get("/api/activities").status_code == 401
+    finally:
+        monkeypatch.delenv("API_TOKEN", raising=False)
+        get_settings.cache_clear()
+        importlib.reload(main_module)
