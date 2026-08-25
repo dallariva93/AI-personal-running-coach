@@ -43,9 +43,11 @@ _END_LAP_BUTTON = {"conditionTypeId": 1, "conditionTypeKey": "lap.button"}
 _TARGET_SPEED = {"workoutTargetTypeId": 5, "workoutTargetTypeKey": "pace.zone"}
 _TARGET_NONE = {"workoutTargetTypeId": 1, "workoutTargetTypeKey": "no.target"}
 
-# How wide the pace window around the prescribed pace is, in seconds per km.
-# Tight enough to still mean something, loose enough that a hill or a corner
-# does not set the watch beeping.
+# Default half-width of the pace window, in seconds per km, when a step does
+# not state its own. A single fixed value cannot serve every session: ±8 s is
+# sensible on a repetition and far too tight on an easy run, where 16 seconds of
+# range means the watch complains at every rise and every junction. The engine
+# knows the intent and sets `tolerance_s` per step; this is only the fallback.
 PACE_TOLERANCE_S = 8
 
 
@@ -72,13 +74,22 @@ def pace_to_mps(pace: str | None) -> float | None:
     return 1000.0 / total_s
 
 
-def _speed_range(pace: str | None) -> tuple[float, float] | None:
+def _tolerance(step: dict[str, Any]) -> int:
+    """How much slack this step allows, in seconds per km."""
+    value = step.get("tolerance_s")
+    try:
+        return max(1, int(value)) if value is not None else PACE_TOLERANCE_S
+    except (TypeError, ValueError):
+        return PACE_TOLERANCE_S
+
+
+def _speed_range(pace: str | None, tolerance_s: int) -> tuple[float, float] | None:
     """A (slow, fast) speed window in m/s around ``pace``."""
     seconds = _pace_seconds(pace)
     if seconds is None:
         return None
-    slow = 1000.0 / (seconds + PACE_TOLERANCE_S)
-    fast = 1000.0 / max(1, seconds - PACE_TOLERANCE_S)
+    slow = 1000.0 / (seconds + tolerance_s)
+    fast = 1000.0 / max(1, seconds - tolerance_s)
     return round(slow, 3), round(fast, 3)
 
 
@@ -116,7 +127,7 @@ def _executable(kind: str, order: int, step: dict[str, Any]) -> Any:
         "endConditionValue": value,
     }
 
-    speeds = _speed_range(step.get("pace"))
+    speeds = _speed_range(step.get("pace"), _tolerance(step))
     if speeds:
         fields["targetType"] = _TARGET_SPEED
         fields["targetValueOne"] = speeds[0]
@@ -260,7 +271,8 @@ def _target(step: dict[str, Any]) -> str:
     seconds = _pace_seconds(step.get("pace"))
     if seconds is None:
         return " (a sensazione)"
-    return f" @ {_mmss(seconds - PACE_TOLERANCE_S)}–{_mmss(seconds + PACE_TOLERANCE_S)}/km"
+    tol = _tolerance(step)
+    return f" @ {_mmss(seconds - tol)}–{_mmss(seconds + tol)}/km"
 
 
 def _mmss(seconds: int) -> str:

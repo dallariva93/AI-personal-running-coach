@@ -19,12 +19,12 @@ from app.collection.garmin_workouts import (
 )
 
 _INTERVALS = [
-    {"kind": "warmup", "distance_km": 2.5, "pace": "5:30/km"},
+    {"kind": "warmup", "distance_km": 2.5, "pace": "5:30/km", "tolerance_s": 25},
     {"kind": "repeat", "times": 6, "steps": [
-        {"kind": "interval", "distance_km": 1.0, "pace": "3:45/km"},
+        {"kind": "interval", "distance_km": 1.0, "pace": "3:45/km", "tolerance_s": 6},
         {"kind": "recovery", "duration_min": 2},
     ]},
-    {"kind": "cooldown", "distance_km": 2.0, "pace": "5:30/km"},
+    {"kind": "cooldown", "distance_km": 2.0, "pace": "5:30/km", "tolerance_s": 25},
 ]
 
 
@@ -98,9 +98,44 @@ def test_build_paceBecomesARange_notAPoint():
     assert work["targetType"]["workoutTargetTypeKey"] == "pace.zone"
     slow, fast = work["targetValueOne"], work["targetValueTwo"]
     assert slow < fast
-    # The window is the prescribed pace ± the tolerance, expressed as speed.
-    assert slow == pytest.approx(1000 / (225 + PACE_TOLERANCE_S), rel=1e-3)
-    assert fast == pytest.approx(1000 / (225 - PACE_TOLERANCE_S), rel=1e-3)
+    # The window is the prescribed pace ± this step's own tolerance, as speed.
+    assert slow == pytest.approx(1000 / (225 + 6), rel=1e-3)
+    assert fast == pytest.approx(1000 / (225 - 6), rel=1e-3)
+
+
+def test_build_toleranceIsPerStep_notOnePolicyForEverything():
+    """A repetition wants precision; the warmup around it does not.
+
+    One fixed width cannot serve both: ±8 s is sensible on a 1 km rep and far
+    too tight on easy running, where it makes the watch complain at every rise —
+    which teaches the athlete to ignore the alert, including when it matters.
+    """
+    steps = _steps(build_workout("Ripetute", _INTERVALS))
+    warmup = steps[0]
+    rep = steps[1]["workoutSteps"][0]
+
+    def _width(step):
+        return 1000 / step["targetValueOne"] - 1000 / step["targetValueTwo"]
+
+    assert _width(warmup) == pytest.approx(50, abs=1)  # ±25 s
+    assert _width(rep) == pytest.approx(12, abs=1)  # ±6 s
+    assert _width(warmup) > _width(rep)
+
+
+def test_build_withoutTolerance_usesTheDefault():
+    step = _steps(build_workout("X", [{"kind": "interval", "distance_km": 1,
+                                       "pace": "5:00/km"}]))[0]
+
+    assert step["targetValueOne"] == pytest.approx(
+        1000 / (300 + PACE_TOLERANCE_S), rel=1e-3
+    )
+
+
+def test_build_malformedTolerance_fallsBackInsteadOfCrashing():
+    for bad in ["molto", None, -5]:
+        step = _steps(build_workout("X", [{"kind": "interval", "distance_km": 1,
+                                           "pace": "5:00/km", "tolerance_s": bad}]))[0]
+        assert step["targetValueOne"] > 0
 
 
 def test_build_noPaceMeansNoTarget_notAGuess():
@@ -162,6 +197,15 @@ def test_describe_showsThePaceWindow():
     line = describe_steps([{"kind": "interval", "distance_km": 1, "pace": "3:45/km"}])[0]
 
     assert "3:37–3:53/km" in line
+
+
+def test_describe_showsTheStepsOwnWindow():
+    """The preview must show the real width, not the default one."""
+    line = describe_steps(
+        [{"kind": "interval", "distance_km": 8, "pace": "5:30/km", "tolerance_s": 25}]
+    )[0]
+
+    assert "5:05–5:55/km" in line
 
 
 def test_describe_emptyIsEmpty():

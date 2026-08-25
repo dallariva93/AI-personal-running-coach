@@ -719,14 +719,20 @@ def _spec_render(
             dow, "easy", "Corsa facile",
             f"Corsa facile in Z2 a {ep}. Ritmo di conversazione.",
             km, ep, round(km * _spec_pace_min(ep) + 0.5),
-            steps=[{"kind": "interval", "distance_km": km, "pace": ep}],
+            steps=[
+                {"kind": "interval", "distance_km": km, "pace": ep,
+                 "tolerance_s": TOL_EASY_S},
+            ],
         )
     if stype == "long":
         return _spec_dict(
             dow, "long", "Lungo",
             f"Lungo in Z2 a {lp}. Parti piano, chiudi controllato.",
             km, lp, round(km * _spec_pace_min(lp) + 0.5),
-            steps=[{"kind": "interval", "distance_km": km, "pace": lp}],
+            steps=[
+                {"kind": "interval", "distance_km": km, "pace": lp,
+                 "tolerance_s": TOL_EASY_S},
+            ],
         )
     if stype == "tempo":
         warm, cool = 2.0, 2.0
@@ -739,9 +745,12 @@ def _spec_render(
             round(warm * _spec_pace_min(ep) + quality * _spec_pace_min(tp)
                   + cool * _spec_pace_min(ep) + 0.5),
             steps=[
-                {"kind": "warmup", "distance_km": warm, "pace": ep},
-                {"kind": "interval", "distance_km": quality, "pace": tp},
-                {"kind": "cooldown", "distance_km": cool, "pace": ep},
+                {"kind": "warmup", "distance_km": warm, "pace": ep,
+                 "tolerance_s": TOL_EASY_S},
+                {"kind": "interval", "distance_km": quality, "pace": tp,
+                 "tolerance_s": TOL_THRESHOLD_S},
+                {"kind": "cooldown", "distance_km": cool, "pace": ep,
+                 "tolerance_s": TOL_EASY_S},
             ],
         )
     if stype == "intervals":
@@ -758,16 +767,19 @@ def _spec_render(
             round(warm * _spec_pace_min(ep) + quality * _spec_pace_min(ip)
                   + reps * rec + cool * _spec_pace_min(ep) + 0.5),
             steps=[
-                {"kind": "warmup", "distance_km": warm, "pace": ep},
+                {"kind": "warmup", "distance_km": warm, "pace": ep,
+                 "tolerance_s": TOL_EASY_S},
                 {
                     "kind": "repeat",
                     "times": reps,
                     "steps": [
-                        {"kind": "interval", "distance_km": rep_dist, "pace": ip},
+                        {"kind": "interval", "distance_km": rep_dist, "pace": ip,
+                         "tolerance_s": TOL_QUALITY_S},
                         {"kind": "recovery", "duration_min": rec},
                     ],
                 },
-                {"kind": "cooldown", "distance_km": cool, "pace": ep},
+                {"kind": "cooldown", "distance_km": cool, "pace": ep,
+                 "tolerance_s": TOL_EASY_S},
             ],
         )
     if stype == "strides":
@@ -776,7 +788,8 @@ def _spec_render(
             f"{km:.0f} km facili a {ep} + 4-6 allunghi da 100 m con recupero.",
             km, ep, round(km * _spec_pace_min(ep) + 12 + 0.5),
             steps=[
-                {"kind": "interval", "distance_km": km, "pace": ep},
+                {"kind": "interval", "distance_km": km, "pace": ep,
+                 "tolerance_s": TOL_EASY_S},
                 {
                     "kind": "repeat",
                     "times": 5,
@@ -807,6 +820,15 @@ def _spec_render(
         "Recupero completo. Stretching leggero se desiderato.",
         None, None, None,
     )
+
+
+# How tightly each kind of running should be held to its prescribed pace, in
+# seconds per km either side. Quality work is a target and wants precision; easy
+# running is a *zone*, and a narrow band there just makes the watch complain at
+# every rise — which trains the athlete to ignore it, including when it matters.
+TOL_QUALITY_S = 6      # repetitions: the point is to hit the pace
+TOL_THRESHOLD_S = 8    # tempo: threshold has a little more room
+TOL_EASY_S = 25        # easy, long, warmup, cooldown: a range, not a bullseye
 
 
 def _spec_dict(dow, stype, title, desc, km, pace, dur, steps=None) -> dict:
