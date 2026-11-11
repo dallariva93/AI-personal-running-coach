@@ -451,3 +451,51 @@ def test_validate_warningsNeverBlockThePush(session):
     result = garmin_export.push_sessions(session, week, out["confirm_code"], client=client)
 
     assert result.pushed == 2
+
+
+
+# ── the coach's calendar ─────────────────────────────────────────────────────
+
+
+class _Calendar:
+    def __init__(self, items):
+        self.items = items
+
+    def get_scheduled_workouts(self, year, month):
+        return {"calendarItems": self.items}
+
+    def connectapi(self, path, params=None):
+        return []
+
+
+def test_preview_warnsWhenACoachSessionIsAlreadyThere(session):
+    """Two prescriptions for one day make the athlete choose — say so first."""
+    week = _week_from_chat()
+    coach = _Calendar([{"itemType": "workout", "title": "6km FMV",
+                        "date": week[0]["date"], "workoutId": 555}])
+
+    out = garmin_export.preview_sessions(session, week, client=coach)
+
+    clashes = [w for w in out["warnings"] if "6km FMV" in w]
+    assert len(clashes) == 1
+    assert week[0]["date"] in clashes[0]
+
+
+def test_preview_freeDays_noCalendarWarning(session):
+    out = garmin_export.preview_sessions(session, _week_from_chat(), client=_Calendar([]))
+
+    assert not [w for w in out["warnings"] if "in calendario" in w]
+
+
+def test_preview_unreadableCalendar_saysSoInsteadOfStayingSilent(session):
+    class _Broken:
+        def get_scheduled_workouts(self, year, month):
+            raise RuntimeError("Garmin 500")
+
+        def connectapi(self, path, params=None):
+            raise RuntimeError("Garmin 500")
+
+    out = garmin_export.preview_sessions(session, _week_from_chat(), client=_Broken())
+
+    # Both views failed: an empty result is "unknown", and must not read as "free".
+    assert any("non verificabile" in w for w in out["warnings"])

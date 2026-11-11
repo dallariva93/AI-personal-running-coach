@@ -491,9 +491,14 @@ def _normalise(sessions: list[dict[str, Any]]) -> list[dict[str, Any]]:
 
 
 def preview_sessions(
-    session: Session, sessions: list[dict[str, Any]]
+    session: Session, sessions: list[dict[str, Any]], *, client: Any = None
 ) -> dict[str, Any]:
-    """Render a coach-proposed week, with the engine's warnings attached."""
+    """Render a proposed week, with the engine's warnings attached.
+
+    ``client`` is the Garmin client used to check the athlete's calendar for
+    sessions their coach already placed there; when omitted it is created only
+    if Garmin credentials are configured.
+    """
     from app.collection.garmin_workouts import WorkoutBuildError, build_workout
 
     entries = _normalise(sessions)
@@ -509,9 +514,10 @@ def preview_sessions(
     fingerprint = _week_fingerprint([
         {k: e[k] for k in ("date", "title", "steps")} for e in entries
     ])
+    warnings = validate_week(session, entries) + _calendar_conflicts(entries, client)
     return {
         "sessions_to_push": entries,
-        "warnings": validate_week(session, entries),
+        "warnings": warnings,
         "total_km": _week_km(entries),
         "confirm_code": _code_for(fingerprint, _bucket()),
         "expires_in_minutes": CODE_TTL_S // 60,
@@ -558,3 +564,52 @@ def push_sessions(
             result.errors.append(f"{entry['date']} {entry['title']}: {exc}")
     logger.info("Export Garmin (sedute dalla chat): %s", result.as_dict())
     return result
+
+
+def _calendar_conflicts(entries: list[dict[str, Any]], client: Any = None) -> list[str]:
+    """Days in the proposed week that already hold a session in Garmin.
+
+    The athlete's coach prescribes through that calendar, so a session pushed on
+    top of one of theirs is two prescriptions for the same day — the athlete has
+    to pick, and should not have to discover it on the watch. Best-effort: when
+    the calendar cannot be read the preview says so instead of staying silent,
+    because silence would read as "no conflicts".
+    """
+    from app.config import get_settings
+    from app.services.garmin_calendar import read_calendar
+
+    if client is None:
+        if not get_settings().garmin_enabled:
+            return []
+        try:
+            client = _garmin_client()
+        except Exception as exc:  # noqa: BLE001
+            return [f"Calendario Garmin non verificabile ({exc}): controlla tu "
+                    "che i giorni non abbiano già una seduta del coach."]
+
+    days = sorted({date.fromisoformat(e["date"]) for e in entries})
+    try:
+        calendar = read_calendar(client, days[0], days[-1])
+    except Exception as exc:  # noqa: BLE001
+        return [f"Calendario Garmin non verificabile ({exc})."]
+
+    warnings: list[str] = []
+    if calendar["errors"] and not calendar["items"]:
+        # Both views failed (or one failed and the other was empty): an empty
+        # result here means "unknown", not "free", and must not read as the latter.
+        warnings.append(
+            "Calendario Garmin non verificabile ("
+            + "; ".join(calendar["errors"])
+            + "): controlla tu che i giorni non abbiano già una seduta del coach."
+        )
+
+    taken: dict[str, list[str]] = {}
+    for item in calendar["items"]:
+        taken.setdefault(item["date"].isoformat(), []).append(item["title"])
+    return warnings + [
+        f"Il {e['date']} c'è già in calendario «{', '.join(taken[e['date']])}»: "
+        "probabilmente una seduta del coach. Due prescrizioni lo stesso giorno "
+        "costringono l'atleta a scegliere — non inviare senza averne parlato."
+        for e in entries
+        if e["date"] in taken
+    ]

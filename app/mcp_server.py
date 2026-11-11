@@ -77,24 +77,27 @@ Due regole che valgono sempre:
 Chiama `get_athlete_physiology` prima di prescrivere passi: contiene LT1/LT2, \
 zone HR e il Digital Twin (tolleranza alla rampa, recupero, sensibilità al \
 caldo, durabilità) appreso dallo storico di questo atleta.
-* **Il piano lo tieni tu**, nel progetto: questo server è la fonte di verità \
-su ciò che è stato *corso*, non su ciò che è stato prescritto. Prima di \
-scrivere o aggiornare un piano parti dallo storico reale — \
-`get_training_history_summary`, `get_training_metrics`, \
-`get_athlete_physiology` — e non da assunzioni.
+* **Le sedute le prescrive il coach dell'atleta**, una persona, che le mette \
+ogni settimana nel calendario Garmin. `get_scheduled_workouts` le restituisce \
+con step, ritmi e note. Il tuo ruolo è analizzare — cosa era prescritto contro \
+cosa è stato corso, come risponde l'atleta al carico — e occuparti di quello \
+che il coach non copre. Non sostituire, spostare o contraddire una sua seduta: \
+se pensi che vada cambiata, dillo all'atleta con le ragioni, e sarà lui a \
+parlarne col coach.
 
-`generate_plan_draft` resta disponibile come **secondo parere**: è il motore \
-deterministico, e ti dice che volumi, rampe, scarichi e taper prescriverebbe \
-una periodizzazione ortodossa per questo atleta. Usalo per confrontare il tuo \
-piano, non per sostituirlo.
+Prima di qualunque valutazione parti dallo storico reale — \
+`get_training_history_summary`, `get_training_metrics`, \
+`get_athlete_physiology` — e non da assunzioni. `generate_plan_draft` è il \
+motore deterministico: un **secondo parere** su volumi, rampe e scarichi, utile \
+per un confronto, mai da proporre al posto del lavoro del coach.
 
 Attenzione al tipo di seduta: il campo `type` di un'attività è **dedotto** dal \
 payload Garmin e sbaglia spesso — una seduta di qualità può risultare "easy", \
 quindi l'80/20 calcolato dai dati può sembrare più sano di com'è. Il campo \
-`planned` è quasi sempre vuoto, perché il piano vive qui nel progetto e non \
-nel database: se ti serve sapere cosa prescriveva una seduta, guarda il piano \
-che hai tu, non aspettartelo dai dati. In dubbio, apri i lap con \
-`get_activity_detail`: la struttura reale di una seduta si vede lì.
+`planned` è quasi sempre vuoto: cosa era stato chiesto lo trovi nel calendario \
+del coach, con `get_scheduled_workouts`, che per i giorni passati riporta \
+anche le corse eseguite. Per sapere se ripetute e cambi di ritmo sono stati \
+tenuti davvero, apri i lap con `get_activity_detail`.
 
 Il carico non è solo corsa: `get_cross_training` restituisce bici, nuoto e \
 palestra, che le metriche di corsa escludono di proposito. Consultalo prima di \
@@ -115,7 +118,8 @@ sedute. Fai sempre vedere l'anteprima per intero — e con essa i `warnings`, \
 dove il motore confronta la settimana con lo storico reale — e aspetta un sì \
 esplicito prima di inviare. Quello che l'atleta approva non è un numero su uno \
 schermo, è la seduta che poi corre. Non esportare mai di tua iniziativa, né \
-più settimane insieme.
+più settimane insieme, e mai su un giorno che ha già una seduta del coach: \
+l'anteprima lo segnala nei `warnings`.
 
 Quando un'attività ha `is_indoor: true` è un tapis roulant: il passo dipende \
 dalla calibrazione del nastro e non è confrontabile con quello su strada, il \
@@ -137,6 +141,9 @@ def _db() -> Iterator[Session]:
         yield session
     finally:
         session.close()
+
+
+_WEEKDAYS_IT = ("lunedì", "martedì", "mercoledì", "giovedì", "venerdì", "sabato", "domenica")
 
 
 def _r(value: float | None, digits: int = 1) -> float | None:
@@ -1140,6 +1147,112 @@ def build_mcp_server():  # noqa: ANN201 - FastMCP, imported lazily
                     else None
                 ),
             }
+
+    @mcp.tool()
+    def get_scheduled_workouts(
+        start_date: str | None = None,
+        end_date: str | None = None,
+        include_raw: bool = False,
+    ) -> dict[str, Any]:
+        """Le sedute che il coach ha messo nel calendario Garmin, con la loro struttura.
+
+        È la **prescrizione**: cosa è stato chiesto all'atleta, giorno per
+        giorno. Ogni seduta porta gli step (distanze, durate, range di passo o
+        FC) e le note del coach — una sigla come "6km FMV" ha un significato
+        preciso per loro due, ed è negli step e nelle note che lo trovi.
+
+        Per i giorni già passati c'è anche `executed`: le corse effettivamente
+        registrate quel giorno. Confronta prescritto ed eseguito; per vedere se
+        le ripetute o i cambi di ritmo sono stati tenuti davvero apri i lap con
+        `get_activity_detail`.
+
+        Default: dalla settimana scorsa alle prossime due. Al massimo 62 giorni.
+        `include_raw` restituisce anche i payload Garmin grezzi — serve solo se
+        una seduta risulta illeggibile.
+        """
+        from app.services.garmin_calendar import (
+            default_window,
+            describe_garmin_workout,
+            read_calendar,
+        )
+        from app.services.garmin_export import _garmin_client
+
+        start, end = default_window()
+        start = _parse_date(start_date, "start_date") or start
+        end = _parse_date(end_date, "end_date") or end
+        if end < start:
+            start, end = end, start
+        if (end - start).days > 62:
+            return {"error": "Intervallo troppo lungo: al massimo 62 giorni.", "workouts": []}
+
+        try:
+            client = _garmin_client()
+        except Exception as exc:  # noqa: BLE001 - reported, not raised
+            return {"error": f"Garmin non raggiungibile: {exc}", "workouts": []}
+
+        calendar = read_calendar(client, start, end)
+        errors = list(calendar["errors"])
+        today = date.today()
+        fetched: dict[str, Any] = {}
+        workouts: list[dict[str, Any]] = []
+
+        with _db() as session:
+            for item in calendar["items"]:
+                workout = item["_workout"]
+                wid = item["workout_id"]
+                if workout is None and wid:
+                    if wid not in fetched:
+                        try:
+                            fetched[wid] = client.get_workout_by_id(wid)
+                        except Exception as exc:  # noqa: BLE001
+                            fetched[wid] = None
+                            errors.append(f"allenamento {wid}: {exc}")
+                    workout = fetched[wid]
+                described = describe_garmin_workout(workout)
+                entry: dict[str, Any] = {
+                    "date": item["date"].isoformat(),
+                    "weekday": _WEEKDAYS_IT[item["date"].weekday()],
+                    "title": item["title"],
+                    "notes": described.get("notes"),
+                    "steps": described["steps"],
+                    "estimated_km": described.get("estimated_km"),
+                    "estimated_min": described.get("estimated_min"),
+                    "workout_id": wid,
+                }
+                if described["warnings"]:
+                    entry["warnings"] = described["warnings"]
+                if item["date"] <= today:
+                    entry["executed"] = [
+                        {
+                            "activity_id": a.id,
+                            "type": a.activity_type,
+                            "distance_km": _r(a.distance_km),
+                            "avg_pace": a.avg_pace,
+                            "avg_hr": a.avg_hr,
+                        }
+                        for a in session.scalars(
+                            select(Activity).where(
+                                Activity.date == item["date"].isoformat(),
+                                Activity.sport == "run",
+                            )
+                        ).all()
+                    ]
+                workouts.append(entry)
+
+        result: dict[str, Any] = {
+            "from": start.isoformat(),
+            "to": end.isoformat(),
+            "workouts": workouts,
+            "errors": errors,
+            "hint": None if workouts else (
+                "Nessuna seduta trovata nel calendario Garmin per il periodo. "
+                "Se dovrebbero essercene, richiama con include_raw=true per "
+                "vedere cosa restituisce Garmin."
+            ),
+        }
+        if include_raw:
+            result["raw"] = calendar["raw"]
+        return result
 
     @mcp.tool()
     def preview_garmin_sessions(sessions: list[dict[str, Any]]) -> dict[str, Any]:

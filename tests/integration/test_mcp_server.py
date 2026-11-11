@@ -247,6 +247,8 @@ def test_mcp_exposesReadOnlyToolsAndCoachPrompt(mcp):
         # settimana di un piano salvato nell'app.
         "preview_garmin_sessions",
         "push_garmin_sessions",
+        # Calendario del coach: la prescrizione, in sola lettura.
+        "get_scheduled_workouts",
         "preview_garmin_week",
         "push_garmin_week",
     }
@@ -1145,3 +1147,97 @@ def test_wellKnown_doesNotOpenTheRestOfTheApp(db_env, monkeypatch):
         monkeypatch.delenv("API_TOKEN", raising=False)
         get_settings.cache_clear()
         importlib.reload(main_module)
+
+
+
+# --------------------------------------------------------------------------
+# Calendario del coach
+# --------------------------------------------------------------------------
+class _CoachGarmin:
+    """A Garmin whose calendar holds the coach's sessions."""
+
+    def __init__(self, items, workouts):
+        self.items, self.workouts = items, workouts
+        self.fetched: list = []
+
+    def get_scheduled_workouts(self, year, month):
+        return {"calendarItems": self.items}
+
+    def connectapi(self, path, params=None):
+        return []
+
+    def get_workout_by_id(self, wid):
+        self.fetched.append(str(wid))
+        return self.workouts[str(wid)]
+
+
+def _fmv_workout():
+    return {
+        "workoutName": "6km FMV",
+        "description": "costante",
+        "workoutSegments": [{"workoutSteps": [{
+            "type": "ExecutableStepDTO", "stepOrder": 1,
+            "stepType": {"stepTypeKey": "interval"},
+            "endCondition": {"conditionTypeKey": "distance"},
+            "endConditionValue": 6000.0,
+            "targetType": {"workoutTargetTypeKey": "pace.zone"},
+            "targetValueOne": 1000 / 290, "targetValueTwo": 1000 / 280,
+        }]}],
+    }
+
+
+def test_getScheduledWorkouts_showsThePrescriptionAndWhatWasRun(mcp, session, monkeypatch):
+    """The point of reading the coach's calendar: asked vs done, side by side."""
+    import app.services.garmin_export as ge
+
+    past = date.today() - timedelta(days=2)
+    future = date.today() + timedelta(days=2)
+    fake = _CoachGarmin(
+        items=[
+            {"itemType": "workout", "title": "6km FMV", "date": past.isoformat(),
+             "workoutId": 555},
+            {"itemType": "workout", "title": "6km FMV", "date": future.isoformat(),
+             "workoutId": 555},
+        ],
+        workouts={"555": _fmv_workout()},
+    )
+    monkeypatch.setattr(ge, "_garmin_client", lambda: fake)
+    upsert_activity(session, RunSummary(
+        date=past.isoformat(), activity_type="easy", distance_km=8.1,
+        duration_min=40.0, avg_pace="4:56/km", avg_hr=152,
+    ))
+    session.commit()
+
+    out = _call(mcp, "get_scheduled_workouts")
+
+    done, upcoming = out["workouts"]
+    assert done["steps"] == ["corsa 6 km @ 4:40–4:50/km"]
+    assert done["notes"] == "costante"
+    assert done["executed"][0]["avg_pace"] == "4:56/km"
+    assert "executed" not in upcoming  # a future day has nothing to compare yet
+    assert fake.fetched == ["555"]  # the same workout is fetched once
+
+
+def test_getScheduledWorkouts_emptyCalendar_saysHowToInvestigate(mcp, monkeypatch):
+    import app.services.garmin_export as ge
+
+    monkeypatch.setattr(ge, "_garmin_client", lambda: _CoachGarmin([], {}))
+
+    out = _call(mcp, "get_scheduled_workouts")
+
+    assert out["workouts"] == []
+    assert "include_raw" in out["hint"]
+
+
+def test_getScheduledWorkouts_garminUnreachable_reportsIt(mcp, monkeypatch):
+    import app.services.garmin_export as ge
+
+    def _down():
+        raise RuntimeError("login failed")
+
+    monkeypatch.setattr(ge, "_garmin_client", _down)
+
+    out = _call(mcp, "get_scheduled_workouts")
+
+    assert out["workouts"] == []
+    assert "login failed" in out["error"]
