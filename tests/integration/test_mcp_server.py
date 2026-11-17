@@ -249,6 +249,8 @@ def test_mcp_exposesReadOnlyToolsAndCoachPrompt(mcp):
         "push_garmin_sessions",
         # Calendario del coach: la prescrizione, in sola lettura.
         "get_scheduled_workouts",
+        # Meteo per le finestre di corsa (SPEC get_run_windows).
+        "get_run_windows",
         "preview_garmin_week",
         "push_garmin_week",
     }
@@ -1241,3 +1243,49 @@ def test_getScheduledWorkouts_garminUnreachable_reportsIt(mcp, monkeypatch):
 
     assert out["workouts"] == []
     assert "login failed" in out["error"]
+
+
+
+# --------------------------------------------------------------------------
+# Meteo per le finestre di corsa
+# --------------------------------------------------------------------------
+def test_getRunWindows_hostUnreachable_returnsErrorNotException(mcp, monkeypatch):
+    """The scheduled task must read "meteo non verificabile", not crash."""
+    import app.collection.run_windows as rw
+
+    def _down(url, params, timeout):
+        raise ConnectionError("unreachable")
+
+    monkeypatch.setattr(rw, "_default_get", _down)
+    today = date.today().isoformat()
+    tomorrow = (date.today() + timedelta(days=1)).isoformat()
+
+    out = _call(mcp, "get_run_windows", date_from=today, date_to=tomorrow)
+
+    assert set(out) == {"error"}
+
+
+def test_getRunWindows_evaluatesTheForecast(mcp, monkeypatch):
+    import app.collection.run_windows as rw
+
+    def _get(url, params, timeout):
+        start = date.fromisoformat(params["start_date"])
+        stamps = [f"{(start + timedelta(days=d)).isoformat()}T{h:02d}:00"
+                  for d in range(2) for h in range(24)]
+        n = len(stamps)
+        return {"hourly": {
+            "time": stamps, "precipitation": [0.0] * n,
+            "precipitation_probability": [0] * n,
+            "temperature_2m": [8.0] * n, "wind_gusts_10m": [12.0] * n,
+        }}
+
+    monkeypatch.setattr(rw, "_default_get", _get)
+    today = date.today()
+
+    out = _call(mcp, "get_run_windows", date_from=today.isoformat(),
+                date_to=(today + timedelta(days=1)).isoformat())
+
+    assert [d["date"] for d in out["days"]] == [
+        today.isoformat(), (today + timedelta(days=1)).isoformat(),
+    ]
+    assert out["days"][1]["best"] == "evening"  # tomorrow: dry and not passed

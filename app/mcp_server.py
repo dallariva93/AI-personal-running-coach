@@ -1255,6 +1255,23 @@ def build_mcp_server():  # noqa: ANN201 - FastMCP, imported lazily
         return result
 
     @mcp.tool()
+    def get_run_windows(date_from: str, date_to: str) -> dict[str, Any]:
+        """Meteo orario di Padova (Open-Meteo) valutato per le finestre di corsa della sera
+        e della mattina. Restituisce date e orari espliciti e un giudizio
+        asciutto/incerto/pioggia per ogni finestra.
+
+        Date in YYYY-MM-DD, al massimo 4 giorni. Per ogni giorno: `evening`
+        (18–21) e `morning` (8–10, la domenica 7–9) con `status`
+        dry/uncertain/wet, `best` (la finestra consigliata fra quelle non
+        ancora passate) e `dry_slots`, le fasce asciutte della giornata — da
+        proporre quando `best` è "none". Se la risposta contiene `error`,
+        scrivi "meteo non verificabile" invece di indovinare.
+        """
+        from app.collection.run_windows import run_windows
+
+        return run_windows(date_from, date_to)
+
+    @mcp.tool()
     def preview_garmin_sessions(sessions: list[dict[str, Any]]) -> dict[str, Any]:
         """Mostra cosa finirebbe sull'orologio per le sedute che gli passi.
 
