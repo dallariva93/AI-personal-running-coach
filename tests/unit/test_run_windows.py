@@ -209,6 +209,21 @@ def test_best_noneWhenBothWet_withDrySlotsToOffer():
     assert day["dry_slots"] == ["06:00-08:00", "09:00-19:00", "20:00-22:00"]
 
 
+def test_best_sundayPrefersTheMorning_whenBothAreDry():
+    """On Sunday the order flips: morning first, then evening."""
+    assert _day(evaluate(_raw(SUN), _at(SUN, 6)), SUN)["best"] == "morning"
+
+
+def test_best_sundayFallsBackToTheEvening_whenTheMorningIsWet():
+    raw = _raw(SUN, wet={"2026-11-22T08:00": {"mm": 1.0}})
+
+    assert _day(evaluate(raw, _at(SUN, 6)), SUN)["best"] == "evening"
+
+
+def test_best_sundayAfterTheMorningHasPassed_isTheEvening():
+    assert _day(evaluate(_raw(SUN), _at(SUN, 12)), SUN)["best"] == "evening"
+
+
 def test_drySlots_matchTheSpecExample():
     """Dry timestamps 07..11 only → the slot 06:00-11:00."""
     wet = {f"2026-11-18T{h:02d}:00": {"mm": 1.0} for h in range(12, 23)}

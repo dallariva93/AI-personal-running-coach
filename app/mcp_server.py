@@ -1262,8 +1262,9 @@ def build_mcp_server():  # noqa: ANN201 - FastMCP, imported lazily
 
         Date in YYYY-MM-DD, al massimo 4 giorni. Per ogni giorno: `evening`
         (18–21) e `morning` (8–10, la domenica 7–9) con `status`
-        dry/uncertain/wet, `best` (la finestra consigliata fra quelle non
-        ancora passate) e `dry_slots`, le fasce asciutte della giornata — da
+        dry/uncertain/wet, `best` (la finestra asciutta consigliata fra quelle
+        non ancora passate: prima la sera, ma la domenica prima la mattina) e
+        `dry_slots`, le fasce asciutte della giornata — da
         proporre quando `best` è "none". Se la risposta contiene `error`,
         scrivi "meteo non verificabile" invece di indovinare.
         """

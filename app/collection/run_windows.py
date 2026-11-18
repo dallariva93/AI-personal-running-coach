@@ -249,12 +249,17 @@ def evaluate(raw: dict, now: datetime) -> dict:
         morning_span = WINDOWS["morning_sunday" if day.weekday() == 6 else "morning_weekday"]
         morning = _window(day, hours, morning_span, now)
 
-        if not evening["passed"] and evening["status"] == "dry":
-            best = "evening"
-        elif not morning["passed"] and morning["status"] == "dry":
-            best = "morning"
-        else:
-            best = "none"
+        # Preference order: the evening on weekdays, the morning on Sunday.
+        order = ("morning", "evening") if day.weekday() == 6 else ("evening", "morning")
+        windows = {"evening": evening, "morning": morning}
+        best = next(
+            (
+                name
+                for name in order
+                if not windows[name]["passed"] and windows[name]["status"] == "dry"
+            ),
+            "none",
+        )
 
         temps = [r["temp"] for r in hours.values() if r["temp"] is not None]
         days.append(
