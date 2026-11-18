@@ -58,6 +58,29 @@ BASE_DIR = Path(__file__).resolve().parent
 templates = Jinja2Templates(directory=str(BASE_DIR / "templates"))
 
 
+def _build_mcp():  # noqa: ANN202 - (FastMCP, Starlette) | (None, None)
+    """Build the MCP server when configured, else disable the feature.
+
+    Kept tolerant on purpose: the connector is an add-on, so a missing `mcp`
+    dependency or a broken build must degrade to "no MCP" rather than take the
+    dashboard and the mobile API down with it.
+    """
+    settings = get_settings()
+    if not settings.mcp_enabled:
+        return None, None
+    try:
+        from app.mcp_server import build_mcp_server
+
+        server = build_mcp_server()
+        return server, server.streamable_http_app()
+    except Exception:  # pragma: no cover - exercised by hand, not in CI
+        logger.exception("MCP server disabled: build failed")
+        return None, None
+
+
+_mcp_server, _mcp_app = _build_mcp()
+
+
 @asynccontextmanager
 async def lifespan(_app: FastAPI):
     settings = get_settings()
@@ -69,7 +92,15 @@ async def lifespan(_app: FastAPI):
         "garmin" if settings.garmin_enabled else "demo",
         "claude" if settings.ai_enabled else "offline",
     )
-    yield
+    if _mcp_server is None:
+        yield
+        return
+    # The mounted MCP sub-app has its own lifespan (the streamable-HTTP
+    # session manager) which FastAPI does NOT run for mounted apps: drive it
+    # from here, or every tool call fails with "task group is not initialized".
+    async with _mcp_server.session_manager.run():
+        logger.info("MCP server mounted at %s", settings.mcp_mount_path)
+        yield
 
 
 app = FastAPI(title="AI Running Coach", version=__version__, lifespan=lifespan)
@@ -103,6 +134,12 @@ app.include_router(workouts_router)
 _static_dir = BASE_DIR / "static"
 if _static_dir.exists():
     app.mount("/static", StaticFiles(directory=str(_static_dir)), name="static")
+
+# MCP server for the Claude custom connector. Mounted at the secret path, so
+# any other URL 404s exactly like a non-existent route — there is no endpoint
+# to discover and no error message that confirms the feature is on.
+if _mcp_app is not None:
+    app.mount(_settings.mcp_mount_path, _mcp_app, name="mcp")
 
 
 @app.exception_handler(CoachError)

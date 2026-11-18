@@ -30,3 +30,7 @@ cryptography==49.0.0
 
 # Push notifications (FCM HTTP v1) - A3
 httpx==0.28.1
+
+# MCP server for the Claude custom connector (docs/MCP_CONNECTOR_ROADMAP.md).
+# Only imported when MCP_PATH_TOKEN is set, so the app still boots without it.
+mcp==1.28.1

@@ -13,11 +13,13 @@ from app.coaching.prompts import build_multiweek_plan_message
 from app.processing import decide_today
 from app.processing.adaptive import adapt_plan
 from app.processing.digital_twin import (
+    DURABILITY_DEFAULT,
     HEAT_DEFAULT_S_PER_C,
     RAMP_DEFAULT_PCT,
     RECOVERY_DEFAULT_DAYS,
     WeekObservation,
     build_athlete_model,
+    estimate_durability,
     estimate_heat_sensitivity,
     estimate_ramp_tolerance,
     estimate_recovery_halflife,
@@ -101,6 +103,40 @@ def test_build_athlete_model_shape():
     m = build_athlete_model([], [], [], computed_at="2026-07-03")
     assert isinstance(m, AthleteModel)
     assert m.ramp_tolerance_pct.learning and m.computed_at == "2026-07-03"
+    assert m.durability is not None and m.durability.learning  # thin history
+
+
+# ── Pure: durability ─────────────────────────────────────────────────────────
+
+
+def test_durability_thin_history_defaults():
+    est = estimate_durability([2.0, 3.0])  # < min samples
+    assert est.value == DURABILITY_DEFAULT and est.learning
+
+
+def test_durability_high_when_no_fade():
+    # Even/negative splits across enough long runs → high durability.
+    est = estimate_durability([0.0, -1.0, 1.0, 0.0])
+    assert not est.learning
+    assert est.value >= 90  # ~100 minus a tiny median fade
+
+
+def test_durability_low_when_big_fade():
+    est = estimate_durability([10.0, 12.0, 9.0, 11.0])  # ~11% late fade
+    assert est.value <= 50  # 100 - 11*5 clamped
+
+
+def test_durability_from_splits_via_service():
+    from app.schemas import RunSummary
+    from app.services.athlete_model_service import _durability_fades
+
+    # 18 km long run: first 6 km ~5:00, last 6 km ~5:30 → ~10% fade.
+    splits = ["5:00"] * 6 + ["5:15"] * 6 + ["5:30"] * 6
+    runs = [RunSummary(date="2026-06-10", distance_km=18.0, activity_type="long",
+                       duration_min=95, splits_km=splits)]
+    fades = _durability_fades(runs)
+    assert len(fades) == 1
+    assert 8 < fades[0] < 12  # last third vs first third
 
 
 # ── Consumption: decision recovery-gate ──────────────────────────────────────
@@ -205,6 +241,29 @@ def test_save_and_load_round_trip(session):
     assert personal_ramp_factor(session) == round(
         1 + model.ramp_tolerance_pct.value / 100, 3
     )
+
+
+def test_durability_persists_and_is_consumable(session):
+    from app.services.athlete_model_service import (
+        load_athlete_model,
+        personal_durability,
+        save_athlete_model,
+    )
+
+    model = build_athlete_model(
+        [], [], [], durability_fades=[0.0, -1.0, 1.0, 0.0], computed_at=REF.isoformat()
+    )
+    save_athlete_model(session, model)
+
+    loaded = load_athlete_model(session)
+    assert loaded.durability is not None and not loaded.durability.learning
+    assert personal_durability(session) == loaded.durability.value
+
+
+def test_personal_durability_none_while_learning(session):
+    from app.services.athlete_model_service import personal_durability
+
+    assert personal_durability(session) is None
 
 
 def test_load_defaults_when_empty(session):

@@ -71,6 +71,13 @@ class Activity(Base):
     # Semi-structured extras kept as JSON: hr zones, splits, etc.
     hr_zones: Mapped[dict | None] = mapped_column(JSON, nullable=True)
     splits_km: Mapped[list | None] = mapped_column(JSON, nullable=True)
+    # Real laps (distance/duration/pace per lap), not just per-km splits: an
+    # interval session is unreadable once its repetitions are averaged into
+    # kilometres. Populated from the same Garmin payload as splits_km.
+    laps: Mapped[list | None] = mapped_column(JSON, nullable=True)
+    # Treadmill / indoor: no GPS, belt-dependent pace, meaningless elevation.
+    # Kept explicit so weather is never invented for a run done inside.
+    is_indoor: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
     # Environment (GAP 18) and trail (GAP 20) extras.
     temperature_c: Mapped[float | None] = mapped_column(Float, nullable=True)
     humidity_pct: Mapped[float | None] = mapped_column(Float, nullable=True)
@@ -328,6 +335,164 @@ class StravaWebhookEvent(Base):
         return f"<StravaWebhookEvent {self.aspect_type} {self.object_id} {self.status}>"
 
 
+class YazioAccount(Base):
+    """OAuth tokens for the connected Yazio account.
+
+    Same shape and same reasoning as :class:`StravaAccount`: single-athlete app
+    → one row, tokens encrypted at rest, ``expires_at`` (epoch seconds) driving
+    a lazy refresh before each call.
+
+    The Yazio password is *not* stored. It is used once, at connect time, to
+    obtain the first token pair; from then on only the refresh token keeps the
+    session alive. That matters more here than for Strava: Yazio has no OAuth
+    consent screen we can lean on, so the credentials pass through our hands and
+    the only safe thing to do with them is to forget them immediately.
+    """
+
+    __tablename__ = "yazio_accounts"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    # Text, not String(128): Fernet ciphertext of a token is a few hundred chars.
+    _access_token: Mapped[str] = mapped_column("access_token", Text)
+    _refresh_token: Mapped[str] = mapped_column("refresh_token", Text)
+    expires_at: Mapped[int] = mapped_column(Integer, default=0)  # epoch seconds
+
+    @hybrid_property
+    def access_token(self) -> str:  # noqa: D102 - trivial accessor
+        from app.security.crypto import decrypt_secret
+
+        return decrypt_secret(self._access_token)
+
+    @access_token.inplace.setter
+    def _access_token_setter(self, value: str) -> None:
+        from app.security.crypto import encrypt_secret
+
+        self._access_token = encrypt_secret(value)
+
+    @access_token.inplace.expression
+    @classmethod
+    def _access_token_expr(cls):  # noqa: ANN206 - SQL expression
+        return cls._access_token
+
+    @hybrid_property
+    def refresh_token(self) -> str:  # noqa: D102 - trivial accessor
+        from app.security.crypto import decrypt_secret
+
+        return decrypt_secret(self._refresh_token)
+
+    @refresh_token.inplace.setter
+    def _refresh_token_setter(self, value: str) -> None:
+        from app.security.crypto import encrypt_secret
+
+        self._refresh_token = encrypt_secret(value)
+
+    @refresh_token.inplace.expression
+    @classmethod
+    def _refresh_token_expr(cls):  # noqa: ANN206 - SQL expression
+        return cls._refresh_token
+
+    # Only for showing "connected as …" in the UI; never used to authenticate.
+    username: Mapped[str | None] = mapped_column(String(128), nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=_utcnow)
+    updated_at: Mapped[datetime] = mapped_column(DateTime, default=_utcnow, onupdate=_utcnow)
+
+    def __repr__(self) -> str:  # pragma: no cover - debug helper
+        return f"<YazioAccount {self.username or 'connected'}>"
+
+
+class NutritionDay(Base):
+    """One day of nutrition totals, imported from Yazio.
+
+    Daily aggregates: kcal, macros, and the day's target. A coach reasons about
+    "did the fuelling match the load", which is a per-day question — the
+    item-by-item diary would multiply the payload by two orders of magnitude to
+    answer something nobody asked.
+
+    Every field is nullable: a day the athlete logged only breakfast is real
+    data about a partial log, and forcing a zero would read as "ate nothing".
+    """
+
+    __tablename__ = "nutrition_days"
+    __table_args__ = (UniqueConstraint("date", name="uq_nutrition_date"),)
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    date: Mapped[str] = mapped_column(String(10), index=True)  # ISO YYYY-MM-DD
+    energy_kcal: Mapped[float | None] = mapped_column(Float, nullable=True)
+    protein_g: Mapped[float | None] = mapped_column(Float, nullable=True)
+    carbs_g: Mapped[float | None] = mapped_column(Float, nullable=True)
+    fat_g: Mapped[float | None] = mapped_column(Float, nullable=True)
+    water_ml: Mapped[float | None] = mapped_column(Float, nullable=True)
+    # The day's calorie *target*, as Yazio computed it. Intake alone says little
+    # — 1900 kcal is generous or a deep hole depending on the goal — and the
+    # deficit is the whole reason nutrition is here: it is what separates "the
+    # block stalled from too much load" from "the block stalled from too little
+    # food".
+    energy_goal_kcal: Mapped[float | None] = mapped_column(Float, nullable=True)
+    source: Mapped[str] = mapped_column(String(20), default="yazio")
+    synced_at: Mapped[datetime] = mapped_column(DateTime, default=_utcnow, onupdate=_utcnow)
+
+    def __repr__(self) -> str:  # pragma: no cover - debug helper
+        return f"<NutritionDay {self.date} {self.energy_kcal} kcal>"
+
+
+class YazioProduct(Base):
+    """Name cache for Yazio's catalogue products.
+
+    The diary references products by UUID only, so every name costs a request.
+    They repeat heavily — the same yogurt every morning — so caching turns a
+    per-day cost into a one-off: after the first backfill almost every lookup
+    is already here.
+    """
+
+    __tablename__ = "yazio_products"
+    __table_args__ = (UniqueConstraint("product_id", name="uq_yazio_product_id"),)
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    product_id: Mapped[str] = mapped_column(String(64), index=True)
+    name: Mapped[str] = mapped_column(String(255))
+    producer: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    fetched_at: Mapped[datetime] = mapped_column(DateTime, default=_utcnow)
+
+    def __repr__(self) -> str:  # pragma: no cover - debug helper
+        return f"<YazioProduct {self.name}>"
+
+
+class NutritionItem(Base):
+    """One entry of the food diary: what was eaten, when, how much.
+
+    Separate from :class:`NutritionDay` because it answers a different question
+    and has a different cost. The day's totals are what a coach reasons over;
+    this is the detail behind them, fetched only when someone asks *what* was
+    eaten. Keeping it out of the daily payload is what stops a two-week summary
+    from carrying two hundred food rows into a chat context.
+
+    ``energy_kcal`` is only set when Yazio states it outright (free-text and
+    AI-parsed entries carry their own nutrients). For catalogue products it
+    stays NULL rather than being derived from an assumed serving unit: the day's
+    real total already comes from the summary endpoint, so a guess here would
+    add risk without adding an answer.
+    """
+
+    __tablename__ = "nutrition_items"
+    __table_args__ = (UniqueConstraint("yazio_id", name="uq_nutrition_item_yazio_id"),)
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    # Yazio's own entry id: makes re-importing a day idempotent, and lets an
+    # entry deleted in the app be recognised as gone.
+    yazio_id: Mapped[str] = mapped_column(String(64), index=True)
+    date: Mapped[str] = mapped_column(String(10), index=True)  # ISO YYYY-MM-DD
+    meal: Mapped[str | None] = mapped_column(String(16), nullable=True)
+    name: Mapped[str | None] = mapped_column(String(500), nullable=True)
+    product_id: Mapped[str | None] = mapped_column(String(64), nullable=True, index=True)
+    amount: Mapped[float | None] = mapped_column(Float, nullable=True)
+    serving: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    energy_kcal: Mapped[float | None] = mapped_column(Float, nullable=True)
+    synced_at: Mapped[datetime] = mapped_column(DateTime, default=_utcnow, onupdate=_utcnow)
+
+    def __repr__(self) -> str:  # pragma: no cover - debug helper
+        return f"<NutritionItem {self.date} {self.name}>"
+
+
 class DailyCheckinRow(Base):
     """A subjective daily wellness check-in (GAP 9). One row per date."""
 
@@ -401,6 +566,13 @@ class TrainingPlan(Base):
     start_date: Mapped[str] = mapped_column(String(10))
     status: Mapped[str] = mapped_column(String(16), default="active")
     created_at: Mapped[datetime] = mapped_column(DateTime, default=_utcnow)
+    # Generation inputs, captured so the rolling re-plan (Fase D) can re-derive
+    # the future weeks faithfully (same skeleton, refreshed form). Nullable for
+    # plans created before this was persisted.
+    days_per_week: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    long_run_day: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    runner_context: Mapped[str | None] = mapped_column(Text, nullable=True)
+    baseline_km: Mapped[float | None] = mapped_column(Float, nullable=True)
 
     weeks: Mapped[list[TrainingPlanWeek]] = relationship(
         back_populates="plan",
@@ -468,6 +640,16 @@ class TrainingPlanSession(Base):
     execution_note: Mapped[str | None] = mapped_column(Text, nullable=True)
     execution_evidence: Mapped[list | None] = mapped_column(JSON, nullable=True)
     executed_activity_id: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    # The session as structure rather than prose: warmup / repeat×N / recovery /
+    # cooldown, with pace targets. The engine has always known these numbers; it
+    # used to spend them on a sentence, which meant anything downstream had to
+    # parse Italian back into integers to use them.
+    steps: Mapped[list | None] = mapped_column(JSON, nullable=True)
+    # Set once this session has been pushed to the Garmin calendar, so a second
+    # export updates the same workout instead of stacking duplicates on the
+    # watch — and so an adapted plan can withdraw what it already sent.
+    garmin_workout_id: Mapped[str | None] = mapped_column(String(32), nullable=True)
+    garmin_scheduled_date: Mapped[str | None] = mapped_column(String(10), nullable=True)
     # Multi-dimensional execution sub-scores stored as JSON (P0-5, P0-6).
     execution_detail: Mapped[dict | None] = mapped_column(JSON, nullable=True)
 

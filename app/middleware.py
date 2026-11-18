@@ -29,6 +29,17 @@ _PUBLIC_PREFIXES = (
     "/api/strava/callback",
     "/static",
     "/favicon.ico",
+    # Discovery probes, which must be allowed through in order to 404.
+    #
+    # A client adding the MCP connector asks for
+    # /.well-known/oauth-protected-resource to find out whether this server
+    # needs OAuth. Behind the auth gate that request got a 401 with the login
+    # page — which reads as "yes, there is an authorization server here", so the
+    # client tries to register itself as an OAuth client, finds no registration
+    # endpoint, and fails with "impossibile registrarsi con il servizio di
+    # accesso". Nothing is served under this prefix, so letting it past the gate
+    # produces the honest answer: 404, no OAuth, connect with the secret path.
+    "/.well-known/",
 )
 
 _LOGIN_HTML = """<!doctype html><html lang="it"><head><meta charset="utf-8">
@@ -95,7 +106,7 @@ class AuthMiddleware(BaseHTTPMiddleware):
 
     async def dispatch(self, request: Request, call_next):
         settings = get_settings()
-        if not settings.auth_enabled or _is_public(request.url.path):
+        if not settings.auth_enabled or _is_public(request.url.path, settings):
             return await call_next(request)
 
         token = _extract_token(request)
@@ -117,8 +128,20 @@ class AuthMiddleware(BaseHTTPMiddleware):
         return HTMLResponse(_LOGIN_HTML.format(error=error), status_code=401)
 
 
-def _is_public(path: str) -> bool:
-    return any(path.startswith(p) for p in _PUBLIC_PREFIXES)
+def _is_public(path: str, settings=None) -> bool:  # noqa: ANN001 - Settings
+    """Paths that bypass the bearer-token gate.
+
+    The MCP mount is one of them **by design**: a Claude custom connector
+    cannot attach an Authorization header, so the unguessable mount path is
+    itself the credential (docs/MCP_CONNECTOR_ROADMAP.md, Fase 3). It is only
+    ever mounted when explicitly configured, exposes read-only tools, and gets
+    its own rate-limit bucket below.
+    """
+    if any(path.startswith(p) for p in _PUBLIC_PREFIXES):
+        return True
+    settings = settings or get_settings()
+    mcp_path = settings.mcp_mount_path
+    return bool(mcp_path) and path.startswith(mcp_path)
 
 
 def _extract_token(request: Request) -> str | None:
@@ -159,10 +182,18 @@ class RateLimitMiddleware(BaseHTTPMiddleware):
     async def dispatch(self, request: Request, call_next):
         settings = get_settings()
         path = request.url.path
-        if not settings.rate_limit_enabled or not path.startswith("/api") or _is_public_probe(path):
+        mcp_path = settings.mcp_mount_path
+        is_mcp = bool(mcp_path) and path.startswith(mcp_path)
+        if not settings.rate_limit_enabled or _is_public_probe(path):
+            return await call_next(request)
+        if not path.startswith("/api") and not is_mcp:
             return await call_next(request)
 
-        if path.startswith("/api/strava/webhook"):
+        if is_mcp:
+            # The MCP mount skips the auth middleware, so this bucket is the
+            # only thing standing between a guessed URL and the tool layer.
+            scope, per_minute = "mcp", settings.rate_limit_mcp_per_minute
+        elif path.startswith("/api/strava/webhook"):
             scope, per_minute = "strava", settings.rate_limit_strava_per_minute
         else:
             scope, per_minute = "api", settings.rate_limit_per_minute

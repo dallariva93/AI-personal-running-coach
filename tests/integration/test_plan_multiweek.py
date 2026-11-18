@@ -223,6 +223,59 @@ def test_delete_plan_404_on_bad_id(client):
     assert resp.status_code == 404
 
 
+def test_plan_sessions_expose_structured_segments(client):
+    """Fase E: quality sessions carry Workout-Builder segments in the API."""
+    resp = client.post("/api/plan/generate", json=_GENERATE_PAYLOAD)
+    assert resp.status_code == 201, resp.text
+    body = resp.json()
+
+    structured = 0
+    for week in body["weeks"]:
+        for s in week["sessions"]:
+            if s["session_type"] in ("tempo", "intervals"):
+                seg_types = [seg["segment_type"] for seg in s["segments"]]
+                assert "warmup" in seg_types and "cooldown" in seg_types
+                structured += 1
+            elif s["session_type"] == "rest":
+                assert s["segments"] == []
+    assert structured > 0, "a marathon block must contain quality sessions"
+
+
+def test_plan_weeks_have_rationale_and_long_runs_have_fueling(client):
+    """Fase F: every week explains itself; long runs/races carry fueling."""
+    resp = client.post("/api/plan/generate", json=_GENERATE_PAYLOAD)
+    assert resp.status_code == 201, resp.text
+    body = resp.json()
+
+    assert all(w["rationale"] for w in body["weeks"])  # explainability everywhere
+
+    fuelled = 0
+    for week in body["weeks"]:
+        for s in week["sessions"]:
+            if s["session_type"] == "easy":
+                assert s["fueling"] is None
+            if s["fueling"]:
+                assert "carboidrati" in s["fueling"]
+                fuelled += 1
+    assert fuelled > 0, "long runs in a marathon block should carry fueling"
+
+
+def test_plan_whatif_endpoint_compares_scenarios(client):
+    """Fase F: POST /plan/whatif returns an instant, read-only comparison."""
+    payload = {"base": _GENERATE_PAYLOAD, "days_per_week": 6}
+    resp = client.post("/api/plan/simulate", json=payload)
+    assert resp.status_code == 200, resp.text
+    body = resp.json()
+    assert {"baseline", "scenario", "deltas", "notes"} <= set(body)
+    assert set(body["deltas"]) == {
+        "weeks_total", "total_km", "peak_week_km", "avg_weekly_km"
+    }
+    # More training days → higher weekly average than the 4-day base.
+    assert body["scenario"]["avg_weekly_km"] > body["baseline"]["avg_weekly_km"]
+    # Read-only: no plan was created.
+    assert client.get("/api/plan/current").status_code == 404
+
+
 def test_generate_plan_honors_chat_agreed_week_structure(client):
     """The app plan must match the week agreed in the pre-plan chat.
 

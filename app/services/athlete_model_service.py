@@ -9,6 +9,7 @@ back, throttled to one recompute per day in the post-sync pipeline.
 
 from __future__ import annotations
 
+import statistics
 from datetime import date, datetime, timedelta
 
 from sqlalchemy import select
@@ -18,6 +19,7 @@ from app.db.models import Activity, AthleteModelRow, DailyCheckinRow, TrainingPl
 from app.logging_config import get_logger
 from app.processing import weekly_buckets
 from app.processing.digital_twin import (
+    DURABILITY_MIN_SAMPLES,
     HEAT_MIN_HOT_SAMPLES,
     RAMP_MIN_SAMPLES,
     RECOVERY_MIN_SAMPLES,
@@ -41,7 +43,9 @@ _MIN_SAMPLES = {
     "ramp_tolerance_pct": RAMP_MIN_SAMPLES,
     "recovery_halflife_days": RECOVERY_MIN_SAMPLES,
     "heat_sensitivity_s_per_c": HEAT_MIN_HOT_SAMPLES,
+    "durability": DURABILITY_MIN_SAMPLES,
 }
+_LONG_RUN_MIN_KM = 15.0  # a run this long (with splits) informs durability
 
 
 # ── Small parsing / readiness helpers ────────────────────────────────────────
@@ -175,6 +179,28 @@ def _heat_points(summaries) -> list[tuple[float, float]]:
     return points
 
 
+def _durability_fades(summaries) -> list[float]:
+    """Late-third fade % per long run with usable km splits (A5 durability).
+
+    Fade = (mean pace of the last third − mean pace of the first third) as a
+    percent of the first third. Negative means a negative split (very durable).
+    """
+    fades: list[float] = []
+    for r in summaries:
+        if r.distance_km < _LONG_RUN_MIN_KM or not r.splits_km:
+            continue
+        secs = [p for p in (_pace_sec(s) for s in r.splits_km) if p and p > 0]
+        third = len(secs) // 3
+        if third < 1:
+            continue
+        early = statistics.fmean(secs[:third])
+        late = statistics.fmean(secs[-third:])
+        if early <= 0:
+            continue
+        fades.append((late - early) / early * 100.0)
+    return fades
+
+
 # ── Orchestrate, persist, load ────────────────────────────────────────────────
 
 
@@ -186,7 +212,10 @@ def estimate_athlete_model(db: Session, ref: date | None = None) -> AthleteModel
     weeks = _week_observations(db, summaries, ref, readiness_by_date)
     recovery = _recovery_episodes(db, readiness_by_date)
     heat = _heat_points(summaries)
-    return build_athlete_model(weeks, recovery, heat, computed_at=ref.isoformat())
+    durability = _durability_fades(summaries)
+    return build_athlete_model(
+        weeks, recovery, heat, durability, computed_at=ref.isoformat()
+    )
 
 
 def save_athlete_model(db: Session, model: AthleteModel) -> None:
@@ -197,6 +226,8 @@ def save_athlete_model(db: Session, model: AthleteModel) -> None:
         "recovery_halflife_days": model.recovery_halflife_days,
         "heat_sensitivity_s_per_c": model.heat_sensitivity_s_per_c,
     }
+    if model.durability is not None:
+        pairs["durability"] = model.durability
     for key, est in pairs.items():
         row = db.get(AthleteModelRow, key)
         if row is None:
@@ -220,6 +251,7 @@ def _estimate_from_row(
 def load_athlete_model(db: Session) -> AthleteModel:
     """Read the persisted twin; defaults (learning) for keys not yet computed."""
     from app.processing.digital_twin import (
+        DURABILITY_DEFAULT,
         HEAT_DEFAULT_S_PER_C,
         RAMP_DEFAULT_PCT,
         RECOVERY_DEFAULT_DAYS,
@@ -228,7 +260,10 @@ def load_athlete_model(db: Session) -> AthleteModel:
     ramp = db.get(AthleteModelRow, "ramp_tolerance_pct")
     rec = db.get(AthleteModelRow, "recovery_halflife_days")
     heat = db.get(AthleteModelRow, "heat_sensitivity_s_per_c")
-    computed = next((r.computed_at for r in (ramp, rec, heat) if r is not None), None)
+    dur = db.get(AthleteModelRow, "durability")
+    computed = next(
+        (r.computed_at for r in (ramp, rec, heat, dur) if r is not None), None
+    )
     return AthleteModel(
         ramp_tolerance_pct=_estimate_from_row(ramp, "ramp_tolerance_pct", RAMP_DEFAULT_PCT),
         recovery_halflife_days=_estimate_from_row(
@@ -237,6 +272,7 @@ def load_athlete_model(db: Session) -> AthleteModel:
         heat_sensitivity_s_per_c=_estimate_from_row(
             heat, "heat_sensitivity_s_per_c", HEAT_DEFAULT_S_PER_C
         ),
+        durability=_estimate_from_row(dur, "durability", DURABILITY_DEFAULT),
         computed_at=computed.date().isoformat() if computed else None,
     )
 
@@ -281,3 +317,15 @@ def personal_recovery_halflife(db: Session) -> int | None:
     if row is None or row.confidence < RECOVERY_MIN_SAMPLES:
         return None
     return int(round(row.value))
+
+
+def personal_durability(db: Session) -> float | None:
+    """Learned durability score (0-100), or None while still learning.
+
+    Consumers can scale the long-run progression and marathon-specific work: a
+    durable athlete absorbs bigger long runs; a fragile one needs them capped.
+    """
+    row = db.get(AthleteModelRow, "durability")
+    if row is None or row.confidence < DURABILITY_MIN_SAMPLES:
+        return None
+    return round(row.value, 1)

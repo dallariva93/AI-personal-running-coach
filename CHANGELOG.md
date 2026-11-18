@@ -6,6 +6,19 @@ Il formato segue [Keep a Changelog](https://keepachangelog.com/it/1.1.0/).
 ## [Unreleased]
 
 ### Aggiunto
+- **Diario alimentare Yazio**: calorie e macronutrienti giornalieri importati
+  nel connettore, così un calo di forma da deficit energetico smette di essere
+  indistinguibile da uno da troppo carico. Nuovo client
+  `app/collection/yazio.py` (OAuth2 password grant + refresh, parsing difensivo:
+  uno schema cambiato produce "nessun dato", mai un giorno da 0 kcal), servizio
+  `app/services/yazio_sync.py`, tabelle `yazio_accounts` (token cifrati con
+  Fernet, come Strava) e `nutrition_days` (un aggregato per giorno), tool MCP
+  `get_nutrition` e comando `python -m app.cli nutrition`. La password è usata
+  una sola volta al collegamento e non viene mai salvata; i nuovi giorni
+  arrivano con il normale sync delle corse, in modalità best-effort. Solo
+  totali giornalieri, non i singoli pasti: è ciò che serve a un allenatore e
+  costa due ordini di grandezza in meno di contesto. Vedi
+  `docs/MCP_ATTIVAZIONE_PASSO_PASSO.md`.
 - **Archivio raw delle attività Garmin**: ogni attività (running e non-running)
   viene archiviata su object storage S3-compatible (Tigris su Fly.io) come
   payload nativi: `summary`, `details` (stream second-by-second incluse cadenza,

@@ -45,32 +45,40 @@ def generate_plan(
 
     # Generate plan data from coach. The Digital Twin (A5) injects the athlete's
     # personal weekly ramp cap into the prompt when it has been learned.
-    from app.services.athlete_model_service import personal_ramp_factor
+    from app.services.athlete_model_service import (
+        personal_durability,
+        personal_ramp_factor,
+    )
 
     ramp_factor = personal_ramp_factor(db)
     ramp_pct = round((ramp_factor - 1) * 100, 1) if ramp_factor is not None else None
+    # Digital Twin durability (section 2.3): size the long run to fade-resistance.
+    if metrics is not None:
+        metrics.durability = personal_durability(db)
+    # Both coach paths build the plan through the deterministic periodization
+    # engine, which already honours the chat-agreed week skeleton (§CTX§) verbatim
+    # (Fase B): the old bolt-on ``enforce_week_structure`` pass is now redundant.
     plan_data = coach.plan_multiweek(request, profile, metrics, ramp_pct=ramp_pct)
 
-    # Guarantee the plan matches what was agreed in the pre-plan chat: the
-    # generator is a separate model call (with an offline fallback) and can
-    # drift from the agreed week. This deterministic pass reshapes every week
-    # to the agreed day → session-type skeleton from the runner context.
-    from app.processing import enforce_week_structure
-
-    plan_data, enforcement_notes = enforce_week_structure(
-        plan_data, request.runner_context
-    )
-    if enforcement_notes:
+    # Goal-realism gate (Fase C): the engine compares the target with the race
+    # predictor's forecast from current fitness. Surface it for the audit trail;
+    # the athlete-facing warning is already woven into week 1.
+    realism = plan_data.get("goal_realism")
+    if realism and realism.get("verdict") == "ambizioso":
         logger.info(
-            "Plan reshaped to honor the chat agreement: %s",
-            "; ".join(enforcement_notes),
+            "Goal realism: target %s vs predicted %s → %s (+%.1f%% needed)",
+            realism.get("target_time"),
+            realism.get("predicted_time"),
+            realism["verdict"],
+            realism.get("required_improvement_pct", 0.0),
         )
 
     weeks_list = plan_data.get("weeks", [])
     weeks_total = len(weeks_list)
     start_date = plan_data.get("start_date", date.today().isoformat())
 
-    # Persist the plan
+    # Persist the plan, including the generation inputs the rolling re-plan
+    # (Fase D) needs to re-derive future weeks faithfully.
     plan = TrainingPlan(
         goal_type=request.goal_type,
         goal_date=request.goal_date,
@@ -80,6 +88,10 @@ def generate_plan(
         start_date=start_date,
         status="active",
         created_at=datetime.now(UTC),
+        days_per_week=request.days_per_week,
+        long_run_day=request.long_run_day,
+        runner_context=request.runner_context,
+        baseline_km=plan_data.get("baseline_km"),
     )
     db.add(plan)
     db.flush()
@@ -96,36 +108,41 @@ def generate_plan(
         db.flush()
 
         for sess_data in week_data.get("sessions", []):
-            target_dist = (
-                float(sess_data["target_distance_km"])
-                if sess_data.get("target_distance_km") is not None
-                else None
-            )
-            sess_type = sess_data.get("session_type", "easy")
-            sess = TrainingPlanSession(
-                week_id=week.id,
-                day_of_week=int(sess_data["day_of_week"]),
-                session_type=sess_type,
-                title=sess_data.get("title", ""),
-                description=sess_data.get("description"),
-                target_distance_km=target_dist,
-                target_pace=sess_data.get("target_pace"),
-                target_duration_min=(
-                    float(sess_data["target_duration_min"])
-                    if sess_data.get("target_duration_min") is not None
-                    else None
-                ),
-                completed=bool(sess_data.get("completed", False)),
-                # P0-10: capture base prescription at creation time.
-                base_target_distance_km=target_dist,
-                base_session_type=sess_type,
-            )
-            db.add(sess)
+            db.add(_session_from_spec(week.id, sess_data))
 
     db.flush()
     # Reload with relationships
     db.refresh(plan)
     return _compute_plan_out(plan)
+
+
+def _session_from_spec(week_id: int, sess_data: dict) -> TrainingPlanSession:
+    """Build a plan session ORM row from an engine session dict."""
+    target_dist = (
+        float(sess_data["target_distance_km"])
+        if sess_data.get("target_distance_km") is not None
+        else None
+    )
+    sess_type = sess_data.get("session_type", "easy")
+    return TrainingPlanSession(
+        week_id=week_id,
+        day_of_week=int(sess_data["day_of_week"]),
+        session_type=sess_type,
+        title=sess_data.get("title", ""),
+        description=sess_data.get("description"),
+        target_distance_km=target_dist,
+        target_pace=sess_data.get("target_pace"),
+        target_duration_min=(
+            float(sess_data["target_duration_min"])
+            if sess_data.get("target_duration_min") is not None
+            else None
+        ),
+        steps=sess_data.get("steps"),
+        completed=bool(sess_data.get("completed", False)),
+        # P0-10: capture base prescription at creation time.
+        base_target_distance_km=target_dist,
+        base_session_type=sess_type,
+    )
 
 
 def get_current_plan(db: Session) -> TrainingPlanOut | None:
@@ -244,6 +261,7 @@ def move_session(
 
     # Swap positions (and weeks, for cross-week moves).
     source_dow = sess.day_of_week
+    source_week_no = week.week_number
     sess.day_of_week = target_dow
     if other is not None:
         other.day_of_week = source_dow
@@ -254,6 +272,12 @@ def move_session(
     # week_id was swapped directly, so the in-memory week.sessions collections
     # are stale — expire everything and let the ORM reload fresh state.
     db.expire_all()
+
+    # Reshape, don't just warn (Fase E): re-space quality days in the weeks the
+    # move touched, keeping the just-placed session and any locked day fixed.
+    anchors = {target_week_no: {target_dow}}
+    anchors.setdefault(source_week_no, set()).add(source_dow)
+    rebalanced = _rebalance_after_move(db, plan, anchors)
 
     warnings = _move_warnings(plan, start, {source_date, target})
 
@@ -273,7 +297,48 @@ def move_session(
         plan_session_id=sess.id,
     )
 
-    return PlanMoveResult(plan=_compute_plan_out(plan), warnings=warnings)
+    return PlanMoveResult(
+        plan=_compute_plan_out(plan), warnings=warnings, rebalanced=rebalanced
+    )
+
+
+def _rebalance_after_move(
+    db: Session, plan: TrainingPlan, anchors: dict[int, set[int]]
+) -> list[str]:
+    """Re-space quality days in the touched weeks; return the reshape notes.
+
+    ``anchors`` maps a week number to the days that must stay put (the session
+    just placed / the swapped one). Completed sessions and the goal race are
+    always locked too. Applies the swaps to the ORM and returns human notes.
+    """
+    from app.processing.plan_rebalance import rebalance_week
+
+    notes: list[str] = []
+    changed = False
+    for week_no, anchor_days in anchors.items():
+        wk = next((w for w in plan.weeks if w.week_number == week_no), None)
+        if wk is None:
+            continue
+        day_types = {s.day_of_week: s.session_type for s in wk.sessions}
+        locked = set(anchor_days) | {
+            s.day_of_week
+            for s in wk.sessions
+            if s.completed or (s.session_type or "").lower() in ("race", "gara")
+        }
+        swaps, wk_notes = rebalance_week(day_types, locked)
+        if not swaps:
+            continue
+        by_day = {s.day_of_week: s for s in wk.sessions}
+        for a, b in swaps:
+            by_day[a].day_of_week, by_day[b].day_of_week = b, a
+            by_day[a], by_day[b] = by_day[b], by_day[a]
+        notes.extend(wk_notes)
+        changed = True
+
+    if changed:
+        db.flush()
+        db.expire_all()
+    return notes
 
 
 def _move_warnings(
@@ -322,7 +387,9 @@ def _compute_plan_out(plan: TrainingPlan) -> TrainingPlanOut:
     current_week_number = max(1, min(plan.weeks_total, days_elapsed // 7 + 1))
     weeks_remaining = max(0, plan.weeks_total - current_week_number)
 
-    weeks_out = [_compute_week_out(w) for w in plan.weeks]
+    weeks_out = [
+        _compute_week_out(w, plan.goal_type, plan.weeks_total) for w in plan.weeks
+    ]
 
     current_week_out = next(
         (w for w in weeks_out if w.week_number == current_week_number), None
@@ -362,9 +429,34 @@ def _compute_plan_out(plan: TrainingPlan) -> TrainingPlanOut:
     )
 
 
-def _compute_week_out(week: TrainingPlanWeek) -> PlanWeekOut:
-    """Compute completion_pct for a week and build the output schema."""
-    sessions_out = [PlanSessionOut.model_validate(s) for s in week.sessions]
+def _compute_week_out(
+    week: TrainingPlanWeek, goal_type: str | None = None, weeks_total: int = 0
+) -> PlanWeekOut:
+    """Compute completion_pct for a week and build the output schema.
+
+    Each session is enriched with its structured workout segments and fueling
+    guidance (Fase E/F); the week carries a coach rationale (Fase F). All derived
+    deterministically from the persisted prescription — no extra state stored.
+    """
+    from app.processing.fueling import fueling_guidance
+    from app.processing.plan_explain import week_rationale
+    from app.processing.workout_segments import build_session_segments
+
+    is_race_week = any(
+        (s.session_type or "").lower() in ("race", "gara") for s in week.sessions
+    )
+    is_deload = "scarico" in (week.description or "").lower()
+
+    sessions_out = []
+    for s in week.sessions:
+        so = PlanSessionOut.model_validate(s)
+        so.segments = build_session_segments(
+            so.session_type, so.target_distance_km, so.target_pace, goal_type
+        )
+        so.fueling = fueling_guidance(
+            so.session_type, so.target_distance_km, so.target_duration_min
+        )
+        sessions_out.append(so)
 
     non_rest = [s for s in sessions_out if s.session_type != "rest"]
     completed_count = sum(1 for s in non_rest if s.completed)
@@ -378,6 +470,13 @@ def _compute_week_out(week: TrainingPlanWeek) -> PlanWeekOut:
         phase=week.phase,
         target_km=week.target_km,
         description=week.description,
+        rationale=week_rationale(
+            week.phase,
+            week.week_number,
+            weeks_total,
+            is_deload=is_deload,
+            is_race_week=is_race_week,
+        ),
         sessions=sessions_out,
         completion_pct=round(completion_pct, 1),
     )

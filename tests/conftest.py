@@ -37,6 +37,11 @@ def db_env(tmp_path, monkeypatch):
         "DATA_ENCRYPTION_KEY", "5Fz1E0GDeLDMbpZytc3-BgcTvV6C05DsZ2ollT4YnZY="
     )
     monkeypatch.setenv("RATE_LIMIT_ENABLED", "false")
+    # Yazio's app-level client pair. Placeholders: every Yazio call in the
+    # suite goes through an injected fake, so these only need to be non-empty
+    # to get past the "not configured" guard.
+    monkeypatch.setenv("YAZIO_CLIENT_ID", "test-client-id")
+    monkeypatch.setenv("YAZIO_CLIENT_SECRET", "test-client-secret")
     get_settings.cache_clear()
     reset_engine()
     # The Q5 in-process cache is a module global: drop it so a fresh test DB

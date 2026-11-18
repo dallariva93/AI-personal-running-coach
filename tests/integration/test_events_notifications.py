@@ -19,6 +19,14 @@ from app.services.ingest import ingest_runs
 FIXTURES = Path(__file__).parent.parent / "fixtures"
 
 
+def _this_monday(today: date | None = None) -> date:
+    """Monday of the current week — a stable weekday anchor inside any
+    lookback window, so tests don't expire as the calendar moves on."""
+    today = today or date.today()
+    return today - timedelta(days=today.weekday())
+
+
+
 def _seed_runs(session) -> None:
     ingest_runs(session, source=DemoSource(FIXTURES / "garmin_activities.json"))
     session.flush()
@@ -48,7 +56,7 @@ def _plan(session, start: date) -> None:
 
 
 def test_adaptation_writes_audit_event_with_before_after(session):
-    start = date(2026, 6, 22)
+    start = _this_monday()
     _seed_runs(session)
     _plan(session, start)
     session.add(
@@ -71,7 +79,7 @@ def test_adaptation_writes_audit_event_with_before_after(session):
 
 
 def test_adaptation_event_is_deduped(session):
-    start = date(2026, 6, 22)
+    start = _this_monday()
     _seed_runs(session)
     _plan(session, start)
     session.add(DailyCheckinRow(date=start.isoformat(), fatigue=9, soreness=10, sleep_h=4.0))
@@ -89,7 +97,7 @@ def test_decision_notification_and_ack(session):
     _seed_runs(session)
     session.add(DailyCheckinRow(date="2026-06-22", fatigue=9, soreness=10, sleep_h=4.0))
     session.flush()
-    decision = build_today_decision(session, ref=date(2026, 6, 22))
+    decision = build_today_decision(session, ref=_this_monday())
     record_decision_notification(session, decision)
 
     pend = pending_notifications(session)
@@ -108,7 +116,7 @@ def test_routine_decision_not_notified(session):
         DailyCheckinRow(date="2026-06-22", fatigue=2, sleep_h=8.0, motivation=8, hrv_rmssd=60.0)
     )
     session.flush()
-    decision = build_today_decision(session, ref=date(2026, 6, 22))
+    decision = build_today_decision(session, ref=_this_monday())
     record_decision_notification(session, decision)
     assert not pending_notifications(session)
 

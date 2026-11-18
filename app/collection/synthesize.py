@@ -204,6 +204,32 @@ def _is_trail(activity: dict[str, Any]) -> bool:
     return elevation is not None and elevation >= _TRAIL_MIN_ELEVATION_M
 
 
+# Garmin marks indoor running in the activity type itself.
+_INDOOR_MARKERS = ("treadmill", "indoor", "virtual")
+
+
+def is_indoor_activity(activity: dict[str, Any]) -> bool:
+    """True for treadmill / indoor running.
+
+    Worth knowing because indoor runs break three assumptions the coaching
+    layer would otherwise make silently: there is no GPS (so weather looked up
+    from a fallback location would describe the street outside, not the gym),
+    the pace depends on the belt's calibration rather than on fitness, and the
+    zero elevation means "no data", not "flat course".
+    """
+    type_field = activity.get("activityType")
+    type_key = ""
+    if isinstance(type_field, dict):
+        type_key = str(type_field.get("typeKey", "")).lower()
+    elif type_field is not None:
+        type_key = str(type_field).lower()
+    if any(marker in type_key for marker in _INDOOR_MARKERS):
+        return True
+    # Strava flags a treadmill run with `trainer`, keeping sport_type "Run".
+    trainer = activity.get("trainer")
+    return trainer is True or trainer == 1
+
+
 def _infer_type(
     activity: dict[str, Any],
     hr_zones: dict[str, float] | None = None,  # kept for backward-compat
@@ -357,6 +383,67 @@ def extract_splits(payload: Any) -> list[str] | None:
         pace = _format_pace(distance, duration or 0.0)
         if pace:
             out.append(pace)
+    return out or None
+
+
+# Garmin's own lap intensity, when the activity ran a structured workout.
+# Anything else (or nothing) leaves the role unset rather than guessed.
+_LAP_ROLE_BY_INTENSITY = {
+    "ACTIVE": "work",
+    "INTERVAL": "work",
+    "REST": "recovery",
+    "RECOVERY": "recovery",
+    "WARMUP": "warmup",
+    "COOLDOWN": "cooldown",
+}
+
+
+def extract_laps(payload: Any) -> list[dict[str, Any]] | None:
+    """Parse ``get_activity_splits`` into the *real* laps, structured.
+
+    ``extract_splits`` flattens the same payload into per-kilometre pace
+    strings, which erases exactly what an interval session is made of: a 500 m
+    repetition and a 200 m jog both vanish into "the third kilometre". Here
+    every lap is kept with its own distance and duration, so the shape of a
+    session — and whether the athlete held the pace across the series — stays
+    readable.
+
+    ``role`` is filled only from Garmin's own ``intensityType``: on a free run
+    there is nothing to classify, and inventing "work"/"recovery" from pace
+    alone would be a guess presented as data.
+    """
+    laps = payload.get("lapDTOs") if isinstance(payload, dict) else None
+    if not isinstance(laps, list):
+        return None
+    out: list[dict[str, Any]] = []
+    for index, lap in enumerate(laps, start=1):
+        if not isinstance(lap, dict):
+            continue
+        distance = _num(lap.get("distance"))
+        duration = _num(lap.get("duration") or lap.get("movingDuration"))
+        if distance is None and duration is None:
+            continue
+        intensity = lap.get("intensityType")
+        entry: dict[str, Any] = {
+            "index": index,
+            "distance_m": round(distance) if distance is not None else None,
+            "duration_sec": round(duration) if duration is not None else None,
+        }
+        if distance and duration:
+            entry["pace"] = _format_pace(distance, duration)
+        role = _LAP_ROLE_BY_INTENSITY.get(str(intensity).upper()) if intensity else None
+        if role:
+            entry["role"] = role
+        avg_hr = _num(lap.get("averageHR"))
+        if avg_hr:
+            entry["avg_hr"] = round(avg_hr)
+        max_hr = _num(lap.get("maxHR"))
+        if max_hr:
+            entry["max_hr"] = round(max_hr)
+        gain = _num(lap.get("elevationGain"))
+        if gain:
+            entry["elevation_gain_m"] = round(gain)
+        out.append(entry)
     return out or None
 
 
@@ -822,6 +909,7 @@ def synthesize(activity: dict[str, Any]) -> RunSummary:
         date=str(activity.get("startTimeLocal", ""))[:10],
         start_time=extract_start_time(activity.get("startTimeLocal")),
         activity_type=_infer_type(activity, hr_zones=hr_zones, duration_min=duration_min),
+        is_indoor=is_indoor_activity(activity),
         duration_min=duration_min,
         distance_km=round(distance_m / 1000.0, 2),
         avg_pace=_format_pace(distance_m, duration_s),

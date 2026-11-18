@@ -73,7 +73,12 @@ def test_move_swaps_with_rest_day_no_warnings(session):
     assert len(week1.sessions) == 7
 
 
-def test_move_next_to_quality_returns_warning(session):
+def test_move_next_to_quality_rebalances_instead_of_warning(session):
+    """Fase E: moving a quality session next to another reshapes the week.
+
+    The coach re-spaces the two hard days rather than merely warning, so the
+    athlete ends up with a sound week and an explanation of what changed.
+    """
     start = _next_monday()
     plan = _mk_plan(session, start)
     intervals = _find(session, plan, 1, 1)
@@ -81,7 +86,19 @@ def test_move_next_to_quality_returns_warning(session):
 
     result = move_session(session, intervals.id, target.isoformat(), ref=start)
 
-    assert any("qualità" in w for w in result.warnings)
+    # The conflict was resolved deterministically, not just flagged.
+    assert result.rebalanced
+    assert not any("qualità" in w for w in result.warnings)
+
+    week1 = next(w for w in result.plan.weeks if w.week_number == 1)
+    by_dow = {s.day_of_week: s.session_type for s in week1.sessions}
+    assert by_dow[2] == "intervals"  # the athlete's placement is honoured
+    # No two hard days remain adjacent.
+    hard = {"tempo", "intervals"}
+    assert not any(
+        by_dow.get(d) in hard and by_dow.get(d + 1) in hard for d in range(6)
+    )
+    assert len(week1.sessions) == 7
 
 
 def test_cross_week_move_swaps_weeks(session):
